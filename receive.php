@@ -32,127 +32,139 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receive Parcel - Mailroom System</title>
+    <title>Receive Parcel - Mailroom</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f4;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid #e5e5e5;
+            font-weight: 500;
+            color: #4a4a4a;
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e5e5e5;
+        }
+    </style>
 </head>
 
-<body class="bg-gradient-to-br from-slate-50 to-slate-100">
+<body class="bg-[#f5f5f4]">
     <div class="flex h-screen">
         <?php include './sidebar.php'; ?>
 
-        <div class="flex-1 flex flex-col overflow-hidden">
-            <?php include '../components/header.php'; ?>
+        <main class="flex-1 ml-60 overflow-y-auto">
+            <!-- Simple header -->
+            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+                <h1 class="text-2xl font-medium text-[#1e1e1e]">Receive Parcel</h1>
+                <p class="text-sm text-[#6e6e6e] mt-1">Register a new parcel with tracking ID</p>
+            </div>
 
-            <main class="flex-1 overflow-y-auto p-6">
+            <div class="p-8">
                 <div class="max-w-4xl mx-auto">
-                    <!-- Header -->
-                    <div class="mb-8">
-                        <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                            Receive New Parcel
-                        </h1>
-                        <p class="text-gray-600 mt-2">Fill in the details to register a new parcel with tracking ID</p>
-                    </div>
-
-                    <!-- Messages -->
+                    <!-- Simple messages -->
                     <?php if ($message): ?>
-                        <div class="mb-6 p-4 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 rounded-r-lg">
-                            <div class="flex items-center">
-                                <i class="fas fa-check-circle text-green-500 text-xl mr-3"></i>
-                                <p class="text-green-700"><?php echo $message; ?></p>
-                            </div>
+                        <div class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e]">
+                            <i class="fa-regular fa-circle-check mr-2 text-[#4a4a4a]"></i>
+                            <?php echo $message; ?>
                         </div>
                     <?php endif; ?>
 
                     <?php if ($error): ?>
-                        <div class="mb-6 p-4 bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 rounded-r-lg">
-                            <div class="flex items-center">
-                                <i class="fas fa-exclamation-circle text-red-500 text-xl mr-3"></i>
-                                <p class="text-red-700"><?php echo $error; ?></p>
-                            </div>
+                        <div class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e]">
+                            <i class="fa-regular fa-circle-exclamation mr-2 text-[#4a4a4a]"></i>
+                            <?php echo $error; ?>
                         </div>
                     <?php endif; ?>
 
-                    <!-- Form -->
-                    <div class="bg-white rounded-2xl shadow-lg p-8">
+                    <!-- Form - simple container -->
+                    <div class="bg-white border border-[#e5e5e5] rounded-md p-6 mb-8">
                         <form method="POST" action="">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div class="md:col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
                                     <textarea name="description" rows="3" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                                         placeholder="Enter parcel description"></textarea>
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Sender</label>
+                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sender</label>
                                     <input type="text" name="sender" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                                         placeholder="Sender name">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Addressed To</label>
+                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Addressed To</label>
                                     <input type="text" name="addressed_to" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                                         placeholder="Recipient name">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Date Received</label>
+                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received</label>
                                     <input type="date" name="date_received" required value="<?php echo date('Y-m-d'); ?>"
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all">
+                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Received By</label>
+                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By</label>
                                     <input type="text" name="received_by" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                                         placeholder="Staff name">
                                 </div>
                             </div>
 
-                            <div class="mt-8 flex justify-end space-x-4">
+                            <div class="mt-6 flex justify-end gap-3">
                                 <button type="reset"
-                                    class="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors">
+                                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                                     Clear
                                 </button>
                                 <button type="submit"
-                                    class="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all transform hover:scale-105">
-                                    <i class="fas fa-save mr-2"></i>
+                                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                    <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
                                     Receive Parcel
                                 </button>
                             </div>
                         </form>
                     </div>
 
-                    <!-- Recent Parcels -->
-                    <div class="mt-8">
-                        <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Parcels</h2>
-                        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tracking ID</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <!-- Recent Parcels - simple table -->
+                    <div>
+                        <h2 class="text-sm font-medium text-[#1e1e1e] mb-3">Recent Parcels</h2>
+                        <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
+                            <table>
+                                <thead>
+                                    <tr class="bg-[#fafafa]">
+                                        <th class="text-xs">Tracking ID</th>
+                                        <th class="text-xs">Description</th>
+                                        <th class="text-xs">Sender</th>
+                                        <th class="text-xs">Date</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody>
                                     <?php
                                     $recent = $conn->query("SELECT * FROM parcels_received ORDER BY date_received DESC LIMIT 5");
                                     while ($row = $recent->fetch_assoc()):
                                     ?>
-                                        <tr class="hover:bg-gray-50 transition-colors">
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-mono">
-                                                    <?php echo $row['tracking_id']; ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4"><?php echo substr($row['description'], 0, 50); ?>...</td>
-                                            <td class="px-6 py-4"><?php echo $row['sender']; ?></td>
-                                            <td class="px-6 py-4"><?php echo $row['date_received']; ?></td>
+                                        <tr class="hover:bg-[#fafafa]">
+                                            <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $row['tracking_id']; ?></td>
+                                            <td class="text-sm text-[#1e1e1e]"><?php echo substr($row['description'], 0, 50); ?>...</td>
+                                            <td class="text-sm text-[#1e1e1e]"><?php echo $row['sender']; ?></td>
+                                            <td class="text-sm text-[#1e1e1e]"><?php echo $row['date_received']; ?></td>
                                         </tr>
                                     <?php endwhile; ?>
                                 </tbody>
@@ -160,8 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </main>
     </div>
 </body>
 

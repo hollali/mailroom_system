@@ -64,7 +64,7 @@
 
             <!-- Documents -->
             <div class="text-xs text-[#6a6a6a] px-3 pt-5 pb-1 sidebar-text">Documents</div>
-            <a href="./documents/add.php"
+            <a href="./documents.php"
                 class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/documents/add.php' ? 'bg-[#2a2a2a] text-white' : 'text-[#a1a1a1] hover:text-white hover:bg-[#252525]'; ?>">
                 <i class="fa-solid fa-upload w-4"></i>
                 <span class="sidebar-text">Add Document</span>
@@ -95,7 +95,7 @@
                 <i class="fa-solid fa-chart-line w-4"></i>
                 <span class="sidebar-text">Add Distribution</span>
             </a>
-            <a href="/distribution/print.php"
+            <a href="./print.php"
                 class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/distribution/print.php' ? 'bg-[#2a2a2a] text-white' : 'text-[#a1a1a1] hover:text-white hover:bg-[#252525]'; ?>">
                 <i class="fa-solid fa-print w-4"></i>
                 <span class="sidebar-text">Print Distribution</span>

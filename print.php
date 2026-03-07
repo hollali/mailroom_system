@@ -1,5 +1,5 @@
 <?php
-require_once '../config/db.php';
+require_once './config/db.php';
 
 // Get distribution data for printing
 $result = $conn->query("
@@ -58,7 +58,7 @@ $result = $conn->query("
 </head>
 
 <body class="bg-white">
-    <?php include 'components/sidebar.php'; ?>
+    <?php include './sidebar.php'; ?>
     <div class="max-w-6xl mx-auto p-8">
         <!-- Simple header -->
         <div class="border-b border-[#e5e5e5] pb-6 mb-6">
