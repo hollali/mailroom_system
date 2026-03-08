@@ -164,7 +164,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Add Category</h3>
                 <button onclick="closeModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 

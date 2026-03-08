@@ -719,9 +719,9 @@ include './sidebar.php';
                     <!-- Quick Action Button at Top -->
                     <div class="relative">
                         <button class="quick-action-btn" onclick="toggleQuickMenu()">
-                            <i class="fa-regular fa-bolt"></i>
+                            <i class="fa-solid fa-bolt"></i>
                             <span>Quick Actions</span>
-                            <i class="fa-regular fa-chevron-down text-sm"></i>
+                            <i class="fa-solid fa-chevron-down text-sm"></i>
                         </button>
 
                         <!-- Quick Action Menu -->
@@ -731,7 +731,7 @@ include './sidebar.php';
                                 <span>Add Newspaper</span>
                             </div>
                             <div class="quick-action-item" onclick="openAddCategoryModal()">
-                                <i class="fa-regular fa-tags"></i>
+                                <i class="fa-solid fa-tags"></i>
                                 <span>Add Category</span>
                             </div>
                             <div class="quick-action-item" onclick="openAvailableModal()">
@@ -739,7 +739,7 @@ include './sidebar.php';
                                 <span>View Available</span>
                             </div>
                             <div class="quick-action-item" onclick="openDistributeModal()">
-                                <i class="fa-regular fa-hand-holding-hand"></i>
+                                <i class="fa-solid fa-hand-holding-hand"></i>
                                 <span>Distribute</span>
                             </div>
                         </div>
@@ -833,11 +833,11 @@ include './sidebar.php';
                             </select>
 
                             <button type="submit" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-regular fa-sliders mr-1"></i>Apply
+                                <i class="fa-solid fa-sliders mr-1"></i>Apply
                             </button>
 
                             <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-regular fa-rotate-right mr-1"></i>Reset
+                                <i class="fa-solid fa-rotate-right mr-1"></i>Reset
                             </a>
                         </form>
 
@@ -865,7 +865,7 @@ include './sidebar.php';
                                     <span class="filter-badge">
                                         Status: <?php echo ucfirst($filter_status); ?>
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_status' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-regular fa-xmark"></i>
+                                            <i class="fa-solid fa-xmark"></i>
                                         </a>
                                     </span>
                                 <?php endif; ?>
@@ -874,7 +874,7 @@ include './sidebar.php';
                                     <span class="filter-badge">
                                         Search: "<?php echo htmlspecialchars($search); ?>"
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['search' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-regular fa-xmark"></i>
+                                            <i class="fa-solid fa-xmark"></i>
                                         </a>
                                     </span>
                                 <?php endif; ?>
@@ -1044,7 +1044,7 @@ include './sidebar.php';
                             </select>
 
                             <button type="submit" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-regular fa-sliders mr-1"></i>Apply
+                                <i class="fa-solid fa-sliders mr-1"></i>Apply
                             </button>
                         </form>
                     </div>

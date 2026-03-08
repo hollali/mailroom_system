@@ -30,14 +30,14 @@
     <!-- Sidebar -->
     <div id="sidebar" class="sidebar w-60 lg:w-60 bg-white border-r border-[#e5e5e5] min-h-screen fixed left-0 top-0 overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-all duration-300">
         <!-- Collapse Button (Desktop) -->
-        <button id="collapseBtn" class="hidden lg:flex absolute top-4 right-[-12px] bg-white border border-[#e5e5e5] text-[#1e1e1e] p-1 rounded-full z-50">
+        <!--<button id="collapseBtn" class="hidden lg:flex absolute top-4 right-[-12px] bg-white border border-[#e5e5e5] text-[#1e1e1e] p-1 rounded-full z-50">
             <i class="fa-solid fa-angle-left"></i>
-        </button>
+        </button>-->
 
         <!-- Logo -->
         <div class="px-4 py-5 flex items-center gap-2">
             <img src="images/logo.png" alt="Mail Room" class="w-6 h-6">
-            <span class="text-[#1e1e1e] text-base font-medium sidebar-text">Mail Room</span>
+            <span class="text-[#1e1e1e] text-base font-medium sidebar-text">LIBRARY</span>
         </div>
 
         <!-- Navigation -->
