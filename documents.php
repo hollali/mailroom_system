@@ -6,16 +6,38 @@ session_start();
 $message = '';
 $error = '';
 
+// Get document types for dropdown
+$types_result = $conn->query("SELECT id, type_name FROM document_types ORDER BY type_name");
+$document_types = [];
+if ($types_result) {
+    while ($row = $types_result->fetch_assoc()) {
+        $document_types[] = $row;
+    }
+}
+
 // Handle Add Document
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_submit'])) {
     $document_name = $_POST['document_name'];
-    $type = $_POST['type'];
+    $type_id = !empty($_POST['type_id']) ? (int)$_POST['type_id'] : null;
     $origin = $_POST['origin'];
     $copies_received = (int)$_POST['copies_received'];
     $date_received = $_POST['date_received'];
 
-    $stmt = $conn->prepare("INSERT INTO documents (document_name, type, origin, copies_received, date_received) VALUES (?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssis", $document_name, $type, $origin, $copies_received, $date_received);
+    // If type_id is provided, get the type name for backward compatibility
+    $type_name = '';
+    if ($type_id) {
+        $type_query = $conn->prepare("SELECT type_name FROM document_types WHERE id = ?");
+        $type_query->bind_param("i", $type_id);
+        $type_query->execute();
+        $type_result = $type_query->get_result();
+        if ($type_row = $type_result->fetch_assoc()) {
+            $type_name = $type_row['type_name'];
+        }
+        $type_query->close();
+    }
+
+    $stmt = $conn->prepare("INSERT INTO documents (document_name, type, type_id, origin, copies_received, date_received) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssisss", $document_name, $type_name, $type_id, $origin, $copies_received, $date_received);
 
     if ($stmt->execute()) {
         $message = "Document added successfully!";
@@ -42,13 +64,26 @@ if (isset($_GET['delete'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_submit'])) {
     $id = (int)$_POST['document_id'];
     $document_name = $_POST['document_name'];
-    $type = $_POST['type'];
+    $type_id = !empty($_POST['type_id']) ? (int)$_POST['type_id'] : null;
     $origin = $_POST['origin'];
     $copies_received = (int)$_POST['copies_received'];
     $date_received = $_POST['date_received'];
 
-    $stmt = $conn->prepare("UPDATE documents SET document_name = ?, type = ?, origin = ?, copies_received = ?, date_received = ? WHERE id = ?");
-    $stmt->bind_param("sssisi", $document_name, $type, $origin, $copies_received, $date_received, $id);
+    // If type_id is provided, get the type name for backward compatibility
+    $type_name = '';
+    if ($type_id) {
+        $type_query = $conn->prepare("SELECT type_name FROM document_types WHERE id = ?");
+        $type_query->bind_param("i", $type_id);
+        $type_query->execute();
+        $type_result = $type_query->get_result();
+        if ($type_row = $type_result->fetch_assoc()) {
+            $type_name = $type_row['type_name'];
+        }
+        $type_query->close();
+    }
+
+    $stmt = $conn->prepare("UPDATE documents SET document_name = ?, type = ?, type_id = ?, origin = ?, copies_received = ?, date_received = ? WHERE id = ?");
+    $stmt->bind_param("ssisssi", $document_name, $type_name, $type_id, $origin, $copies_received, $date_received, $id);
 
     if ($stmt->execute()) {
         $message = "Document updated successfully!";
@@ -58,8 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_submit'])) {
     $stmt->close();
 }
 
-// Get all documents
-$documents = $conn->query("SELECT * FROM documents ORDER BY date_received DESC, id DESC");
+// Get all documents with type information
+$documents = $conn->query("
+    SELECT d.*, dt.type_name as document_type_name 
+    FROM documents d 
+    LEFT JOIN document_types dt ON d.type_id = dt.id 
+    ORDER BY d.date_received DESC, d.id DESC
+");
 if (!$documents) {
     $error = "Error fetching documents: " . $conn->error;
 }
@@ -74,18 +114,24 @@ $month = $month_result ? $month_result->fetch_assoc()['count'] : 0;
 $today_result = $conn->query("SELECT COUNT(*) as count FROM documents WHERE date_received = CURDATE()");
 $today = $today_result ? $today_result->fetch_assoc()['count'] : 0;
 
-// Get unique types for filter
-$types_result = $conn->query("SELECT DISTINCT type FROM documents WHERE type IS NOT NULL AND type != '' ORDER BY type");
-$types = [];
+// Get unique types for filter (from document_types table)
+$types_result = $conn->query("SELECT id, type_name FROM document_types ORDER BY type_name");
+$filter_types = [];
 if ($types_result) {
     while ($row = $types_result->fetch_assoc()) {
-        $types[] = $row['type'];
+        $filter_types[] = $row;
     }
 }
 
 // Get all documents for JavaScript (limited to recent 100 to avoid huge data)
 $docs_for_js = [];
-$docs_result = $conn->query("SELECT id, document_name, type, origin, copies_received, date_received FROM documents ORDER BY date_received DESC LIMIT 100");
+$docs_result = $conn->query("
+    SELECT d.id, d.document_name, d.type, d.type_id, d.origin, d.copies_received, d.date_received,
+           dt.type_name as document_type_name
+    FROM documents d 
+    LEFT JOIN document_types dt ON d.type_id = dt.id 
+    ORDER BY d.date_received DESC LIMIT 100
+");
 if ($docs_result) {
     while ($row = $docs_result->fetch_assoc()) {
         $docs_for_js[] = $row;
@@ -134,7 +180,7 @@ if ($docs_result) {
 
 <body class="bg-[#f5f5f4]">
     <div class="flex">
-        <!-- Sidebar - adjust path as needed -->
+        <!-- Sidebar -->
         <?php include './sidebar.php'; ?>
 
         <main class="flex-1 ml-60 min-h-screen">
@@ -145,6 +191,9 @@ if ($docs_result) {
                     <div class="flex gap-2">
                         <a href="../index.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                             <i class="fa-regular fa-home mr-1 text-[#6e6e6e]"></i>Dashboard
+                        </a>
+                        <a href="document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                            <i class="fa-regular fa-tags mr-1 text-[#6e6e6e]"></i>Manage Types
                         </a>
                         <button onclick="openAddModal()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                             <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i>Add Document
@@ -194,8 +243,10 @@ if ($docs_result) {
                         </div>
                         <select id="typeFilter" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
                             <option value="all">All Types</option>
-                            <?php foreach ($types as $type): ?>
-                                <option value="<?php echo htmlspecialchars(strtolower($type)); ?>"><?php echo htmlspecialchars($type); ?></option>
+                            <?php foreach ($filter_types as $type): ?>
+                                <option value="<?php echo htmlspecialchars(strtolower($type['type_name'])); ?>">
+                                    <?php echo htmlspecialchars($type['type_name']); ?>
+                                </option>
                             <?php endforeach; ?>
                         </select>
                         <button onclick="clearFilters()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
@@ -224,10 +275,20 @@ if ($docs_result) {
                                     <?php while ($row = $documents->fetch_assoc()): ?>
                                         <tr class="hover:bg-[#fafafa] document-row"
                                             data-type="<?php echo htmlspecialchars(strtolower($row['type'] ?? '')); ?>"
+                                            data-type-id="<?php echo $row['type_id'] ?? ''; ?>"
                                             data-search="<?php echo htmlspecialchars(strtolower(($row['document_name'] ?? '') . ' ' . ($row['origin'] ?? '') . ' ' . ($row['type'] ?? ''))); ?>">
                                             <td class="text-sm text-[#6e6e6e]"><?php echo $row['id']; ?></td>
                                             <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($row['document_name'] ?? ''); ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($row['type'] ?? ''); ?></td>
+                                            <td class="text-sm text-[#1e1e1e]">
+                                                <?php if ($row['type_id']): ?>
+                                                    <a href="document_types.php?action=view&id=<?php echo $row['type_id']; ?>"
+                                                        class="hover:underline">
+                                                        <?php echo htmlspecialchars($row['type'] ?? ''); ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <?php echo htmlspecialchars($row['type'] ?? '-'); ?>
+                                                <?php endif; ?>
+                                            </td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($row['origin'] ?? ''); ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $row['copies_received'] ?? 0; ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $row['date_received'] ? date('M j, Y', strtotime($row['date_received'])) : ''; ?></td>
@@ -280,14 +341,15 @@ if ($docs_result) {
                     </div>
 
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Type</label>
-                        <select name="type" required id="add_type"
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Type</label>
+                        <select name="type_id" id="add_type_id" required
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
                             <option value="">Select type</option>
-                            <option value="Legislative Documents">Legislative Documents</option>
-                            <option value="Committee Reports">Committee Reports</option>
-                            <option value="Report from MDA">Report from MDA</option>
-                            <option value="Report from CSD">Report from CSD</option>
+                            <?php foreach ($document_types as $type): ?>
+                                <option value="<?php echo $type['id']; ?>">
+                                    <?php echo htmlspecialchars($type['type_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
 
@@ -313,24 +375,16 @@ if ($docs_result) {
                     </div>
 
                     <div class="pt-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">Quick Select</p>
+                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">Quick Actions</p>
                         <div class="grid grid-cols-2 gap-2">
-                            <button type="button" onclick="setType('Legislative Documents')"
-                                class="text-left px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
-                                Legislative
-                            </button>
-                            <button type="button" onclick="setType('Committee Reports')"
-                                class="text-left px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
-                                Committee
-                            </button>
-                            <button type="button" onclick="setType('Report from MDA')"
-                                class="text-left px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
-                                MDA Report
-                            </button>
-                            <button type="button" onclick="setType('Report from CSD')"
-                                class="text-left px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
-                                CSD Report
-                            </button>
+                            <a href="./document_types.php?action=create" target="_blank"
+                                class="text-center px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
+                                + New Type
+                            </a>
+                            <a href="./document_types.php" target="_blank"
+                                class="text-center px-2 py-1 text-xs border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
+                                Manage Types
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -369,13 +423,15 @@ if ($docs_result) {
                     </div>
 
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Type</label>
-                        <select name="type" id="edit_type" required
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Type</label>
+                        <select name="type_id" id="edit_type_id" required
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                            <option value="Legislative Documents">Legislative Documents</option>
-                            <option value="Committee Reports">Committee Reports</option>
-                            <option value="Report from MDA">Report from MDA</option>
-                            <option value="Report from CSD">Report from CSD</option>
+                            <option value="">Select type</option>
+                            <?php foreach ($document_types as $type): ?>
+                                <option value="<?php echo $type['id']; ?>">
+                                    <?php echo htmlspecialchars($type['type_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
 
@@ -432,7 +488,7 @@ if ($docs_result) {
             if (doc) {
                 document.getElementById('edit_id').value = doc.id;
                 document.getElementById('edit_name').value = doc.document_name || '';
-                document.getElementById('edit_type').value = doc.type || '';
+                document.getElementById('edit_type_id').value = doc.type_id || '';
                 document.getElementById('edit_origin').value = doc.origin || '';
                 document.getElementById('edit_copies').value = doc.copies_received || 1;
                 document.getElementById('edit_date').value = doc.date_received || '';
@@ -442,14 +498,6 @@ if ($docs_result) {
 
         function closeEditModal() {
             document.getElementById('editModal').style.display = 'none';
-        }
-
-        // Quick type selector
-        function setType(type) {
-            const select = document.getElementById('add_type');
-            if (select) {
-                select.value = type;
-            }
         }
 
         // Search and filter
