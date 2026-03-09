@@ -74,31 +74,19 @@
                 <i class="fa-solid fa-file-lines w-4"></i>
                 <span class="sidebar-text">Document List</span>
             </a>
-
+            <!-- Distribution -->
+            <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">Distribution</div>
+            <a href="./distribution.php"
+                class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/distribution/add.php' ? 'bg-[#f0f0f0] text-[#1e1e1e]' : 'text-[#6e6e6e] hover:text-[#1e1e1e] hover:bg-[#f5f5f4]'; ?>">
+                <i class="fa-solid fa-chart-line w-4"></i>
+                <span class="sidebar-text">Document Distribution</span>
+            </a>
             <!-- Parcels -->
             <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">Parcels</div>
             <a href="./parcels.php"
                 class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == './parcels.php' ? 'bg-[#f0f0f0] text-[#1e1e1e]' : 'text-[#6e6e6e] hover:text-[#1e1e1e] hover:bg-[#f5f5f4]'; ?>">
                 <i class="fa-solid fa-inbox w-4"></i>
                 <span class="sidebar-text">Parcels</span>
-            </a>
-            <!--<a href="./pickup.php"
-                class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/parcels/pickup.php' ? 'bg-[#f0f0f0] text-[#1e1e1e]' : 'text-[#6e6e6e] hover:text-[#1e1e1e] hover:bg-[#f5f5f4]'; ?>">
-                <i class="fa-solid fa-truck w-4"></i>
-                <span class="sidebar-text">Parcel Pickup</span>
-            </a>-->
-
-            <!-- Distribution -->
-            <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">Distribution</div>
-            <a href="/distribution/add.php"
-                class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/distribution/add.php' ? 'bg-[#f0f0f0] text-[#1e1e1e]' : 'text-[#6e6e6e] hover:text-[#1e1e1e] hover:bg-[#f5f5f4]'; ?>">
-                <i class="fa-solid fa-chart-line w-4"></i>
-                <span class="sidebar-text">Add Distribution</span>
-            </a>
-            <a href="./print.php"
-                class="flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?= $current_page == '/distribution/print.php' ? 'bg-[#f0f0f0] text-[#1e1e1e]' : 'text-[#6e6e6e] hover:text-[#1e1e1e] hover:bg-[#f5f5f4]'; ?>">
-                <i class="fa-solid fa-print w-4"></i>
-                <span class="sidebar-text">Print Distribution</span>
             </a>
         </nav>
 
