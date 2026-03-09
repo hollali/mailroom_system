@@ -344,7 +344,7 @@ $recent_parcels = $conn->query("
                             <i class="fa-regular fa-circle-down mr-2"></i>Receive Parcel
                         </button>
                         <button class="tab-button px-1 py-2 text-sm font-medium text-[#6e6e6e] hover:text-[#1e1e1e]" onclick="switchTab('pickup')">
-                            <i class="fa-regular fa-truck mr-2"></i>Pickup Parcel
+                            <i class="fa-regular fa-circle-up mr-2"></i>Pickup Parcel
                         </button>
                         <button class="tab-button px-1 py-2 text-sm font-medium text-[#6e6e6e] hover:text-[#1e1e1e]" onclick="switchTab('records')">
                             <i class="fa-regular fa-rectangle-list mr-2"></i>All Records
@@ -365,10 +365,10 @@ $recent_parcels = $conn->query("
                                     <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export
                                 </button>
                                 <button onclick="printReceiveRecords()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-print mr-1 text-[#6e6e6e]"></i> Print
+                                    <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i> Print
                                 </button>
                                 <button onclick="refreshReceiveTab()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-rotate-right mr-1 text-[#6e6e6e]"></i> Refresh
+                                    <i class="fa-solid fa-rotate-right mr-1 text-[#6e6e6e]"></i> Refresh
                                 </button>
                             </div>
                             <div class="flex flex-wrap gap-2 w-full md:w-auto">
@@ -396,7 +396,7 @@ $recent_parcels = $conn->query("
                                     <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['parcels_received']; ?></p>
                                 </div>
                                 <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-regular fa-box text-[#6e6e6e]"></i>
+                                    <i class="fa-solid fa-box text-[#6e6e6e]"></i>
                                 </div>
                             </div>
                             <p class="text-xs text-[#6e6e6e] mt-2">All time parcels received</p>
@@ -422,7 +422,7 @@ $recent_parcels = $conn->query("
                                     <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['week_parcels']; ?></p>
                                 </div>
                                 <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-regular fa-calendar-week text-[#6e6e6e]"></i>
+                                    <i class="fa-solid fa-calendar-week text-[#6e6e6e]"></i>
                                 </div>
                             </div>
                             <p class="text-xs text-[#6e6e6e] mt-2">Parcels this week</p>
@@ -484,12 +484,12 @@ $recent_parcels = $conn->query("
                                                 <td class="text-sm">
                                                     <button onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)"
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e] mr-2" title="View Details">
-                                                        <i class="fa-regular fa-eye"></i>
+                                                        <i class="fa-solid fa-eye"></i>
                                                     </button>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
                                                         <button onclick="quickPickup(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
                                                             class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="Quick Pickup">
-                                                            <i class="fa-regular fa-truck"></i>
+                                                            <i class="fa-solid fa-truck"></i>
                                                         </button>
                                                     <?php endif; ?>
                                                 </td>
@@ -511,7 +511,7 @@ $recent_parcels = $conn->query("
                                     <?php if ($recent_page > 1): ?>
                                         <a href="?recent_page=<?php echo $recent_page - 1; ?>&tab=receive"><i class="fa-regular fa-chevron-left"></i></a>
                                     <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>
+                                        <span class="disabled"><i class="fa-solid fa-chevron-left"></i></span>
                                     <?php endif; ?>
 
                                     <?php for ($i = 1; $i <= ceil($total_records / $records_per_page); $i++): ?>
@@ -525,7 +525,7 @@ $recent_parcels = $conn->query("
                                     <?php if ($recent_page < ceil($total_records / $records_per_page)): ?>
                                         <a href="?recent_page=<?php echo $recent_page + 1; ?>&tab=receive"><i class="fa-regular fa-chevron-right"></i></a>
                                     <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-right"></i></span>
+                                        <span class="disabled"><i class="fa-solid fa-chevron-right"></i></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -596,12 +596,12 @@ $recent_parcels = $conn->query("
                                                 <?php if ($parcel['status'] == 'Pending'): ?>
                                                     <button onclick="openPickupModal(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
                                                         class="px-3 py-1 text-xs border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                                        <i class="fa-regular fa-truck mr-1"></i> Process
+                                                        <i class="fa-solid fa-truck mr-1"></i> Process
                                                     </button>
                                                 <?php else: ?>
                                                     <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['date_picked']; ?>')"
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                                        <i class="fa-regular fa-circle-info"></i>
+                                                        <i class="fa-solid fa-circle-info"></i>
                                                     </button>
                                                 <?php endif; ?>
                                             </td>
@@ -618,7 +618,7 @@ $recent_parcels = $conn->query("
                                     <?php if ($page > 1): ?>
                                         <a href="?page=<?php echo $page - 1; ?>&tab=pickup"><i class="fa-regular fa-chevron-left"></i></a>
                                     <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>
+                                        <span class="disabled"><i class="fa-solid fa-chevron-left"></i></span>
                                     <?php endif; ?>
 
                                     <?php for ($i = 1; $i <= $total_pages; $i++): ?>
@@ -632,7 +632,7 @@ $recent_parcels = $conn->query("
                                     <?php if ($page < $total_pages): ?>
                                         <a href="?page=<?php echo $page + 1; ?>&tab=pickup"><i class="fa-regular fa-chevron-right"></i></a>
                                     <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-right"></i></span>
+                                        <span class="disabled"><i class="fa-solid fa-chevron-right"></i></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -647,13 +647,13 @@ $recent_parcels = $conn->query("
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div class="flex flex-wrap gap-2">
                                 <button onclick="exportToCSV()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
+                                    <i class="fa-solid fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
                                 </button>
                                 <button onclick="exportToPDF()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-file-pdf mr-1 text-[#6e6e6e]"></i> Export PDF
+                                    <i class="fa-solid fa-file-pdf mr-1 text-[#6e6e6e]"></i> Export PDF
                                 </button>
                                 <button onclick="printRecords()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-print mr-1 text-[#6e6e6e]"></i> Print
+                                    <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i> Print
                                 </button>
                             </div>
                             <div class="text-sm text-[#6e6e6e]">
@@ -698,10 +698,10 @@ $recent_parcels = $conn->query("
                             </div>
                             <div class="flex gap-2">
                                 <button onclick="filterRecords()" class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-magnifying-glass mr-1"></i> Search
+                                    <i class="fa-solid fa-magnifying-glass mr-1"></i> Search
                                 </button>
                                 <button onclick="resetFilters()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-rotate-right"></i>
+                                    <i class="fa-solid fa-rotate-right"></i>
                                 </button>
                             </div>
                         </div>
@@ -764,7 +764,7 @@ $recent_parcels = $conn->query("
                                                 <?php if ($parcel['status'] == 'Pending'): ?>
                                                     <button onclick="openPickupModal(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e] mr-2" title="Process Pickup">
-                                                        <i class="fa-regular fa-truck"></i>
+                                                        <i class="fa-solid fa-truck"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 <button onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)"
@@ -819,7 +819,7 @@ $recent_parcels = $conn->query("
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Receive New Parcel</h3>
                 <button onclick="closeReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark text-xl"></i>
+                    <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
 
@@ -864,7 +864,7 @@ $recent_parcels = $conn->query("
                     <div class="md:col-span-2">
                         <div class="bg-[#fafafa] p-3 rounded-md border border-[#e5e5e5]">
                             <p class="text-xs text-[#6e6e6e]">
-                                <i class="fa-regular fa-circle-info mr-1"></i>
+                                <i class="fa-solid fa-circle-info mr-1"></i>
                                 Tracking ID will be automatically generated as: <span class="font-mono">PRCL-<?php echo date('Ymd'); ?>-XXXXXX</span>
                             </p>
                         </div>
@@ -892,7 +892,7 @@ $recent_parcels = $conn->query("
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Process Pickup</h3>
                 <button onclick="closePickupModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark text-xl"></i>
+                    <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
             <form id="pickupForm" onsubmit="submitPickupForm(event)">
@@ -945,7 +945,7 @@ $recent_parcels = $conn->query("
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Pickup Details</h3>
                 <button onclick="closeDetailsModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark text-xl"></i>
+                    <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
             <div class="space-y-3">
@@ -985,7 +985,7 @@ $recent_parcels = $conn->query("
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Parcel Details</h3>
                 <button onclick="closeParcelDetailsModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark text-xl"></i>
+                    <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
             <div class="grid grid-cols-2 gap-4" id="parcelDetailContent">

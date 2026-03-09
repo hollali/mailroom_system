@@ -34,31 +34,58 @@ function setFlashMessage($type, $message)
     ];
 }
 
-// Get all document types
-function getAllDocumentTypes()
+// Get all document types with pagination
+function getAllDocumentTypes($sort_by = 'type_name', $sort_order = 'ASC', $filter = '', $limit = 10, $offset = 0)
 {
     $conn = getConnection();
     if (!$conn) {
-        return [];
+        return ['data' => [], 'total' => 0];
     }
 
+    // Validate sort parameters to prevent SQL injection
+    $allowed_sort = ['id', 'type_name', 'description', 'document_count', 'created_at'];
+    $sort_by = in_array($sort_by, $allowed_sort) ? $sort_by : 'type_name';
+    $sort_order = strtoupper($sort_order) == 'DESC' ? 'DESC' : 'ASC';
+
+    // Get total count for pagination
+    $count_sql = "SELECT COUNT(DISTINCT dt.id) as total 
+                  FROM document_types dt";
+
+    if (!empty($filter)) {
+        $filter_escaped = $conn->real_escape_string($filter);
+        $count_sql .= " WHERE dt.type_name LIKE '%$filter_escaped%' OR dt.description LIKE '%$filter_escaped%'";
+    }
+
+    $count_result = $conn->query($count_sql);
+    $total = $count_result ? $count_result->fetch_assoc()['total'] : 0;
+
+    // Main query with pagination
     $sql = "SELECT dt.*, COUNT(d.id) as document_count 
             FROM document_types dt
-            LEFT JOIN documents d ON dt.id = d.type_id
-            GROUP BY dt.id
-            ORDER BY dt.type_name";
+            LEFT JOIN documents d ON dt.id = d.type_id";
+
+    if (!empty($filter)) {
+        $filter_escaped = $conn->real_escape_string($filter);
+        $sql .= " WHERE dt.type_name LIKE '%$filter_escaped%' OR dt.description LIKE '%$filter_escaped%'";
+    }
+
+    $sql .= " GROUP BY dt.id 
+              ORDER BY $sort_by $sort_order 
+              LIMIT $limit OFFSET $offset";
+
     $result = $conn->query($sql);
 
     if (!$result) {
         error_log("Error in getAllDocumentTypes: " . $conn->error);
-        return [];
+        return ['data' => [], 'total' => 0];
     }
 
     $types = [];
     while ($row = $result->fetch_assoc()) {
         $types[] = $row;
     }
-    return $types;
+
+    return ['data' => $types, 'total' => $total];
 }
 
 // Get single document type by ID
@@ -236,11 +263,62 @@ function getDocumentsByType($type_id)
     return $documents;
 }
 
+// Handle AJAX requests
+if (isset($_POST['ajax_action'])) {
+    header('Content-Type: application/json');
+
+    if ($_POST['ajax_action'] == 'create') {
+        $type_name = trim($_POST['type_name']);
+        $description = trim($_POST['description']);
+
+        if (empty($type_name)) {
+            echo json_encode(['success' => false, 'message' => 'Document type name is required!']);
+        } else {
+            $result = createDocumentType($type_name, $description);
+            echo json_encode($result);
+        }
+        exit();
+    }
+
+    if ($_POST['ajax_action'] == 'update') {
+        $id = $_POST['id'];
+        $type_name = trim($_POST['type_name']);
+        $description = trim($_POST['description']);
+
+        if (empty($type_name)) {
+            echo json_encode(['success' => false, 'message' => 'Document type name is required!']);
+        } else {
+            $result = updateDocumentType($id, $type_name, $description);
+            echo json_encode($result);
+        }
+        exit();
+    }
+
+    if ($_POST['ajax_action'] == 'delete') {
+        $id = $_POST['id'];
+        $result = deleteDocumentType($id);
+        echo json_encode($result);
+        exit();
+    }
+
+    if ($_POST['ajax_action'] == 'get_type') {
+        $id = $_POST['id'];
+        $type = getDocumentTypeById($id);
+        if ($type) {
+            $documents = getDocumentsByType($id);
+            echo json_encode(['success' => true, 'type' => $type, 'documents' => $documents]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Document type not found!']);
+        }
+        exit();
+    }
+}
+
 // Handle form submissions
 $action = isset($_GET['action']) ? $_GET['action'] : 'list';
 
 // Handle POST requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['ajax_action'])) {
     if (isset($_POST['create'])) {
         $type_name = trim($_POST['type_name']);
         $description = trim($_POST['description']);
@@ -281,6 +359,14 @@ if (isset($_GET['action']) && $_GET['action'] == 'delete' && isset($_GET['id']))
     exit();
 }
 
+// Get sorting, filtering and pagination parameters
+$sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'type_name';
+$sort_order = isset($_GET['sort_order']) ? $_GET['sort_order'] : 'ASC';
+$filter = isset($_GET['filter']) ? $_GET['filter'] : '';
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
+$offset = ($page - 1) * $limit;
+
 // Get flash message
 $flashMessage = '';
 $flashType = '';
@@ -292,6 +378,18 @@ if (isset($_SESSION['flash'])) {
 
 // Include sidebar
 include './sidebar.php';
+
+// Get all document types for list view
+$typesData = ['data' => [], 'total' => 0];
+if ($action == 'list') {
+    $typesData = getAllDocumentTypes($sort_by, $sort_order, $filter, $limit, $offset);
+    $types = $typesData['data'];
+    $totalRecords = $typesData['total'];
+    $totalPages = ceil($totalRecords / $limit);
+} else {
+    // For stats view, get all records without pagination
+    $stats_types = getAllDocumentTypes('type_name', 'ASC', '', 1000, 0)['data'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -302,6 +400,7 @@ include './sidebar.php';
     <title>Document Types - Mailroom</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -320,6 +419,12 @@ include './sidebar.php';
             font-weight: 500;
             color: #4a4a4a;
             font-size: 0.75rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background-color: #f0f0f0;
         }
 
         td {
@@ -327,6 +432,81 @@ include './sidebar.php';
             border-bottom: 1px solid #e5e5e5;
             font-size: 0.875rem;
             color: #1e1e1e;
+        }
+
+        .action-btn {
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .modal {
+            transition: opacity 0.3s ease;
+        }
+
+        .sort-icon {
+            font-size: 0.7rem;
+            margin-left: 0.25rem;
+            opacity: 0.5;
+        }
+
+        th.active-sort .sort-icon {
+            opacity: 1;
+        }
+
+        /* Pagination styles */
+        .pagination {
+            display: flex;
+            gap: 0.25rem;
+            margin-top: 1rem;
+        }
+
+        .pagination-item {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #e5e5e5;
+            background-color: white;
+            font-size: 0.875rem;
+            color: #1e1e1e;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination-item:hover {
+            background-color: #f5f5f4;
+        }
+
+        .pagination-item.active {
+            background-color: #1e1e1e;
+            color: white;
+            border-color: #1e1e1e;
+        }
+
+        .pagination-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .items-per-page {
+            padding: 0.5rem;
+            border: 1px solid #e5e5e5;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+
+        /* Toastify customization */
+        .toastify {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 12px 20px;
+            color: white;
+            display: inline-block;
+            box-shadow: 0 3px 6px -1px rgba(0, 0, 0, 0.12), 0 10px 36px -4px rgba(77, 96, 232, 0.3);
+            border-radius: 4px;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
         }
     </style>
 </head>
@@ -338,13 +518,16 @@ include './sidebar.php';
             <div class="flex justify-between items-center">
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Types</h1>
                 <div class="flex gap-2">
-                    <a href="?action=list" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] <?php echo $action == 'list' ? 'bg-[#f0f0f0]' : ''; ?>">
-                        <i class="fa-regular fa-list mr-1 text-[#6e6e6e]"></i>List
-                    </a>
-                    <a href="?action=create" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] <?php echo $action == 'create' ? 'bg-[#f0f0f0]' : ''; ?>">
-                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i>Create
-                    </a>
-                    <a href="?action=stats" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] <?php echo $action == 'stats' ? 'bg-[#f0f0f0]' : ''; ?>">
+                    <button onclick="openCreateModal()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i>New Type
+                    </button>
+                    <button onclick="exportToCSV()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i>Export
+                    </button>
+                    <button onclick="printTable()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
+                    </button>
+                    <a href="?action=stats" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                         <i class="fa-regular fa-chart-bar mr-1 text-[#6e6e6e]"></i>Stats
                     </a>
                 </div>
@@ -352,12 +535,13 @@ include './sidebar.php';
         </div>
 
         <div class="p-8">
-            <!-- Flash Message -->
+            <!-- Flash Message (will be converted to toast) -->
             <?php if ($flashMessage): ?>
-                <div class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e]">
-                    <i class="fa-regular <?php echo $flashType == 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'; ?> mr-2 text-[#4a4a4a]"></i>
-                    <?php echo htmlspecialchars($flashMessage); ?>
-                </div>
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        showToast('<?php echo $flashMessage; ?>', '<?php echo $flashType; ?>');
+                    });
+                </script>
             <?php endif; ?>
 
             <?php
@@ -372,14 +556,36 @@ include './sidebar.php';
             <?php
             endif;
 
-            // List all document types
+            // LIST ALL DOCUMENT TYPES
             if ($action == 'list'):
-                $types = getAllDocumentTypes();
             ?>
-                <!-- Search -->
-                <div class="mb-4">
-                    <input type="text" id="searchInput" placeholder="Search document types..."
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                <!-- Search and Filter Bar -->
+                <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
+                    <div class="flex flex-wrap gap-3">
+                        <div class="flex-1 min-w-[300px]">
+                            <div class="relative">
+                                <input type="text" id="searchInput" placeholder="Search by name or description..."
+                                    value="<?php echo htmlspecialchars($filter); ?>"
+                                    class="w-full px-3 py-2 pl-10 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-[#9e9e9e] text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select id="itemsPerPage" class="items-per-page" onchange="changeItemsPerPage()">
+                                <option value="5" <?php echo $limit == 5 ? 'selected' : ''; ?>>5 per page</option>
+                                <option value="10" <?php echo $limit == 10 ? 'selected' : ''; ?>>10 per page</option>
+                                <option value="25" <?php echo $limit == 25 ? 'selected' : ''; ?>>25 per page</option>
+                                <option value="50" <?php echo $limit == 50 ? 'selected' : ''; ?>>50 per page</option>
+                                <option value="100" <?php echo $limit == 100 ? 'selected' : ''; ?>>100 per page</option>
+                            </select>
+                            <button onclick="applyFilter()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                Search
+                            </button>
+                            <button onclick="clearFilter()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Table -->
@@ -387,25 +593,50 @@ include './sidebar.php';
                     <table id="typesTable">
                         <thead>
                             <tr class="bg-[#fafafa]">
-                                <th class="text-xs">ID</th>
-                                <th class="text-xs">Type Name</th>
-                                <th class="text-xs">Description</th>
-                                <th class="text-xs">Documents</th>
-                                <th class="text-xs">Created</th>
-                                <th class="text-xs">Actions</th>
+                                <th onclick="sortTable('id')" class="<?php echo $sort_by == 'id' ? 'active-sort' : ''; ?>">
+                                    ID
+                                    <?php if ($sort_by == 'id'): ?>
+                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
+                                    <?php endif; ?>
+                                </th>
+                                <th onclick="sortTable('type_name')" class="<?php echo $sort_by == 'type_name' ? 'active-sort' : ''; ?>">
+                                    Type Name
+                                    <?php if ($sort_by == 'type_name'): ?>
+                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
+                                    <?php endif; ?>
+                                </th>
+                                <th onclick="sortTable('description')" class="<?php echo $sort_by == 'description' ? 'active-sort' : ''; ?>">
+                                    Description
+                                    <?php if ($sort_by == 'description'): ?>
+                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
+                                    <?php endif; ?>
+                                </th>
+                                <th onclick="sortTable('document_count')" class="<?php echo $sort_by == 'document_count' ? 'active-sort' : ''; ?>">
+                                    Documents
+                                    <?php if ($sort_by == 'document_count'): ?>
+                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
+                                    <?php endif; ?>
+                                </th>
+                                <th onclick="sortTable('created_at')" class="<?php echo $sort_by == 'created_at' ? 'active-sort' : ''; ?>">
+                                    Created
+                                    <?php if ($sort_by == 'created_at'): ?>
+                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
+                                    <?php endif; ?>
+                                </th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="tableBody">
                             <?php if (empty($types)): ?>
                                 <tr>
                                     <td colspan="6" class="text-sm text-[#6e6e6e] text-center py-8">
                                         No document types found.
-                                        <a href="?action=create" class="text-[#1e1e1e] underline">Create one</a>.
+                                        <button onclick="openCreateModal()" class="text-[#1e1e1e] underline">Create one</button>.
                                     </td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($types as $type): ?>
-                                    <tr class="hover:bg-[#fafafa]">
+                                    <tr class="hover:bg-[#fafafa]" id="row-<?php echo $type['id']; ?>">
                                         <td class="text-sm text-[#6e6e6e]"><?php echo $type['id']; ?></td>
                                         <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
                                         <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
@@ -413,13 +644,16 @@ include './sidebar.php';
                                         <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($type['created_at'])); ?></td>
                                         <td class="text-sm">
                                             <div class="flex gap-2">
-                                                <a href="?action=view&id=<?php echo $type['id']; ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                                                <!-- View Action -->
+                                                <button onclick="viewType(<?php echo $type['id']; ?>)" class="text-[#9e9e9e] hover:text-[#1e1e1e] action-btn p-1" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
-                                                </a>
-                                                <a href="?action=edit&id=<?php echo $type['id']; ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                                                </button>
+                                                <!-- Edit Action -->
+                                                <button onclick="editType(<?php echo $type['id']; ?>)" class="text-[#9e9e9e] hover:text-[#1e1e1e] action-btn p-1" title="Edit">
                                                     <i class="fa-regular fa-pen-to-square"></i>
-                                                </a>
-                                                <button onclick="confirmDelete(<?php echo $type['id']; ?>, '<?php echo htmlspecialchars($type['type_name']); ?>')" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                                                </button>
+                                                <!-- Delete Action -->
+                                                <button onclick="confirmDelete(<?php echo $type['id']; ?>, '<?php echo htmlspecialchars($type['type_name']); ?>')" class="text-[#9e9e9e] hover:text-[#1e1e1e] action-btn p-1" title="Delete">
                                                     <i class="fa-regular fa-trash-can"></i>
                                                 </button>
                                             </div>
@@ -431,180 +665,71 @@ include './sidebar.php';
                     </table>
                 </div>
 
-            <?php
-            // Create new document type
-            elseif ($action == 'create'):
-            ?>
-                <div class="max-w-lg">
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-6">
-                        <h2 class="text-base font-medium text-[#1e1e1e] mb-4">Create New Document Type</h2>
+                <!-- Pagination -->
+                <?php if ($totalPages > 0): ?>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-4">
+                        <div class="text-sm text-[#6e6e6e]">
+                            Showing <?php echo ($offset + 1); ?> to <?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> records
+                        </div>
 
-                        <form method="POST">
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Type Name *</label>
-                                    <input type="text" name="type_name" required
-                                        placeholder="e.g., Legislative Documents"
-                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                                </div>
+                        <div class="pagination">
+                            <!-- First Page -->
+                            <button onclick="goToPage(1)" class="pagination-item <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?>>
+                                <i class="fa-solid fa-chevrons-left"></i>
+                            </button>
 
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
-                                    <textarea name="description" rows="4"
-                                        placeholder="Optional description"
-                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"></textarea>
-                                </div>
-                            </div>
+                            <!-- Previous Page -->
+                            <button onclick="goToPage(<?php echo $page - 1; ?>)" class="pagination-item <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?>>
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
 
-                            <div class="flex gap-3 mt-6">
-                                <button type="submit" name="create" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                                    Create
-                                </button>
-                                <a href="?action=list" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    Cancel
-                                </a>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                            <!-- Page Numbers -->
+                            <?php
+                            $startPage = max(1, $page - 2);
+                            $endPage = min($totalPages, $page + 2);
 
-            <?php
-            // Edit document type
-            elseif ($action == 'edit' && isset($_GET['id'])):
-                $type = getDocumentTypeById($_GET['id']);
-                if (!$type):
-                    setFlashMessage('danger', 'Document type not found!');
-                    header('Location: document_types.php?action=list');
-                    exit();
-                endif;
-            ?>
-                <div class="max-w-lg">
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-6">
-                        <h2 class="text-base font-medium text-[#1e1e1e] mb-4">Edit Document Type</h2>
+                            if ($startPage > 1) {
+                                echo '<button onclick="goToPage(1)" class="pagination-item">1</button>';
+                                if ($startPage > 2) {
+                                    echo '<span class="pagination-item disabled">...</span>';
+                                }
+                            }
 
-                        <form method="POST">
-                            <input type="hidden" name="id" value="<?php echo $type['id']; ?>">
+                            for ($i = $startPage; $i <= $endPage; $i++) {
+                                $activeClass = $i == $page ? 'active' : '';
+                                echo '<button onclick="goToPage(' . $i . ')" class="pagination-item ' . $activeClass . '">' . $i . '</button>';
+                            }
 
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Type Name *</label>
-                                    <input type="text" name="type_name" required
-                                        value="<?php echo htmlspecialchars($type['type_name']); ?>"
-                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                                </div>
+                            if ($endPage < $totalPages) {
+                                if ($endPage < $totalPages - 1) {
+                                    echo '<span class="pagination-item disabled">...</span>';
+                                }
+                                echo '<button onclick="goToPage(' . $totalPages . ')" class="pagination-item">' . $totalPages . '</button>';
+                            }
+                            ?>
 
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
-                                    <textarea name="description" rows="4"
-                                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"><?php echo htmlspecialchars($type['description'] ?? ''); ?></textarea>
-                                </div>
-                            </div>
+                            <!-- Next Page -->
+                            <button onclick="goToPage(<?php echo $page + 1; ?>)" class="pagination-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?>>
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
 
-                            <div class="flex gap-3 mt-6">
-                                <button type="submit" name="update" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                                    Update
-                                </button>
-                                <a href="?action=list" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    Cancel
-                                </a>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-            <?php
-            // View single document type
-            elseif ($action == 'view' && isset($_GET['id'])):
-                $type = getDocumentTypeById($_GET['id']);
-                if (!$type):
-                    setFlashMessage('danger', 'Document type not found!');
-                    header('Location: document_types.php?action=list');
-                    exit();
-                endif;
-
-                $documents = getDocumentsByType($type['id']);
-            ?>
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Type Details -->
-                    <div class="lg:col-span-1">
-                        <div class="bg-white border border-[#e5e5e5] rounded-md p-6">
-                            <h2 class="text-base font-medium text-[#1e1e1e] mb-4">Type Details</h2>
-
-                            <div class="space-y-3">
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">ID</p>
-                                    <p class="text-sm text-[#1e1e1e]"><?php echo $type['id']; ?></p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Name</p>
-                                    <p class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Description</p>
-                                    <p class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? 'No description'); ?></p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Created</p>
-                                    <p class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y g:i a', strtotime($type['created_at'])); ?></p>
-                                </div>
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Documents</p>
-                                    <p class="text-sm text-[#1e1e1e]"><?php echo count($documents); ?></p>
-                                </div>
-                            </div>
-
-                            <div class="flex gap-2 mt-6">
-                                <a href="?action=edit&id=<?php echo $type['id']; ?>" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-pen-to-square mr-1"></i>Edit
-                                </a>
-                                <button onclick="confirmDelete(<?php echo $type['id']; ?>, '<?php echo htmlspecialchars($type['type_name']); ?>')" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-trash-can mr-1"></i>Delete
-                                </button>
-                                <a href="?action=list" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                    <i class="fa-regular fa-arrow-left mr-1"></i>Back
-                                </a>
-                            </div>
+                            <!-- Last Page -->
+                            <button onclick="goToPage(<?php echo $totalPages; ?>)" class="pagination-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?>>
+                                <i class="fa-solid fa-chevrons-right"></i>
+                            </button>
                         </div>
                     </div>
-
-                    <!-- Documents List -->
-                    <div class="lg:col-span-2">
-                        <div class="bg-white border border-[#e5e5e5] rounded-md p-6">
-                            <h2 class="text-base font-medium text-[#1e1e1e] mb-4">Documents of this Type</h2>
-
-                            <?php if (empty($documents)): ?>
-                                <p class="text-sm text-[#6e6e6e] text-center py-8">No documents of this type.</p>
-                            <?php else: ?>
-                                <div class="space-y-2">
-                                    <?php foreach ($documents as $doc): ?>
-                                        <div class="p-3 border border-[#e5e5e5] rounded-md hover:bg-[#fafafa]">
-                                            <div class="flex justify-between items-start">
-                                                <div>
-                                                    <p class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($doc['document_name']); ?></p>
-                                                    <p class="text-xs text-[#6e6e6e] mt-1">Origin: <?php echo htmlspecialchars($doc['origin']); ?> • Copies: <?php echo $doc['copies_received']; ?></p>
-                                                </div>
-                                                <p class="text-xs text-[#6e6e6e]"><?php echo date('M j, Y', strtotime($doc['date_received'])); ?></p>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
+                <?php endif; ?>
 
             <?php
-            // Statistics
+            // STATISTICS
             elseif ($action == 'stats'):
-                $types = getAllDocumentTypes();
-                $totalTypes = count($types);
+                $totalTypes = count($stats_types);
                 $totalDocuments = 0;
                 $usedTypes = 0;
                 $unusedTypes = 0;
 
-                foreach ($types as $type) {
+                foreach ($stats_types as $type) {
                     $totalDocuments += $type['document_count'];
                     if ($type['document_count'] > 0) {
                         $usedTypes++;
@@ -649,7 +774,7 @@ include './sidebar.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($types as $type): ?>
+                            <?php foreach ($stats_types as $type): ?>
                                 <tr class="hover:bg-[#fafafa]">
                                     <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
                                     <td class="text-sm text-[#1e1e1e]"><?php echo $type['document_count']; ?></td>
@@ -671,64 +796,460 @@ include './sidebar.php';
                         </tbody>
                     </table>
                 </div>
+
+                <div class="mt-4">
+                    <a href="?action=list" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-solid fa-arrow-left mr-1"></i>Back to List
+                    </a>
+                </div>
             <?php endif; ?>
         </div>
     </main>
 
+    <!-- Create/Edit Modal -->
+    <div id="typeModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal" style="display: none;">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
+            <h3 id="modalTitle" class="text-base font-medium text-[#1e1e1e] mb-4">Create Document Type</h3>
+            <form id="typeForm" onsubmit="return false;">
+                <input type="hidden" id="typeId" name="id">
+
+                <div class="mb-4">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Type Name *</label>
+                    <input type="text" id="typeName" name="type_name" required
+                        placeholder="e.g., Legislative Documents"
+                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
+                    <textarea id="typeDescription" name="description" rows="4"
+                        placeholder="Optional description"
+                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="saveType()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-solid fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Modal -->
+    <div id="viewModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal" style="display: none;">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-5">
+            <h3 class="text-base font-medium text-[#1e1e1e] mb-4">Document Type Details</h3>
+
+            <div id="viewContent" class="space-y-4">
+                <!-- Filled by JavaScript -->
+            </div>
+
+            <div class="flex justify-end gap-2 mt-4">
+                <button onclick="closeViewModal()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
+    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal" style="display: none;">
         <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
             <h3 class="text-base font-medium text-[#1e1e1e] mb-2">Confirm Delete</h3>
             <p class="text-sm text-[#6e6e6e] mb-4">Are you sure you want to delete <span id="deleteTypeName" class="font-medium text-[#1e1e1e]"></span>?</p>
             <p class="text-xs text-[#9e9e9e] mb-6">This action cannot be undone.</p>
 
             <div class="flex justify-end gap-2">
-                <button onclick="closeModal()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                <button onclick="closeDeleteModal()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                     Cancel
                 </button>
-                <a href="#" id="confirmDeleteBtn" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                <button onclick="deleteType()" id="confirmDeleteBtn" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                     Delete
-                </a>
+                </button>
             </div>
         </div>
     </div>
 
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script>
-        // Delete confirmation
-        function confirmDelete(id, name) {
-            document.getElementById('deleteTypeName').textContent = name;
-            document.getElementById('confirmDeleteBtn').href = '?action=delete&id=' + id;
-            document.getElementById('deleteModal').style.display = 'flex';
+        // Current delete ID
+        let currentDeleteId = null;
+        let currentEditId = null;
+
+        // Toast notification function
+        function showToast(message, type = 'success') {
+            const backgroundColor = type === 'success' ? '#10b981' : '#ef4444';
+
+            Toastify({
+                text: message,
+                duration: 3000,
+                close: true,
+                gravity: "top",
+                position: "right",
+                backgroundColor: backgroundColor,
+                stopOnFocus: true,
+                className: "toastify"
+            }).showToast();
+        }
+
+        // Modal functions
+        function openCreateModal() {
+            document.getElementById('modalTitle').textContent = 'Create Document Type';
+            document.getElementById('typeId').value = '';
+            document.getElementById('typeName').value = '';
+            document.getElementById('typeDescription').value = '';
+            document.getElementById('typeModal').style.display = 'flex';
+        }
+
+        function editType(id) {
+            currentEditId = id;
+
+            // Fetch type data
+            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'ajax_action=get_type&id=' + id
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('modalTitle').textContent = 'Edit Document Type';
+                        document.getElementById('typeId').value = data.type.id;
+                        document.getElementById('typeName').value = data.type.type_name;
+                        document.getElementById('typeDescription').value = data.type.description || '';
+                        document.getElementById('typeModal').style.display = 'flex';
+                    } else {
+                        showToast(data.message, 'danger');
+                    }
+                });
+        }
+
+        function viewType(id) {
+            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'ajax_action=get_type&id=' + id
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const type = data.type;
+                        const documents = data.documents;
+
+                        let documentsHtml = '';
+                        if (documents.length > 0) {
+                            documentsHtml = documents.map(doc => `
+                            <div class="p-2 border border-[#e5e5e5] rounded-md">
+                                <p class="text-sm font-medium">${escapeHtml(doc.document_name)}</p>
+                                <p class="text-xs text-[#6e6e6e]">Origin: ${escapeHtml(doc.origin)} • Copies: ${doc.copies_received}</p>
+                            </div>
+                        `).join('');
+                        } else {
+                            documentsHtml = '<p class="text-sm text-[#6e6e6e]">No documents of this type.</p>';
+                        }
+
+                        document.getElementById('viewContent').innerHTML = `
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-xs text-[#6e6e6e] uppercase">ID</p>
+                                <p class="text-sm">${type.id}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-[#6e6e6e] uppercase">Name</p>
+                                <p class="text-sm font-medium">${escapeHtml(type.type_name)}</p>
+                            </div>
+                            <div class="col-span-2">
+                                <p class="text-xs text-[#6e6e6e] uppercase">Description</p>
+                                <p class="text-sm">${escapeHtml(type.description || 'No description')}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-[#6e6e6e] uppercase">Created</p>
+                                <p class="text-sm">${new Date(type.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-[#6e6e6e] uppercase">Documents</p>
+                                <p class="text-sm">${documents.length}</p>
+                            </div>
+                            <div class="col-span-2">
+                                <p class="text-xs text-[#6e6e6e] uppercase mb-2">Documents of this Type</p>
+                                <div class="space-y-2 max-h-60 overflow-y-auto">
+                                    ${documentsHtml}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                        document.getElementById('viewModal').style.display = 'flex';
+                    } else {
+                        showToast(data.message, 'danger');
+                    }
+                });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function closeModal() {
+            document.getElementById('typeModal').style.display = 'none';
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewModal').style.display = 'none';
+        }
+
+        function closeDeleteModal() {
             document.getElementById('deleteModal').style.display = 'none';
+            currentDeleteId = null;
         }
 
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('deleteModal');
-            if (event.target == modal) {
-                closeModal();
+        function saveType() {
+            const id = document.getElementById('typeId').value;
+            const typeName = document.getElementById('typeName').value;
+            const description = document.getElementById('typeDescription').value;
+
+            if (!typeName.trim()) {
+                showToast('Document type name is required!', 'danger');
+                return;
             }
+
+            const action = id ? 'update' : 'create';
+            const formData = `ajax_action=${action}&type_name=${encodeURIComponent(typeName)}&description=${encodeURIComponent(description)}${id ? '&id=' + id : ''}`;
+
+            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeModal();
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        showToast(data.message, 'danger');
+                    }
+                });
         }
 
-        // ESC key to close modal
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeModal();
+        function confirmDelete(id, name) {
+            currentDeleteId = id;
+            document.getElementById('deleteTypeName').textContent = name;
+            document.getElementById('deleteModal').style.display = 'flex';
+        }
+
+        function deleteType() {
+            if (!currentDeleteId) return;
+
+            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'ajax_action=delete&id=' + currentDeleteId
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeDeleteModal();
+                        // Remove row from table
+                        const row = document.getElementById('row-' + currentDeleteId);
+                        if (row) {
+                            row.style.transition = 'opacity 0.3s';
+                            row.style.opacity = '0';
+                            setTimeout(() => {
+                                row.remove();
+                                // Check if table is empty
+                                if (document.querySelectorAll('#tableBody tr').length === 0) {
+                                    location.reload();
+                                }
+                            }, 300);
+                        } else {
+                            location.reload();
+                        }
+                    } else {
+                        showToast(data.message, 'danger');
+                        closeDeleteModal();
+                    }
+                });
+        }
+
+        // Sorting
+        function sortTable(column) {
+            const currentSort = '<?php echo $sort_by; ?>';
+            const currentOrder = '<?php echo $sort_order; ?>';
+            const filter = '<?php echo $filter; ?>';
+            const limit = '<?php echo $limit; ?>';
+
+            let newOrder = 'ASC';
+            if (column === currentSort) {
+                newOrder = currentOrder === 'ASC' ? 'DESC' : 'ASC';
+            }
+
+            window.location.href = `?action=list&sort_by=${column}&sort_order=${newOrder}&filter=${encodeURIComponent(filter)}&limit=${limit}`;
+        }
+
+        // Filtering
+        function applyFilter() {
+            const filter = document.getElementById('searchInput').value;
+            const limit = document.getElementById('itemsPerPage').value;
+            window.location.href = `?action=list&sort_by=<?php echo $sort_by; ?>&sort_order=<?php echo $sort_order; ?>&filter=${encodeURIComponent(filter)}&limit=${limit}`;
+        }
+
+        function clearFilter() {
+            document.getElementById('searchInput').value = '';
+            const limit = document.getElementById('itemsPerPage').value;
+            window.location.href = `?action=list&limit=${limit}`;
+        }
+
+        // Pagination
+        function goToPage(page) {
+            const filter = '<?php echo $filter; ?>';
+            const sortBy = '<?php echo $sort_by; ?>';
+            const sortOrder = '<?php echo $sort_order; ?>';
+            const limit = '<?php echo $limit; ?>';
+
+            window.location.href = `?action=list&page=${page}&sort_by=${sortBy}&sort_order=${sortOrder}&filter=${encodeURIComponent(filter)}&limit=${limit}`;
+        }
+
+        function changeItemsPerPage() {
+            const limit = document.getElementById('itemsPerPage').value;
+            const filter = document.getElementById('searchInput').value;
+            window.location.href = `?action=list&filter=${encodeURIComponent(filter)}&limit=${limit}`;
+        }
+
+        // Export to CSV
+        function exportToCSV() {
+            const rows = [];
+            const headers = ['ID', 'Type Name', 'Description', 'Document Count', 'Created At'];
+            rows.push(headers.join(','));
+
+            <?php foreach ($types as $type): ?>
+                rows.push([
+                    '<?php echo $type['id']; ?>',
+                    '"<?php echo htmlspecialchars($type['type_name']); ?>"',
+                    '"<?php echo htmlspecialchars($type['description'] ?? ''); ?>"',
+                    '<?php echo $type['document_count']; ?>',
+                    '"<?php echo $type['created_at']; ?>"'
+                ].join(','));
+            <?php endforeach; ?>
+
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], {
+                type: 'text/csv'
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `document_types_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+
+            showToast('Export completed successfully!', 'success');
+        }
+
+        // Print table
+        function printTable() {
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Document Types</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; }
+                        h1 { font-size: 24px; margin-bottom: 20px; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th { background-color: #f2f2f2; text-align: left; padding: 12px; font-size: 12px; }
+                        td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 14px; }
+                        .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+                        .date { color: #666; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>Document Types</h1>
+                        <div class="date">Generated: ${new Date().toLocaleString()}</div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type Name</th>
+                                <th>Description</th>
+                                <th>Documents</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($types as $type): ?>
+                            <tr>
+                                <td><?php echo $type['id']; ?></td>
+                                <td><?php echo htmlspecialchars($type['type_name']); ?></td>
+                                <td><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
+                                <td><?php echo $type['document_count']; ?></td>
+                                <td><?php echo date('M j, Y', strtotime($type['created_at'])); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+
+            showToast('Print dialog opened', 'success');
+        }
+
+        // Enter key for search
+        document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                applyFilter();
             }
         });
 
-        // Search functionality
-        document.getElementById('searchInput')?.addEventListener('keyup', function() {
-            const searchText = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#typesTable tbody tr');
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const typeModal = document.getElementById('typeModal');
+            const viewModal = document.getElementById('viewModal');
+            const deleteModal = document.getElementById('deleteModal');
 
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchText) ? '' : 'none';
-            });
+            if (event.target == typeModal) {
+                closeModal();
+            }
+            if (event.target == viewModal) {
+                closeViewModal();
+            }
+            if (event.target == deleteModal) {
+                closeDeleteModal();
+            }
+        }
+
+        // ESC key to close modals
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeModal();
+                closeViewModal();
+                closeDeleteModal();
+            }
         });
     </script>
 </body>
