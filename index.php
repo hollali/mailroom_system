@@ -428,7 +428,7 @@ try {
                         <a href="./list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                             <i class="fa-solid fa-file mr-1 text-[#6e6e6e]"></i> Documents
                         </a>
-                        <a href="./newspapers.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <a href="./newspaper_categories.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                             <i class="fa-solid fa-newspaper mr-1 text-[#6e6e6e]"></i> Newspapers
                         </a>
                     </div>
