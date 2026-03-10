@@ -319,12 +319,12 @@ if (isset($_SESSION['toast'])) {
                     <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across departments</p>
                 </div>
                 <div class="flex gap-2">
-                    <a href="document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                    <a href="./document_type.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                         <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i> Manage Types
                     </a>
-                    <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                    <!--<a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                         <i class="fa-regular fa-folder mr-1 text-[#6e6e6e]"></i> Documents
-                    </a>
+                    </a>-->
                 </div>
             </div>
         </div>

@@ -1139,7 +1139,7 @@ include './sidebar.php';
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Available Newspapers</h3>
                 <button type="button" onclick="closeAvailableModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
@@ -1196,7 +1196,7 @@ include './sidebar.php';
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Add Newspaper</h3>
                 <button type="button" onclick="closeAddModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
@@ -1271,7 +1271,7 @@ include './sidebar.php';
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Update Available Copies</h3>
                 <button type="button" onclick="closeUpdateModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
             <form method="POST" action="list.php">
@@ -1305,7 +1305,7 @@ include './sidebar.php';
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Add Category</h3>
                 <button type="button" onclick="closeAddCategoryModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
@@ -1347,7 +1347,7 @@ include './sidebar.php';
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-base font-medium text-[#1e1e1e]">Distribute Newspapers</h3>
                 <button type="button" onclick="closeDistributeModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 
@@ -1447,7 +1447,7 @@ include './sidebar.php';
                             Cancel
                         </button>
                         <button type="submit" name="distribute_submit"
-                            class="px-3 py-1.5 text-sm border border-transparent rounded-md bg-green-600 hover:bg-green-700 text-white"
+                            class="px-3 py-1.5 text-sm border border-transparent rounded-md bg-black  text-white"
                             onclick="return validateDistribution()">
                             Distribute (1 copy each)
                         </button>
