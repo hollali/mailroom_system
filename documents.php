@@ -192,6 +192,79 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'bulk_distribute') 
     exit();
 }
 
+// Handle add document via AJAX
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
+    header('Content-Type: application/json');
+
+    $serial_number = trim($_POST['serial_number']);
+    $document_name = trim($_POST['document_name']);
+    $type_id = (int)$_POST['type_id'];
+    $origin = trim($_POST['origin']);
+    $copies_received = (int)$_POST['copies_received'];
+    $date_received = $_POST['date_received'];
+
+    // Validate inputs
+    if (empty($document_name)) {
+        echo json_encode(['success' => false, 'message' => 'Document name is required']);
+        exit();
+    }
+
+    if ($type_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Please select a document type']);
+        exit();
+    }
+
+    if ($copies_received < 1) {
+        echo json_encode(['success' => false, 'message' => 'Number of copies must be at least 1']);
+        exit();
+    }
+
+    if (empty($date_received)) {
+        echo json_encode(['success' => false, 'message' => 'Date received is required']);
+        exit();
+    }
+
+    // Generate serial number if not provided
+    if (empty($serial_number)) {
+        $prefix = 'DOC';
+        $year = date('Y');
+        $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+        $serial_number = $prefix . $year . $random;
+    }
+
+    // Check if serial number already exists
+    $check_stmt = $conn->prepare("SELECT id FROM documents WHERE serial_number = ?");
+    $check_stmt->bind_param("s", $serial_number);
+    $check_stmt->execute();
+    $check_result = $check_stmt->get_result();
+
+    if ($check_result->num_rows > 0) {
+        echo json_encode(['success' => false, 'message' => 'Serial number already exists']);
+        $check_stmt->close();
+        exit();
+    }
+    $check_stmt->close();
+
+    // Insert new document
+    $insert_stmt = $conn->prepare("INSERT INTO documents 
+        (serial_number, document_name, type_id, origin, copies_received, date_received) 
+        VALUES (?, ?, ?, ?, ?, ?)");
+    $insert_stmt->bind_param("ssissi", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received);
+
+    if ($insert_stmt->execute()) {
+        $new_id = $conn->insert_id;
+        echo json_encode([
+            'success' => true,
+            'message' => 'Document added successfully',
+            'document_id' => $new_id
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $insert_stmt->error]);
+    }
+    $insert_stmt->close();
+    exit();
+}
+
 // Get all documents with their current stock and distribution info
 $sql = "SELECT 
             d.*, 
@@ -262,7 +335,7 @@ if ($stats_result) {
     $stats = $stats_result->fetch_assoc();
 }
 
-// Get document types for filter
+// Get document types for filter and add form
 $types_result = $conn->query("SELECT id, type_name FROM document_types ORDER BY type_name");
 $document_types = [];
 if ($types_result) {
@@ -531,6 +604,51 @@ if (isset($_SESSION['toast'])) {
             opacity: 0.5;
             cursor: not-allowed;
         }
+
+        /* Floating Action Button */
+        .fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background-color: #1e1e1e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 100;
+            border: none;
+        }
+
+        .fab:hover {
+            background-color: #2d2d2d;
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .fab-tooltip {
+            position: absolute;
+            right: 70px;
+            background-color: #1e1e1e;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .fab:hover .fab-tooltip {
+            opacity: 1;
+        }
     </style>
 </head>
 
@@ -668,7 +786,7 @@ if (isset($_SESSION['toast'])) {
                         </button>
 
                         <button onclick="toggleBulkMode()" id="bulkModeBtn" class="px-4 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i>
+                            <i class="fa-regular fa-layer-group mr-1 text-[#6e6e6e]"></i>
                             Bulk Mode
                         </button>
                     </div>
@@ -684,7 +802,7 @@ if (isset($_SESSION['toast'])) {
                                 Clear
                             </button>
                             <button onclick="processBulkDistribution()" class="px-3 py-1 text-sm bg-white text-[#1e1e1e] rounded-md hover:bg-[#f5f5f4]">
-                                <i class="fa-solid fa-share-from-square mr-1"></i>
+                                <i class="fa-regular fa-share-from-square mr-1"></i>
                                 Distribute Selected
                             </button>
                             <button onclick="toggleBulkMode()" class="px-3 py-1 text-sm border border-white text-white rounded-md hover:bg-white hover:text-[#1e1e1e]">
@@ -803,7 +921,7 @@ if (isset($_SESSION['toast'])) {
                                                         </button>
                                                     <?php endif; ?>
 
-                                                    <a href="distribution.php?document_id=<?php echo $doc['id']; ?>" class="action-btn"
+                                                    <a href="list.php?search=<?php echo urlencode($doc['document_name']); ?>"
                                                         class="action-btn" title="View Details">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </a>
@@ -816,7 +934,7 @@ if (isset($_SESSION['toast'])) {
                                         <td colspan="9" class="text-center py-8 text-sm text-[#6e6e6e]">
                                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
                                             No documents found.
-                                            <a href="distribution.php" class="text-[#1e1e1e] underline">Add your first document</a>
+                                            <button onclick="openAddDocumentModal()" class="text-[#1e1e1e] underline">Add your first document</button>
                                         </td>
                                     </tr>
                                 <?php endif; ?>
@@ -855,6 +973,12 @@ if (isset($_SESSION['toast'])) {
             </div>
         </main>
     </div>
+
+    <!-- Floating Action Button -->
+    <button onclick="openAddDocumentModal()" class="fab" title="Add New Document">
+        <i class="fa-solid fa-plus"></i>
+        <span class="fab-tooltip">Add Document</span>
+    </button>
 
     <!-- Quick Distribute Modal -->
     <div id="distributeModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
@@ -958,6 +1082,84 @@ if (isset($_SESSION['toast'])) {
         </div>
     </div>
 
+    <!-- Add Document Modal -->
+    <div id="addDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Add New Document</h3>
+                <button onclick="closeAddDocumentModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="addDocumentForm" onsubmit="return false;">
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Name <span class="text-red-400">*</span></label>
+                        <input type="text" id="add_document_name" required
+                            placeholder="Enter document name"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                            autocomplete="off">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Type <span class="text-red-400">*</span></label>
+                        <select id="add_type_id" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                            <option value="">Select Type</option>
+                            <?php foreach ($document_types as $type): ?>
+                                <option value="<?php echo $type['id']; ?>">
+                                    <?php echo htmlspecialchars($type['type_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Serial Number</label>
+                        <input type="text" id="add_serial_number"
+                            placeholder="Leave empty for auto-generation"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                            autocomplete="off">
+                        <p class="text-xs text-[#6e6e6e] mt-1">Auto-generated if left empty (e.g., DOC202312345)</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Origin</label>
+                        <input type="text" id="add_origin"
+                            placeholder="e.g., Courier, Mail, Internal"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                            autocomplete="off">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
+                        <input type="number" id="add_copies_received" required min="1" value="1"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received <span class="text-red-400">*</span></label>
+                        <input type="date" id="add_date_received" required
+                            value="<?php echo date('Y-m-d'); ?>"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-5">
+                    <button type="button" onclick="closeAddDocumentModal()"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="submitAddDocument()" id="addDocumentSubmitBtn"
+                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                        <i class="fa-regular fa-floppy-disk mr-1"></i>
+                        Save Document
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast Container (for custom toasts) -->
     <div id="toastContainer"></div>
 
@@ -992,6 +1194,89 @@ if (isset($_SESSION['toast'])) {
                 showToast('<?php echo addslashes($toast['message']); ?>', '<?php echo $toast['type']; ?>');
             });
         <?php endif; ?>
+
+        // Add Document Modal Functions
+        function openAddDocumentModal() {
+            // Reset form
+            document.getElementById('add_document_name').value = '';
+            document.getElementById('add_type_id').value = '';
+            document.getElementById('add_serial_number').value = '';
+            document.getElementById('add_origin').value = '';
+            document.getElementById('add_copies_received').value = '1';
+            document.getElementById('add_date_received').value = '<?php echo date('Y-m-d'); ?>';
+
+            document.getElementById('addDocumentModal').style.display = 'flex';
+        }
+
+        function closeAddDocumentModal() {
+            document.getElementById('addDocumentModal').style.display = 'none';
+        }
+
+        function submitAddDocument() {
+            const document_name = document.getElementById('add_document_name').value.trim();
+            const type_id = document.getElementById('add_type_id').value;
+            const serial_number = document.getElementById('add_serial_number').value.trim();
+            const origin = document.getElementById('add_origin').value.trim();
+            const copies_received = parseInt(document.getElementById('add_copies_received').value);
+            const date_received = document.getElementById('add_date_received').value;
+
+            // Validation
+            if (!document_name) {
+                showToast('Please enter document name', 'warning');
+                return;
+            }
+
+            if (!type_id) {
+                showToast('Please select a document type', 'warning');
+                return;
+            }
+
+            if (!copies_received || copies_received < 1) {
+                showToast('Number of copies must be at least 1', 'warning');
+                return;
+            }
+
+            if (!date_received) {
+                showToast('Please select date received', 'warning');
+                return;
+            }
+
+            // Show loading state
+            const submitBtn = document.getElementById('addDocumentSubmitBtn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Saving...';
+            submitBtn.disabled = true;
+
+            // Submit via AJAX
+            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&serial_number=${encodeURIComponent(serial_number)}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeAddDocumentModal();
+
+                        // Reload the page after a short delay to show the new document
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showToast(data.message, 'error');
+                        submitBtn.innerHTML = originalText;
+                        submitBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred. Please try again.', 'error');
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
+                });
+        }
 
         // Distribute Modal Functions
         function openDistributeModal(id, name, available) {
@@ -1423,12 +1708,16 @@ if (isset($_SESSION['toast'])) {
         window.onclick = function(event) {
             const distributeModal = document.getElementById('distributeModal');
             const bulkModal = document.getElementById('bulkModal');
+            const addDocumentModal = document.getElementById('addDocumentModal');
 
             if (event.target == distributeModal) {
                 closeDistributeModal();
             }
             if (event.target == bulkModal) {
                 closeBulkModal();
+            }
+            if (event.target == addDocumentModal) {
+                closeAddDocumentModal();
             }
         }
 
@@ -1437,6 +1726,7 @@ if (isset($_SESSION['toast'])) {
             if (event.key === 'Escape') {
                 closeDistributeModal();
                 closeBulkModal();
+                closeAddDocumentModal();
             }
         });
     </script>
