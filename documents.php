@@ -786,7 +786,7 @@ if (isset($_SESSION['toast'])) {
                         </button>
 
                         <button onclick="toggleBulkMode()" id="bulkModeBtn" class="px-4 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            <i class="fa-regular fa-layer-group mr-1 text-[#6e6e6e]"></i>
+                            <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i>
                             Bulk Mode
                         </button>
                     </div>
@@ -794,7 +794,7 @@ if (isset($_SESSION['toast'])) {
                     <!-- Bulk Actions Bar (hidden by default) -->
                     <div id="bulkBar" class="mt-4 bg-[#1e1e1e] text-white rounded-md p-3 hidden items-center justify-between">
                         <div class="flex items-center gap-3">
-                            <i class="fa-regular fa-cubes"></i>
+                            <i class="fa-solid fa-cubes"></i>
                             <span id="selectedCount">0</span> document(s) selected
                         </div>
                         <div class="flex gap-2">
@@ -1075,7 +1075,7 @@ if (isset($_SESSION['toast'])) {
                 </button>
                 <button onclick="processBulkDistributionSubmit()" id="bulkSubmitBtn"
                     class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                    <i class="fa-regular fa-share-from-square mr-1"></i>
+                    <i class="fa-solid fa-share-from-square mr-1"></i>
                     Process Bulk Distribution
                 </button>
             </div>
