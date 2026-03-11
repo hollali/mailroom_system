@@ -80,6 +80,34 @@ if (isset($_POST['submit'])) {
     exit();
 }
 
+// Handle Delete Distribution
+if (isset($_GET['delete'])) {
+    $id = (int)$_GET['delete'];
+
+    $stmt = $conn->prepare("DELETE FROM document_distribution WHERE id = ?");
+    $stmt->bind_param("i", $id);
+
+    if ($stmt->execute()) {
+        $_SESSION['toast'] = [
+            'type' => 'success',
+            'message' => "Distribution record deleted successfully!"
+        ];
+    } else {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Error deleting record: " . $conn->error
+        ];
+    }
+    $stmt->close();
+
+    // Preserve any query parameters
+    $query_params = $_GET;
+    unset($query_params['delete']);
+    $redirect_url = 'distribution.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+    header('Location: ' . $redirect_url);
+    exit();
+}
+
 // Get all documents with their types
 $documents = $conn->query("
     SELECT d.*, dt.type_name as document_type 
@@ -268,6 +296,41 @@ if (isset($_SESSION['toast'])) {
             background-color: #3b82f6;
         }
 
+        /* Modal styles */
+        .modal {
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-content {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .newspaper-grid {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e5e5e5;
+            border-radius: 0.375rem;
+            padding: 0.5rem;
+        }
+
+        .action-btn {
+            color: #9e9e9e;
+            transition: color 0.2s;
+            margin: 0 0.25rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        .action-btn:hover {
+            color: #1e1e1e;
+        }
+
+        .delete-btn:hover {
+            color: #dc2626;
+        }
+
         @keyframes slideIn {
             from {
                 transform: translateX(100%);
@@ -301,6 +364,24 @@ if (isset($_SESSION['toast'])) {
                 width: 0%;
             }
         }
+
+        .new-distribution-btn {
+            background-color: #1e1e1e;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            font-size: 0.875rem;
+        }
+
+        .new-distribution-btn:hover {
+            background-color: #2d2d2d;
+        }
     </style>
 </head>
 
@@ -319,12 +400,13 @@ if (isset($_SESSION['toast'])) {
                     <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across departments</p>
                 </div>
                 <div class="flex gap-2">
-                    <a href="./document_type.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                    <button onclick="openDistributionModal()" class="new-distribution-btn">
+                        <i class="fa-regular fa-plus"></i>
+                        <span>New Distribution</span>
+                    </button>
+                    <a href="./document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                         <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i> Manage Types
                     </a>
-                    <!--<a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-regular fa-folder mr-1 text-[#6e6e6e]"></i> Documents
-                    </a>-->
                 </div>
             </div>
         </div>
@@ -382,145 +464,6 @@ if (isset($_SESSION['toast'])) {
                 </div>
             </div>
 
-            <!-- DISTRIBUTION FORM -->
-            <div class="bg-white border border-[#e5e5e5] rounded-md p-6 mb-8">
-                <h2 class="text-base font-medium text-[#1e1e1e] mb-4">New Distribution</h2>
-
-                <form method="POST" onsubmit="return validateForm()">
-
-                    <div class="grid grid-cols-2 gap-4 mb-4">
-
-                        <div>
-                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
-                                Document <span class="text-red-400">*</span>
-                            </label>
-                            <select name="document_id" id="documentSelect" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                                <option value="">-- Select Document --</option>
-
-                                <?php
-                                // Group documents by type
-                                $documents->data_seek(0);
-                                $grouped_documents = [];
-                                while ($doc = $documents->fetch_assoc()) {
-                                    $type_name = $doc['document_type'] ?? 'Uncategorized';
-                                    if (!isset($grouped_documents[$type_name])) {
-                                        $grouped_documents[$type_name] = [];
-                                    }
-                                    $grouped_documents[$type_name][] = $doc;
-                                }
-
-                                // Display documents grouped by type
-                                foreach ($grouped_documents as $type_name => $docs):
-                                ?>
-                                    <optgroup label="<?php echo htmlspecialchars($type_name); ?>" class="font-semibold bg-gray-50">
-                                        <?php foreach ($docs as $doc): ?>
-                                            <option value="<?php echo $doc['id']; ?>" data-copies="<?php echo $doc['copies_received'] ?? 0; ?>">
-                                                <?php echo htmlspecialchars($doc['document_name']); ?>
-                                                (Available: <?php echo $doc['copies_received'] ?? 0; ?>)
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </optgroup>
-                                <?php endforeach; ?>
-
-                                <!-- Show document types without documents -->
-                                <?php
-                                $document_types->data_seek(0);
-                                while ($type = $document_types->fetch_assoc()) {
-                                    $has_documents = false;
-                                    foreach ($grouped_documents as $type_name => $docs) {
-                                        if ($type_name == $type['type_name']) {
-                                            $has_documents = true;
-                                            break;
-                                        }
-                                    }
-                                    if (!$has_documents) {
-                                        echo '<optgroup label="' . htmlspecialchars($type['type_name']) . ' (No documents)" class="font-semibold bg-gray-50 text-gray-400">';
-                                        echo '<option value="" disabled>─ No documents available ─</option>';
-                                        echo '</optgroup>';
-                                    }
-                                }
-                                ?>
-                            </select>
-
-                            <div class="mt-2 flex gap-2 text-xs">
-                                <a href="list.php" target="_blank" class="text-[#6e6e6e] hover:text-[#1e1e1e] hover:underline flex items-center">
-                                    <i class="fa-regular fa-folder mr-1"></i> Manage Documents
-                                </a>
-                                <span class="text-[#e5e5e5]">|</span>
-                                <a href="document_types.php?action=create" target="_blank" class="text-[#6e6e6e] hover:text-[#1e1e1e] hover:underline flex items-center">
-                                    <i class="fa-regular fa-plus mr-1"></i> New Type
-                                </a>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
-                                Date Distributed <span class="text-red-400">*</span>
-                            </label>
-                            <input type="date" name="date_distributed" id="dateDistributed" required value="<?php echo date('Y-m-d'); ?>"
-                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                        </div>
-
-                    </div>
-
-                    <!-- MULTIPLE DISTRIBUTION ROWS -->
-                    <div class="mb-3">
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">
-                            Distribution Details <span class="text-red-400">*</span>
-                        </label>
-                    </div>
-
-                    <div id="distributionRows">
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                            <div>
-                                <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
-                                    class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                    autocomplete="off">
-                            </div>
-                            <div>
-                                <input type="text" name="recipient_name[]" placeholder="Recipient Name"
-                                    class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                    autocomplete="off">
-                            </div>
-                            <div class="flex gap-2">
-                                <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
-                                    class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                                <button type="button" onclick="removeRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
-                                    <i class="fa-regular fa-trash-can"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div class="flex gap-3 mb-4">
-                        <button type="button" onclick="addRow()"
-                            class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Row
-                        </button>
-
-                        <button type="button" onclick="addBulkRows()"
-                            class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Rows
-                        </button>
-                    </div>
-
-                    <div class="flex gap-3">
-                        <button type="submit" name="submit"
-                            class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                            Save Distribution
-                        </button>
-                        <button type="button" onclick="resetForm()"
-                            class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            Clear All
-                        </button>
-                    </div>
-
-                </form>
-            </div>
-
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
                 <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
@@ -570,7 +513,7 @@ if (isset($_SESSION['toast'])) {
                             if ($result && $result->num_rows > 0):
                                 while ($row = $result->fetch_assoc()):
                             ?>
-                                    <tr class="border-t text-sm hover:bg-[#fafafa]">
+                                    <tr class="border-t text-sm hover:bg-[#fafafa]" id="row-<?php echo $row['id']; ?>">
                                         <td class="p-3">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
                                                 class="text-[#1e1e1e] hover:underline font-medium">
@@ -599,15 +542,19 @@ if (isset($_SESSION['toast'])) {
                                         <td class="p-3">
                                             <div class="flex gap-2">
                                                 <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)"
-                                                    class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Details">
+                                                    class="action-btn" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
                                                 </button>
                                                 <?php if (!empty($row['type_id'])): ?>
-                                                    <a href="document_types.php?action=view&id=<?php echo $row['type_id']; ?>"
-                                                        class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Document Type">
+                                                    <!--<a href="document_type.php?action=view&id=<?/*php echo $row['type_id']; */ ?>"
+                                                        class="action-btn" title="View Document Type">
                                                         <i class="fa-solid fa-tags"></i>
-                                                    </a>
+                                                    </a>-->
                                                 <?php endif; ?>
+                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['document_name']); ?>', '<?php echo htmlspecialchars($row['recipient_name']); ?>')"
+                                                    class="action-btn delete-btn" title="Delete">
+                                                    <i class="fa-regular fa-trash-can"></i>
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -617,7 +564,7 @@ if (isset($_SESSION['toast'])) {
                                 ?>
                                 <tr>
                                     <td colspan="8" class="p-8 text-center text-sm text-[#6e6e6e]">
-                                        No distribution records found. Start by adding a new distribution.
+                                        No distribution records found. Click "New Distribution" to get started.
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -631,6 +578,151 @@ if (isset($_SESSION['toast'])) {
                     <span>Document Types: <?php echo $type_count; ?></span>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Distribution Modal -->
+    <div id="distributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-4xl p-6 modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">New Distribution</h2>
+                <button type="button" onclick="closeDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form method="POST" action="distribution.php" id="distributionForm" onsubmit="return validateForm()">
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
+                            Document <span class="text-red-400">*</span>
+                        </label>
+                        <select name="document_id" id="modalDocumentSelect" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                            <option value="">-- Select Document --</option>
+
+                            <?php
+                            // Group documents by type
+                            $documents->data_seek(0);
+                            $grouped_documents = [];
+                            while ($doc = $documents->fetch_assoc()) {
+                                $type_name = $doc['document_type'] ?? 'Uncategorized';
+                                if (!isset($grouped_documents[$type_name])) {
+                                    $grouped_documents[$type_name] = [];
+                                }
+                                $grouped_documents[$type_name][] = $doc;
+                            }
+
+                            // Display documents grouped by type
+                            foreach ($grouped_documents as $type_name => $docs):
+                            ?>
+                                <optgroup label="<?php echo htmlspecialchars($type_name); ?>" class="font-semibold bg-gray-50">
+                                    <?php foreach ($docs as $doc): ?>
+                                        <option value="<?php echo $doc['id']; ?>" data-copies="<?php echo $doc['copies_received'] ?? 0; ?>">
+                                            <?php echo htmlspecialchars($doc['document_name']); ?>
+                                            (Available: <?php echo $doc['copies_received'] ?? 0; ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php endforeach; ?>
+
+                            <!-- Show document types without documents -->
+                            <?php
+                            $document_types->data_seek(0);
+                            while ($type = $document_types->fetch_assoc()) {
+                                $has_documents = false;
+                                foreach ($grouped_documents as $type_name => $docs) {
+                                    if ($type_name == $type['type_name']) {
+                                        $has_documents = true;
+                                        break;
+                                    }
+                                }
+                                if (!$has_documents) {
+                                    echo '<optgroup label="' . htmlspecialchars($type['type_name']) . ' (No documents)" class="font-semibold bg-gray-50 text-gray-400">';
+                                    echo '<option value="" disabled>─ No documents available ─</option>';
+                                    echo '</optgroup>';
+                                }
+                            }
+                            ?>
+                        </select>
+
+                        <div class="mt-2 flex gap-2 text-xs">
+                            <a href="list.php" target="_blank" class="text-[#6e6e6e] hover:text-[#1e1e1e] hover:underline flex items-center">
+                                <i class="fa-regular fa-folder mr-1"></i> Manage Documents
+                            </a>
+                            <span class="text-[#e5e5e5]">|</span>
+                            <a href="document_types.php?action=create" target="_blank" class="text-[#6e6e6e] hover:text-[#1e1e1e] hover:underline flex items-center">
+                                <i class="fa-regular fa-plus mr-1"></i> New Type
+                            </a>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
+                            Date Distributed <span class="text-red-400">*</span>
+                        </label>
+                        <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                    </div>
+
+                </div>
+
+                <!-- MULTIPLE DISTRIBUTION ROWS -->
+                <div class="mb-3">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">
+                        Distribution Details <span class="text-red-400">*</span>
+                    </label>
+                </div>
+
+                <div id="modalDistributionRows">
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                        <div>
+                            <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
+                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                                autocomplete="off">
+                        </div>
+                        <div>
+                            <input type="text" name="recipient_name[]" placeholder="Recipient Name"
+                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                                autocomplete="off">
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
+                                class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="flex gap-3 mb-4">
+                    <button type="button" onclick="addModalRow()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Row
+                    </button>
+
+                    <button type="button" onclick="addModalBulkRows()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Rows
+                    </button>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-[#e5e5e5]">
+                    <button type="button" onclick="closeDistributionModal()"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="submit" name="submit"
+                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                        <i class="fa-regular fa-floppy-disk mr-1"></i>
+                        Save Distribution
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -653,6 +745,41 @@ if (isset($_SESSION['toast'])) {
                     class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                     Close
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Delete</h2>
+                <button type="button" onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="py-2">
+                <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this distribution record?</p>
+                <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <p class="text-sm font-medium text-red-800" id="deleteDocumentName"></p>
+                    <p class="text-xs text-red-600 mt-1" id="deleteRecipientName"></p>
+                </div>
+                <p class="text-xs text-[#9e9e9e] mt-3">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    This action cannot be undone.
+                </p>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeDeleteModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <a href="#" id="confirmDeleteBtn"
+                    class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
+                    Delete Permanently
+                </a>
             </div>
         </div>
     </div>
@@ -709,55 +836,21 @@ if (isset($_SESSION['toast'])) {
             }, duration);
         }
 
-        // Add a new row to the distribution form
-        function addRow() {
-            let row = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                    <div>
-                        <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                    </div>
-                    <div>
-                        <input type="text" name="recipient_name[]" placeholder="Recipient Name"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                    </div>
-                    <div class="flex gap-2">
-                        <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
-                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                        <button type="button" onclick="removeRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
-                            <i class="fa-regular fa-trash-can"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById("distributionRows").insertAdjacentHTML("beforeend", row);
-            showToast('New row added', 'info', 2000);
+        // ========== MODAL FUNCTIONS ==========
+        function openDistributionModal() {
+            // Reset form when opening
+            resetModalForm();
+            document.getElementById('distributionModal').style.display = 'flex';
         }
 
-        // Add multiple rows at once
-        function addBulkRows() {
-            for (let i = 0; i < 5; i++) {
-                addRow();
-            }
-            showToast('5 rows added', 'success', 2000);
+        function closeDistributionModal() {
+            document.getElementById('distributionModal').style.display = 'none';
         }
 
-        // Remove a specific row
-        function removeRow(button) {
-            const row = button.closest('.grid');
-            if (row && document.querySelectorAll('#distributionRows .grid').length > 1) {
-                row.remove();
-                showToast('Row removed', 'info', 2000);
-            } else {
-                showToast('You must keep at least one row', 'warning', 3000);
-            }
-        }
-
-        // Reset form to initial state
-        function resetForm() {
+        // Reset modal form to initial state
+        function resetModalForm() {
             // Clear all rows except first
-            const container = document.getElementById('distributionRows');
+            const container = document.getElementById('modalDistributionRows');
             const rows = container.querySelectorAll('.grid');
             for (let i = 1; i < rows.length; i++) {
                 rows[i].remove();
@@ -775,22 +868,65 @@ if (isset($_SESSION['toast'])) {
                 });
             }
 
-            // Reset form selects
-            document.getElementById('documentSelect').value = '';
-            document.getElementById('dateDistributed').value = '<?php echo date('Y-m-d'); ?>';
+            // Reset selects
+            document.getElementById('modalDocumentSelect').value = '';
+            document.getElementById('modalDateDistributed').value = '<?php echo date('Y-m-d'); ?>';
+        }
 
-            showToast('Form cleared', 'info', 2000);
+        // Add a new row to the distribution form in modal
+        function addModalRow() {
+            let row = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+                    <div>
+                        <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                    </div>
+                    <div>
+                        <input type="text" name="recipient_name[]" placeholder="Recipient Name"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
+                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                        <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById("modalDistributionRows").insertAdjacentHTML("beforeend", row);
+            showToast('New row added', 'info', 2000);
+        }
+
+        // Add multiple rows at once in modal
+        function addModalBulkRows() {
+            for (let i = 0; i < 5; i++) {
+                addModalRow();
+            }
+            showToast('5 rows added', 'success', 2000);
+        }
+
+        // Remove a specific row in modal
+        function removeModalRow(button) {
+            const row = button.closest('.grid');
+            if (row && document.querySelectorAll('#modalDistributionRows .grid').length > 1) {
+                row.remove();
+                showToast('Row removed', 'info', 2000);
+            } else {
+                showToast('You must keep at least one row', 'warning', 3000);
+            }
         }
 
         // Validate form before submission
         function validateForm() {
-            const documentId = document.getElementById('documentSelect').value;
+            const documentId = document.getElementById('modalDocumentSelect').value;
             if (!documentId) {
                 showToast('Please select a document', 'warning');
                 return false;
             }
 
-            const rows = document.querySelectorAll('#distributionRows .grid');
+            const rows = document.querySelectorAll('#modalDistributionRows .grid');
             let hasValidRow = false;
 
             rows.forEach(row => {
@@ -809,6 +945,27 @@ if (isset($_SESSION['toast'])) {
             }
 
             return true;
+        }
+
+        // ========== DELETE MODAL FUNCTIONS ==========
+        let currentDeleteId = null;
+
+        function openDeleteModal(id, documentName, recipientName) {
+            currentDeleteId = id;
+            document.getElementById('deleteDocumentName').textContent = documentName;
+            document.getElementById('deleteRecipientName').textContent = 'Recipient: ' + recipientName;
+
+            // Build the delete URL with current query parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('delete', id);
+            document.getElementById('confirmDeleteBtn').href = '?' + urlParams.toString();
+
+            document.getElementById('deleteModal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+            currentDeleteId = null;
         }
 
         // View distribution details
@@ -921,18 +1078,29 @@ if (isset($_SESSION['toast'])) {
             showToast(`Sorted by column ${columnIndex + 1} (${sortDirection})`, 'info', 1500);
         }
 
-        // Close modal when clicking outside
+        // Close modals when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('viewModal');
-            if (event.target == modal) {
+            const distributionModal = document.getElementById('distributionModal');
+            const viewModal = document.getElementById('viewModal');
+            const deleteModal = document.getElementById('deleteModal');
+
+            if (event.target == distributionModal) {
+                closeDistributionModal();
+            }
+            if (event.target == viewModal) {
                 closeViewModal();
+            }
+            if (event.target == deleteModal) {
+                closeDeleteModal();
             }
         }
 
-        // ESC key to close modal
+        // ESC key to close modals
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
+                closeDistributionModal();
                 closeViewModal();
+                closeDeleteModal();
             }
         });
     </script>

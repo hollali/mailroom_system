@@ -571,11 +571,11 @@ include './sidebar.php';
 
             <div class="p-8">
                 <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-3 mb-6">
                     <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
                         <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Available Copies</p>
                         <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_available; ?></p>
-                        <a href="available.php" class="text-xs text-blue-600 hover:underline mt-2 inline-block">View details →</a>
+                        <!--<a href="available.php" class="text-xs text-blue-600 hover:underline mt-2 inline-block">View details</a>-->
                     </div>
                     <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
                         <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Newspapers</p>

@@ -47,7 +47,7 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
         <!-- Logo -->
         <div class="px-4 py-5 flex items-center gap-2">
             <img src="images/logo.png" alt="Mail Room" class="w-6 h-6">
-            <span class="text-[#1e1e1e] text-base font-medium sidebar-text">MAILROOM</span>
+            <span class="text-[#1e1e1e] text-base font-medium sidebar-text">LIBRARY</span>
         </div>
 
         <!-- Navigation -->
@@ -85,11 +85,11 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
 
             <!-- Documents Section -->
             <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">DOCUMENTS</div>
-            <!--<a href="list.php?tab=documents"
+            <a href="documents.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'list.php' && isset($_GET['tab']) && $_GET['tab'] == 'documents' ? 'active' : ''; ?>">
                 <i class="fa-regular fa-file-lines w-4"></i>
                 <span class="sidebar-text">All Documents</span>
-            </a>-->
+            </a>
             <a href="document_type.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'document_types.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-tags w-4"></i>
@@ -108,7 +108,7 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-box w-4"></i>
                 <span class="sidebar-text">Parcel Management</span>
             </a>
-            <a href="parcels.php?tab=pickup"
+            <!--<a href="parcels.php?tab=pickup"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'parcels.php' && isset($_GET['tab']) && $_GET['tab'] == 'pickup' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-truck w-4"></i>
                 <span class="sidebar-text">Pickups</span>
@@ -117,16 +117,16 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'parcels.php' && isset($_GET['tab']) && $_GET['tab'] == 'records' ? 'active' : ''; ?>">
                 <i class="fa-regular fa-rectangle-list w-4"></i>
                 <span class="sidebar-text">All Records</span>
-            </a>
+            </a>-->
         </nav>
 
         <!-- User info -->
         <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-[#e5e5e5] flex items-center gap-3 bg-white">
             <div class="w-8 h-8 rounded-md bg-[#f0f0f0] flex items-center justify-center text-sm text-[#1e1e1e] font-medium">
-                MS
+                <img src="./images/logo.png" alt="" srcset="">
             </div>
             <div class="sidebar-text">
-                <div class="text-sm text-[#1e1e1e] font-medium">Mailroom Staff</div>
+                <div class="text-sm text-[#1e1e1e] font-medium">Library Staff</div>
                 <div class="text-xs text-[#9e9e9e]">Administrator</div>
             </div>
         </div>

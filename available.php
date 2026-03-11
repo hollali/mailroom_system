@@ -65,7 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                     'count' => $success_count,
                     'newspapers' => $distributed_details,
                     'date' => $date_distributed,
-                    'distributed_by' => $distributed_by
+                    'distributed_by' => $distributed_by,
+                    'timestamp' => time() // Add timestamp for expiration
                 ];
             } else {
                 $_SESSION['toast'] = [
@@ -220,6 +221,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 'get_distribution' && isset($_GET['
         echo json_encode(['success' => true, 'distribution' => $row]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Distribution not found']);
+    }
+    exit();
+}
+
+// Handle AJAX request to dismiss last distribution notification
+if (isset($_POST['ajax']) && $_POST['ajax'] == 'dismiss_last_distribution') {
+    if (isset($_SESSION['last_distribution'])) {
+        unset($_SESSION['last_distribution']);
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false]);
     }
     exit();
 }
@@ -630,6 +642,71 @@ include './sidebar.php';
         .toast.fade-out {
             animation: fadeOut 0.3s ease-in-out forwards;
         }
+
+        /* Last distribution notification styles */
+        .notification {
+            animation: slideDown 0.3s ease-in-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .notification.fade-out {
+            animation: fadeOutUp 0.3s ease-in-out forwards;
+        }
+
+        .notification-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background-color: rgba(16, 185, 129, 0.3);
+            width: 100%;
+            animation: progress 3s linear forwards;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOutUp {
+            from {
+                transform: translateY(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes progress {
+            from {
+                width: 100%;
+            }
+
+            to {
+                width: 0%;
+            }
+        }
+
+        .dismiss-btn {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .dismiss-btn:hover {
+            color: #1e1e1e;
+            transform: scale(1.1);
+        }
     </style>
 </head>
 
@@ -659,23 +736,29 @@ include './sidebar.php';
             </div>
 
             <div class="p-8">
-                <!-- Last Distribution Info (if exists) -->
+                <!-- Last Distribution Notification -->
                 <?php if (isset($_SESSION['last_distribution'])): ?>
-                    <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-md text-sm text-green-800">
-                        <div class="flex items-start gap-3">
-                            <i class="fa-regular fa-circle-check text-green-600 mt-0.5"></i>
-                            <div>
-                                <p class="font-medium">Last Distribution: <?php echo $_SESSION['last_distribution']['count']; ?> newspaper(s) to <strong><?php echo htmlspecialchars($_SESSION['last_distribution']['individual']); ?></strong></p>
-                                <p class="text-xs mt-1 text-green-700">
-                                    <?php echo implode(', ', array_slice($_SESSION['last_distribution']['newspapers'], 0, 3)); ?>
-                                    <?php if (count($_SESSION['last_distribution']['newspapers']) > 3): ?>
-                                        and <?php echo count($_SESSION['last_distribution']['newspapers']) - 3; ?> more
-                                    <?php endif; ?>
-                                </p>
-                                <p class="text-xs mt-1 text-green-600">
-                                    <?php echo date('M j, Y', strtotime($_SESSION['last_distribution']['date'])); ?> by <?php echo htmlspecialchars($_SESSION['last_distribution']['distributed_by']); ?>
-                                </p>
+                    <div id="lastDistributionNotification" class="mb-6 notification">
+                        <div class="bg-green-50 border border-green-200 rounded-md text-sm text-green-800 p-4 relative">
+                            <div class="flex items-start gap-3">
+                                <i class="fa-regular fa-circle-check text-green-600 mt-0.5"></i>
+                                <div class="flex-1">
+                                    <p class="font-medium">Last Distribution: <?php echo $_SESSION['last_distribution']['count']; ?> newspaper(s) to <strong><?php echo htmlspecialchars($_SESSION['last_distribution']['individual']); ?></strong></p>
+                                    <p class="text-xs mt-1 text-green-700">
+                                        <?php echo implode(', ', array_slice($_SESSION['last_distribution']['newspapers'], 0, 3)); ?>
+                                        <?php if (count($_SESSION['last_distribution']['newspapers']) > 3): ?>
+                                            and <?php echo count($_SESSION['last_distribution']['newspapers']) - 3; ?> more
+                                        <?php endif; ?>
+                                    </p>
+                                    <p class="text-xs mt-1 text-green-600">
+                                        <?php echo date('M j, Y', strtotime($_SESSION['last_distribution']['date'])); ?> by <?php echo htmlspecialchars($_SESSION['last_distribution']['distributed_by']); ?>
+                                    </p>
+                                </div>
+                                <button onclick="dismissLastDistribution()" class="dismiss-btn text-green-600 hover:text-green-800" title="Dismiss">
+                                    <i class="fa-solid fa-xmark text-lg"></i>
+                                </button>
                             </div>
+                            <div class="notification-progress"></div>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -1257,6 +1340,42 @@ include './sidebar.php';
             document.addEventListener('DOMContentLoaded', function() {
                 showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
             });
+        <?php endif; ?>
+
+        // ========== LAST DISTRIBUTION NOTIFICATION ==========
+        function dismissLastDistribution() {
+            const notification = document.getElementById('lastDistributionNotification');
+            if (notification) {
+                notification.classList.add('fade-out');
+
+                // Send AJAX request to dismiss from session
+                fetch('available.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: 'ajax=dismiss_last_distribution'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Notification dismissed');
+                    })
+                    .catch(error => {
+                        console.error('Error dismissing notification:', error);
+                    });
+
+                // Remove from DOM after animation
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }
+        }
+
+        // Auto-dismiss last distribution notification after 3 seconds
+        <?php if (isset($_SESSION['last_distribution'])): ?>
+            setTimeout(() => {
+                dismissLastDistribution();
+            }, 3000);
         <?php endif; ?>
 
         // ========== NEWSPAPER SELECTION ==========
