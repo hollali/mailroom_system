@@ -666,7 +666,7 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Available Documents</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">View and distribute documents with available copies</p>
                     </div>
-                    <div class="flex gap-2">
+                    <!--<div class="flex gap-2">
                         <a href="distribution.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                             <i class="fa-regular fa-clock mr-1 text-[#6e6e6e]"></i>
                             Distribution History
@@ -679,7 +679,7 @@ if (isset($_SESSION['toast'])) {
                             <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i>
                             Document Types
                         </a>
-                    </div>
+                    </div>-->
                 </div>
             </div>
 
@@ -726,7 +726,7 @@ if (isset($_SESSION['toast'])) {
                     <div class="stat-card rounded-md p-4">
                         <div class="flex items-start justify-between">
                             <div>
-                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Stock Status</p>
+                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Document Status</p>
                                 <div class="flex items-center gap-3 mt-2">
                                     <div>
                                         <span class="stock-indicator stock-high"></span>
@@ -764,10 +764,10 @@ if (isset($_SESSION['toast'])) {
                         </select>
 
                         <select id="stockFilter" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                            <option value="all">All Stock Levels</option>
-                            <option value="in-stock">In Stock (>5)</option>
-                            <option value="low-stock">Low Stock (1-5)</option>
-                            <option value="out-of-stock">Out of Stock</option>
+                            <option value="all">All Document Levels</option>
+                            <option value="in-stock">High Amount Documents</option>
+                            <option value="low-stock">Low Amount Documents</option>
+                            <option value="out-of-stock">Out of Documents</option>
                             <option value="available">Available Only</option>
                         </select>
 
@@ -843,22 +843,22 @@ if (isset($_SESSION['toast'])) {
                                         // Determine stock level class
                                         if ($available <= 0) {
                                             $stockClass = 'stock-out';
-                                            $stockText = 'Out of Stock';
+                                            $stockText = 'Out of Documents';
                                             $badgeClass = 'badge-danger';
                                             $progressClass = 'bg-[#9e9e9e]';
                                         } elseif ($available <= 5) {
                                             $stockClass = 'stock-low';
-                                            $stockText = 'Low Stock';
+                                            $stockText = 'Low Amount Documents';
                                             $badgeClass = 'badge-warning';
                                             $progressClass = 'bg-[#ef4444]';
                                         } elseif ($available <= 10) {
                                             $stockClass = 'stock-medium';
-                                            $stockText = 'Medium Stock';
+                                            $stockText = 'Medium';
                                             $badgeClass = 'badge-warning';
                                             $progressClass = 'bg-[#f59e0b]';
                                         } else {
                                             $stockClass = 'stock-high';
-                                            $stockText = 'High Stock';
+                                            $stockText = 'High Amount Documents';
                                             $badgeClass = 'badge-success';
                                             $progressClass = 'bg-[#10b981]';
                                         }

@@ -547,12 +547,12 @@ if (isset($_SESSION['toast'])) {
                         <i class="fa-regular fa-plus"></i>
                         <span>New Distribution</span>
                     </button>
-                    <a href="./available_documents.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                    <!--<a href="./available_documents.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                         <i class="fa-regular fa-folder-open mr-1 text-[#6e6e6e]"></i> Available Documents
                     </a>
                     <a href="./document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                         <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i> Manage Types
-                    </a>
+                    </a>-->
                 </div>
             </div>
         </div>
@@ -615,7 +615,7 @@ if (isset($_SESSION['toast'])) {
             </div>
 
             <!-- Quick Links -->
-            <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
+            <!--<div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                 <div class="flex flex-wrap gap-3">
                     <span class="text-sm text-[#6e6e6e] mr-2">Quick Links:</span>
                     <a href="available_documents.php" class="text-sm text-[#1e1e1e] hover:underline flex items-center">
@@ -630,7 +630,7 @@ if (isset($_SESSION['toast'])) {
                         <i class="fa-regular fa-folder mr-1 text-[#6e6e6e]"></i> Manage Documents
                     </a>
                 </div>
-            </div>
+            </div>-->
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
