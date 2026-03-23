@@ -118,7 +118,7 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
             </a>
             <a href="recipients.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'recipients.php' ? 'active' : ''; ?>">
-                <i class="fa-solid fa-clock-rotate-left w-4"></i>
+                <i class="fa-solid fa-user w-4"></i>
                 <span class="sidebar-text">Recipients</span>
             </a>
             <a href="available.php"
