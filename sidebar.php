@@ -116,16 +116,17 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-newspaper w-4"></i>
                 <span class="sidebar-text">Newspaper List</span>
             </a>
+            <a href="recipients.php"
+                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'recipients.php' ? 'active' : ''; ?>">
+                <i class="fa-solid fa-clock-rotate-left w-4"></i>
+                <span class="sidebar-text">Recipients</span>
+            </a>
             <a href="available.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'available.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-share-from-square w-4"></i>
                 <span class="sidebar-text">Newspaper Distribution</span>
             </a>
-            <!--<a href="distribution.php"
-                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'distribution.php' ? 'active' : ''; ?>">
-                <i class="fa-solid fa-clock-rotate-left w-4"></i>
-                <span class="sidebar-text">Distribution History</span>
-            </a>-->
+
 
             <!-- Documents Section -->
             <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">DOCUMENTS</div>

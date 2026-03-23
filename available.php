@@ -8,11 +8,40 @@ session_start();
 
 // Handle Distribution Form Submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) {
-    $individual_name = trim($_POST['individual_name']);
-    $department = trim($_POST['department']);
+    $recipient_id = isset($_POST['recipient_id']) ? (int)$_POST['recipient_id'] : 0;
     $distributed_by = trim($_POST['distributed_by']);
     $selected_newspapers = $_POST['selected_newspapers'] ?? [];
     $date_distributed = date('Y-m-d');
+
+    if ($recipient_id <= 0) {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Please select a recipient"
+        ];
+        header('Location: available.php');
+        exit();
+    }
+
+    // Get recipient details
+    $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND is_active = 1");
+    if (!$recipient = $recipient_query->fetch_assoc()) {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Invalid recipient selected"
+        ];
+        header('Location: available.php');
+        exit();
+    }
+
+    $full_name = $recipient['name'];
+    // Split name and department if format is "Name - Department"
+    $individual_name = $full_name;
+    $department = '';
+    if (strpos($full_name, ' - ') !== false) {
+        $parts = explode(' - ', $full_name, 2);
+        $individual_name = $parts[0];
+        $department = $parts[1];
+    }
 
     if (!empty($selected_newspapers)) {
         $conn->begin_transaction();
@@ -66,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                     'newspapers' => $distributed_details,
                     'date' => $date_distributed,
                     'distributed_by' => $distributed_by,
-                    'timestamp' => time() // Add timestamp for expiration
+                    'timestamp' => time()
                 ];
             } else {
                 $_SESSION['toast'] = [
@@ -235,6 +264,9 @@ if (isset($_POST['ajax']) && $_POST['ajax'] == 'dismiss_last_distribution') {
     }
     exit();
 }
+
+// Get all active recipients for dropdown
+$recipients = $conn->query("SELECT id, name FROM recipients WHERE is_active = 1 ORDER BY name");
 
 // Get all available newspapers with their categories
 $available_newspapers = $conn->query("SELECT n.*, nc.category_name, nc.id as category_id 
@@ -643,7 +675,6 @@ include './sidebar.php';
             animation: fadeOut 0.3s ease-in-out forwards;
         }
 
-        /* Last distribution notification styles */
         .notification {
             animation: slideDown 0.3s ease-in-out;
             position: relative;
@@ -707,6 +738,19 @@ include './sidebar.php';
             color: #1e1e1e;
             transform: scale(1.1);
         }
+
+        .recipient-select {
+            background-color: white;
+        }
+
+        .manage-link {
+            color: #3b82f6;
+            text-decoration: none;
+        }
+
+        .manage-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 
@@ -730,6 +774,9 @@ include './sidebar.php';
                         </button>
                         <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                             <i class="fa-solid fa-list mr-1"></i> Newspaper List
+                        </a>
+                        <a href="recipients.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                            <i class="fa-solid fa-users mr-1"></i> Manage Recipients
                         </a>
                     </div>
                 </div>
@@ -939,7 +986,7 @@ include './sidebar.php';
 
                     <?php if ($distribution_history && $distribution_history->num_rows > 0): ?>
                         <div class="overflow-x-auto">
-                            <table>
+                            <table class="w-full">
                                 <thead>
                                     <tr class="bg-[#fafafa]">
                                         <th onclick="sortTable('date_distributed')" class="<?php echo $sort_by == 'date_distributed' ? 'active-sort' : ''; ?>">
@@ -1083,19 +1130,24 @@ include './sidebar.php';
             </div>
 
             <form method="POST" action="available.php" id="distributeForm">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Individual's Name *</label>
-                        <input type="text" name="individual_name" id="modal_individual_name" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="e.g., John Doe">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Department/Office</label>
-                        <input type="text" name="department" id="modal_department"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="e.g., HR Department">
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Select Recipient *</label>
+                        <select name="recipient_id" id="recipient_select" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white recipient-select">
+                            <option value="">-- Select a recipient --</option>
+                            <?php
+                            // Reset the recipients pointer to the beginning
+                            $recipients->data_seek(0);
+                            while ($recipient = $recipients->fetch_assoc()):
+                            ?>
+                                <option value="<?php echo $recipient['id']; ?>"><?php echo htmlspecialchars($recipient['name']); ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                        <p class="text-xs text-[#6e6e6e] mt-1">
+                            <i class="fa-regular fa-building mr-1"></i>
+                            <a href="recipients.php" class="text-blue-600 hover:underline">Manage recipients</a> to add or edit recipient names
+                        </p>
                     </div>
 
                     <div>
@@ -1657,7 +1709,7 @@ include './sidebar.php';
 
         function validateDistribution() {
             let checkboxes = document.querySelectorAll('#distributeModal .newspaper-checkbox:checked');
-            let individualName = document.getElementById('modal_individual_name').value.trim();
+            let recipientSelect = document.getElementById('recipient_select');
             let distributedBy = document.getElementById('modal_distributed_by').value.trim();
 
             if (checkboxes.length === 0) {
@@ -1665,8 +1717,8 @@ include './sidebar.php';
                 return false;
             }
 
-            if (individualName === '') {
-                alert('Please enter the individual\'s name');
+            if (!recipientSelect.value) {
+                alert('Please select a recipient');
                 return false;
             }
 
@@ -1675,7 +1727,8 @@ include './sidebar.php';
                 return false;
             }
 
-            return confirm(`Distribute 1 copy each of ${checkboxes.length} newspaper(s) to ${individualName}?`);
+            let recipientName = recipientSelect.options[recipientSelect.selectedIndex].text;
+            return confirm(`Distribute 1 copy each of ${checkboxes.length} newspaper(s) to ${recipientName}?`);
         }
 
         // ========== SORTING FUNCTION ==========
