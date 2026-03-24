@@ -444,7 +444,9 @@ try {
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
                         <h1 class="text-[28px] font-semibold text-[#1c1917]">Dashboard</h1>
-                        <p class="mt-1 text-sm text-[#78716c]"><?php echo date('l, F j, Y g:i A', strtotime($stats['dashboard_refreshed_at'])); ?></p>
+                        <p id="dashboardClock" class="mt-1 text-sm text-[#78716c]" data-server-time="<?php echo htmlspecialchars($stats['dashboard_refreshed_at']); ?>">
+                            <?php echo date('l, F j, Y g:i:s A', strtotime($stats['dashboard_refreshed_at'])); ?>
+                        </p>
                     </div>
                     <div class="flex items-center gap-3">
                         <a href="parcels.php" class="simple-button">
@@ -617,6 +619,45 @@ try {
             </div>
         </main>
     </div>
+    <script>
+        (function() {
+            const clock = document.getElementById('dashboardClock');
+
+            if (!clock) {
+                return;
+            }
+
+            const serverTime = clock.dataset.serverTime;
+            const baseTime = serverTime ? new Date(serverTime.replace(' ', 'T')) : new Date();
+
+            if (Number.isNaN(baseTime.getTime())) {
+                return;
+            }
+
+            let currentTime = baseTime;
+
+            function formatDateTime(date) {
+                return new Intl.DateTimeFormat('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                }).format(date);
+            }
+
+            function renderClock() {
+                clock.textContent = formatDateTime(currentTime);
+                currentTime = new Date(currentTime.getTime() + 1000);
+            }
+
+            renderClock();
+            setInterval(renderClock, 1000);
+        })();
+    </script>
 </body>
 
 </html>
