@@ -306,7 +306,7 @@ try {
         .panel {
             background: #ffffff;
             border: 1px solid #e7e5e4;
-            border-radius: 10px;
+            border-radius: 28px;
         }
 
         .panel-header {
@@ -321,7 +321,7 @@ try {
         .stat-box {
             background: #ffffff;
             border: 1px solid #e7e5e4;
-            border-radius: 10px;
+            border-radius: 28px;
             padding: 16px;
         }
 
@@ -346,7 +346,7 @@ try {
             display: inline-flex;
             align-items: center;
             padding: 4px 8px;
-            border-radius: 8px;
+            border-radius: 999px;
             font-size: 12px;
             font-weight: 500;
             border: 1px solid transparent;
@@ -369,7 +369,7 @@ try {
             align-items: center;
             gap: 8px;
             padding: 10px 14px;
-            border-radius: 8px;
+            border-radius: 999px;
             border: 1px solid #d6d3d1;
             background: #ffffff;
             color: #1c1917;
@@ -432,6 +432,48 @@ try {
             border-bottom: 0;
             padding-bottom: 0;
         }
+
+        .circular-panel {
+            border-radius: 28px;
+            overflow: hidden;
+        }
+
+        .circular-panel .panel-header {
+            padding: 22px 24px;
+        }
+
+        .circular-table-wrap {
+            padding: 0 14px 14px;
+        }
+
+        .circular-table-wrap table {
+            overflow: hidden;
+            border: 1px solid #ece7e2;
+            border-radius: 22px;
+        }
+
+        .circular-table-wrap thead th:first-child {
+            border-top-left-radius: 22px;
+        }
+
+        .circular-table-wrap thead th:last-child {
+            border-top-right-radius: 22px;
+        }
+
+        .circular-body {
+            padding: 14px;
+        }
+
+        .circular-list {
+            gap: 12px;
+        }
+
+        .circular-list .activity-item {
+            border: 1px solid #ece7e2;
+            border-radius: 22px;
+            padding: 16px 18px;
+            background: #fcfcfb;
+        }
     </style>
 </head>
 
@@ -463,7 +505,7 @@ try {
 
             <div class="p-8">
                 <?php if (isset($error)): ?>
-                    <div class="mb-6 rounded-2xl bg-[#ffdad6] px-5 py-4 text-[#93000a]">
+                    <div class="mb-6 rounded-[28px] bg-[#ffdad6] px-5 py-4 text-[#93000a]">
                         <i class="fa-regular fa-circle-exclamation mr-2"></i>
                         <?php echo $error; ?>
                     </div>
@@ -496,12 +538,12 @@ try {
 
                 <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     <div class="xl:col-span-2 flex flex-col gap-6">
-                        <div class="panel">
+                        <div class="panel circular-panel">
                             <div class="panel-header flex items-center justify-between">
                                 <h2 class="text-lg font-semibold text-[#1c1917]">Recent parcels</h2>
                                 <a href="parcels.php" class="text-sm text-[#57534e] hover:text-[#1c1917]">Open all</a>
                             </div>
-                            <div class="overflow-x-auto">
+                            <div class="overflow-x-auto circular-table-wrap">
                                 <table>
                                     <thead>
                                         <tr>
@@ -537,14 +579,14 @@ try {
                             </div>
                         </div>
 
-                        <div class="panel">
+                        <div class="panel circular-panel">
                             <div class="panel-header flex items-center justify-between">
                                 <h2 class="text-lg font-semibold text-[#1c1917]">Recent pickups</h2>
                                 <span class="text-sm muted"><?php echo number_format($stats['total_pickups']); ?> total</span>
                             </div>
-                            <div class="panel-body">
+                            <div class="panel-body circular-body">
                                 <?php if ($recent_pickups && $recent_pickups->num_rows > 0): ?>
-                                    <div class="activity-list">
+                                    <div class="activity-list circular-list">
                                         <?php while ($pickup = $recent_pickups->fetch_assoc()): ?>
                                             <div class="activity-item">
                                                 <div class="flex items-start justify-between gap-4">
