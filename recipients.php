@@ -181,6 +181,29 @@ include './sidebar.php';
             color: #10b981;
         }
 
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .pagination-item {
+            min-width: 2rem;
+            height: 2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #e5e5e5;
+            border-radius: 0.5rem;
+            background: white;
+            color: #1e1e1e;
+        }
+
+        .pagination-item.disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         .toast-container {
             position: fixed;
             top: 20px;
@@ -304,11 +327,11 @@ include './sidebar.php';
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="recipientsTableBody">
                                     <?php $counter = 1;
                                     while ($recipient = $recipients->fetch_assoc()): ?>
-                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
-                                            <td class="p-3 text-sm"><?php echo $counter++; ?></td>
+                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row">
+                                            <td class="p-3 text-sm recipient-index"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
@@ -337,6 +360,10 @@ include './sidebar.php';
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="recipientsPagination" class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 <?php echo (!$recipients || $recipients->num_rows === 0) ? 'hidden' : ''; ?>">
+                            <span id="recipientsPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
+                            <div class="pagination" id="recipientsPaginationControls"></div>
                         </div>
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
@@ -527,6 +554,57 @@ include './sidebar.php';
             return div.innerHTML;
         }
 
+        const recipientsPageSize = 10;
+        let recipientsCurrentPage = 1;
+
+        function renderRecipientsPagination() {
+            const rows = Array.from(document.querySelectorAll('.recipient-row'));
+            const info = document.getElementById('recipientsPaginationInfo');
+            const controls = document.getElementById('recipientsPaginationControls');
+            const wrapper = document.getElementById('recipientsPagination');
+
+            if (!rows.length || !info || !controls || !wrapper) {
+                return;
+            }
+
+            const totalPages = Math.max(1, Math.ceil(rows.length / recipientsPageSize));
+            if (recipientsCurrentPage > totalPages) {
+                recipientsCurrentPage = totalPages;
+            }
+
+            const startIndex = (recipientsCurrentPage - 1) * recipientsPageSize;
+            const endIndex = startIndex + recipientsPageSize;
+
+            rows.forEach((row, index) => {
+                const visible = index >= startIndex && index < endIndex;
+                row.style.display = visible ? '' : 'none';
+                if (visible) {
+                    const indexCell = row.querySelector('.recipient-index');
+                    if (indexCell) {
+                        indexCell.textContent = index + 1;
+                    }
+                }
+            });
+
+            const from = startIndex + 1;
+            const to = Math.min(endIndex, rows.length);
+            info.textContent = `Page ${recipientsCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
+            wrapper.classList.toggle('hidden', rows.length <= recipientsPageSize);
+            controls.innerHTML = `
+                <button class="pagination-item ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage - 1})">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="pagination-item ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage + 1})">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            `;
+        }
+
+        function changeRecipientsPage(page) {
+            recipientsCurrentPage = Math.max(1, page);
+            renderRecipientsPagination();
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addModal = document.getElementById('addModal');
@@ -552,6 +630,8 @@ include './sidebar.php';
                 closeDeleteModal();
             }
         });
+
+        document.addEventListener('DOMContentLoaded', renderRecipientsPagination);
     </script>
 </body>
 

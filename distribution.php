@@ -756,6 +756,10 @@ if (isset($_SESSION['toast'])) {
                     <span>Total Copies Distributed: <?php echo $total_copies_distributed; ?></span>
                 </div>
             </div>
+            <div id="distributionPagination" class="mt-4 flex flex-wrap items-center justify-between gap-3 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
+                <span id="distributionPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
+                <div class="pagination" id="distributionPaginationControls"></div>
+            </div>
         </div>
     </div>
 
@@ -1341,7 +1345,66 @@ if (isset($_SESSION['toast'])) {
         }
 
         // Table search functionality
+        const distributionPageSize = 10;
+        let distributionCurrentPage = 1;
         let distributionSearchTimer;
+
+        function getVisibleDistributionRows() {
+            return Array.from(document.querySelectorAll('.distribution-row')).filter(row => row.dataset.filtered !== 'false');
+        }
+
+        function renderDistributionPagination() {
+            const visibleRows = getVisibleDistributionRows();
+            const totalRows = visibleRows.length;
+            const totalPages = Math.max(1, Math.ceil(totalRows / distributionPageSize));
+            const wrapper = document.getElementById('distributionPagination');
+            const info = document.getElementById('distributionPaginationInfo');
+            const controls = document.getElementById('distributionPaginationControls');
+
+            if (!wrapper || !info || !controls) {
+                return;
+            }
+
+            if (distributionCurrentPage > totalPages) {
+                distributionCurrentPage = totalPages;
+            }
+
+            const startIndex = (distributionCurrentPage - 1) * distributionPageSize;
+            const endIndex = startIndex + distributionPageSize;
+
+            document.querySelectorAll('.distribution-row').forEach(row => {
+                row.style.display = 'none';
+            });
+
+            visibleRows.forEach((row, index) => {
+                row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+            });
+
+            if (totalRows === 0) {
+                info.textContent = 'No matching records';
+                controls.innerHTML = '';
+                wrapper.classList.add('hidden');
+                return;
+            }
+
+            const from = startIndex + 1;
+            const to = Math.min(endIndex, totalRows);
+            info.textContent = `Page ${distributionCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${totalRows}`;
+            wrapper.classList.toggle('hidden', totalRows <= distributionPageSize);
+            controls.innerHTML = `
+                <button class="pagination-item ${distributionCurrentPage === 1 ? 'disabled' : ''}" ${distributionCurrentPage === 1 ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage - 1})">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="pagination-item ${distributionCurrentPage === totalPages ? 'disabled' : ''}" ${distributionCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage + 1})">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            `;
+        }
+
+        function changeDistributionPage(page) {
+            distributionCurrentPage = Math.max(1, page);
+            renderDistributionPagination();
+        }
 
         function filterDistributionTable(showFeedback = false) {
             const searchTokens = (document.getElementById('tableSearch')?.value || '')
@@ -1354,12 +1417,15 @@ if (isset($_SESSION['toast'])) {
             rows.forEach(row => {
                 const text = row.getAttribute('data-search') || row.textContent.toLowerCase();
                 const matches = searchTokens.length === 0 || searchTokens.every(token => text.includes(token));
+                row.dataset.filtered = matches ? 'true' : 'false';
                 row.style.display = matches ? '' : 'none';
                 if (matches) visibleCount++;
             });
 
             const countEl = document.getElementById('visibleCount');
             if (countEl) countEl.textContent = visibleCount;
+            distributionCurrentPage = 1;
+            renderDistributionPagination();
 
             if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info', 2000);
@@ -1407,9 +1473,17 @@ if (isset($_SESSION['toast'])) {
             // Reorder table
             tbody.innerHTML = '';
             rows.forEach(row => tbody.appendChild(row));
+            renderDistributionPagination();
 
             showToast(`Sorted by column ${columnIndex + 1} (${sortDirection})`, 'info', 1500);
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.distribution-row').forEach(row => {
+                row.dataset.filtered = 'true';
+            });
+            renderDistributionPagination();
+        });
 
         // Close modals when clicking outside
         window.onclick = function(event) {

@@ -75,6 +75,29 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
             font-size: 0.875rem;
             color: #1e1e1e;
         }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .pagination-item {
+            min-width: 2rem;
+            height: 2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #e5e5e5;
+            border-radius: 0.5rem;
+            background: white;
+            color: #1e1e1e;
+        }
+
+        .pagination-item.disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 
@@ -121,10 +144,10 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
                             <th class="text-xs">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="categoriesTableBody">
                         <?php if ($result && $result->num_rows > 0): ?>
                             <?php while ($row = $result->fetch_assoc()): ?>
-                                <tr class="hover:bg-[#fafafa]">
+                                <tr class="hover:bg-[#fafafa] category-row">
                                     <td class="text-sm text-[#6e6e6e]"><?php echo $row['id']; ?></td>
                                     <td class="text-sm font-medium text-[#1e1e1e]">
                                         <?php echo htmlspecialchars($row['category_name']); ?>
@@ -153,6 +176,10 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
                         <?php endif; ?>
                     </tbody>
                 </table>
+                <div id="categoriesPagination" class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
+                    <span id="categoriesPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
+                    <div class="pagination" id="categoriesPaginationControls"></div>
+                </div>
             </div>
         </div>
     </main>
@@ -215,6 +242,50 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
             document.getElementById('categoryModal').style.display = 'none';
         }
 
+        const categoriesPageSize = 10;
+        let categoriesCurrentPage = 1;
+
+        function renderCategoriesPagination() {
+            const rows = Array.from(document.querySelectorAll('.category-row'));
+            const wrapper = document.getElementById('categoriesPagination');
+            const info = document.getElementById('categoriesPaginationInfo');
+            const controls = document.getElementById('categoriesPaginationControls');
+
+            if (!rows.length || !wrapper || !info || !controls) {
+                return;
+            }
+
+            const totalPages = Math.max(1, Math.ceil(rows.length / categoriesPageSize));
+            if (categoriesCurrentPage > totalPages) {
+                categoriesCurrentPage = totalPages;
+            }
+
+            const startIndex = (categoriesCurrentPage - 1) * categoriesPageSize;
+            const endIndex = startIndex + categoriesPageSize;
+
+            rows.forEach((row, index) => {
+                row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+            });
+
+            const from = startIndex + 1;
+            const to = Math.min(endIndex, rows.length);
+            info.textContent = `Page ${categoriesCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
+            wrapper.classList.toggle('hidden', rows.length <= categoriesPageSize);
+            controls.innerHTML = `
+                <button class="pagination-item ${categoriesCurrentPage === 1 ? 'disabled' : ''}" ${categoriesCurrentPage === 1 ? 'disabled' : ''} onclick="changeCategoriesPage(${categoriesCurrentPage - 1})">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="pagination-item ${categoriesCurrentPage === totalPages ? 'disabled' : ''}" ${categoriesCurrentPage === totalPages ? 'disabled' : ''} onclick="changeCategoriesPage(${categoriesCurrentPage + 1})">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            `;
+        }
+
+        function changeCategoriesPage(page) {
+            categoriesCurrentPage = Math.max(1, page);
+            renderCategoriesPagination();
+        }
+
         // Close modal when clicking outside
         window.onclick = function(event) {
             const modal = document.getElementById('categoryModal');
@@ -229,6 +300,8 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
                 closeModal();
             }
         });
+
+        document.addEventListener('DOMContentLoaded', renderCategoriesPagination);
     </script>
 </body>
 

@@ -730,47 +730,6 @@ if (isset($_SESSION['toast'])) {
             </div>
 
             <div class="p-8">
-                <!-- Statistics Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <div class="stat-card rounded-md p-4">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Documents</p>
-                                <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo number_format($stats['total_documents'] ?? 0); ?></p>
-                            </div>
-                            <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                <i class="fa-regular fa-file-lines text-[#6e6e6e] text-lg"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="stat-card rounded-md p-4">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Copies</p>
-                                <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo number_format($stats['total_copies'] ?? 0); ?></p>
-                                <p class="text-xs text-[#6e6e6e] mt-1"><?php echo number_format($stats['distributed_copies'] ?? 0); ?> distributed</p>
-                            </div>
-                            <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                <i class="fa-regular fa-copy text-[#6e6e6e] text-lg"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="stat-card rounded-md p-4">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Available Copies</p>
-                                <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo number_format($stats['available_copies'] ?? 0); ?></p>
-                            </div>
-                            <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                <i class="fa-regular fa-circle-check text-[#6e6e6e] text-lg"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-
                 <!-- Filters and Bulk Actions -->
                 <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                     <div class="flex flex-wrap items-center gap-3">
@@ -966,20 +925,10 @@ if (isset($_SESSION['toast'])) {
                     <button onclick="resetFilters()" class="mt-2 text-sm text-[#1e1e1e] underline">Clear filters</button>
                 </div>
 
-                <!-- Simple Pagination (if needed) -->
-                <?php if ($documents_result && $documents_result->num_rows > 20): ?>
-                    <div class="mt-4 flex justify-end">
-                        <div class="pagination">
-                            <button class="pagination-item disabled"><i class="fa-solid fa-chevron-left"></i></button>
-                            <button class="pagination-item active">1</button>
-                            <button class="pagination-item">2</button>
-                            <button class="pagination-item">3</button>
-                            <button class="pagination-item">4</button>
-                            <button class="pagination-item">5</button>
-                            <button class="pagination-item"><i class="fa-solid fa-chevron-right"></i></button>
-                        </div>
-                    </div>
-                <?php endif; ?>
+                <div id="documentsPagination" class="mt-4 flex flex-wrap items-center justify-between gap-3 <?php echo (!$documents_result || $documents_result->num_rows === 0) ? 'hidden' : ''; ?>">
+                    <span id="documentsPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
+                    <div class="pagination" id="documentsPaginationControls"></div>
+                </div>
             </div>
         </main>
     </div>
@@ -1593,7 +1542,68 @@ if (isset($_SESSION['toast'])) {
         }
 
         // Filter Functions
+        const documentsPageSize = 10;
+        let documentsCurrentPage = 1;
         let filterDebounceTimer;
+
+        function getVisibleDocumentRows() {
+            return Array.from(document.querySelectorAll('.document-row')).filter(row => row.dataset.filtered !== 'false');
+        }
+
+        function renderDocumentsPagination() {
+            const visibleRows = getVisibleDocumentRows();
+            const totalRows = visibleRows.length;
+            const totalPages = Math.max(1, Math.ceil(totalRows / documentsPageSize));
+            const paginationInfo = document.getElementById('documentsPaginationInfo');
+            const paginationControls = document.getElementById('documentsPaginationControls');
+            const paginationWrapper = document.getElementById('documentsPagination');
+
+            if (!paginationInfo || !paginationControls || !paginationWrapper) {
+                return;
+            }
+
+            if (documentsCurrentPage > totalPages) {
+                documentsCurrentPage = totalPages;
+            }
+
+            const startIndex = (documentsCurrentPage - 1) * documentsPageSize;
+            const endIndex = startIndex + documentsPageSize;
+
+            document.querySelectorAll('.document-row').forEach(row => {
+                row.style.display = 'none';
+            });
+
+            visibleRows.forEach((row, index) => {
+                row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+            });
+
+            if (totalRows === 0) {
+                paginationInfo.textContent = 'No matching documents';
+                paginationControls.innerHTML = '';
+                paginationWrapper.classList.add('hidden');
+                return;
+            }
+
+            const from = startIndex + 1;
+            const to = Math.min(endIndex, totalRows);
+
+            paginationInfo.textContent = `Page ${documentsCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${totalRows}`;
+            paginationWrapper.classList.toggle('hidden', totalRows <= documentsPageSize);
+
+            paginationControls.innerHTML = `
+                <button class="pagination-item ${documentsCurrentPage === 1 ? 'disabled' : ''}" ${documentsCurrentPage === 1 ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage - 1})">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="pagination-item ${documentsCurrentPage === totalPages ? 'disabled' : ''}" ${documentsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage + 1})">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            `;
+        }
+
+        function changeDocumentsPage(page) {
+            documentsCurrentPage = Math.max(1, page);
+            renderDocumentsPagination();
+        }
 
         function getSearchTokens(value) {
             return value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1632,9 +1642,10 @@ if (isset($_SESSION['toast'])) {
                     searchTokens.every(token => searchText.includes(token));
 
                 if (typeMatch && stockMatch && searchMatch) {
-                    row.style.display = '';
+                    row.dataset.filtered = 'true';
                     visibleCount++;
                 } else {
+                    row.dataset.filtered = 'false';
                     row.style.display = 'none';
                 }
             });
@@ -1652,6 +1663,8 @@ if (isset($_SESSION['toast'])) {
             }
 
             document.getElementById('visibleCount').textContent = visibleCount;
+            documentsCurrentPage = 1;
+            renderDocumentsPagination();
             if (showFeedback) {
                 showToast(`Showing ${visibleCount} document(s)`, 'info', 2000);
             }
@@ -1664,12 +1677,15 @@ if (isset($_SESSION['toast'])) {
 
             const rows = document.querySelectorAll('.document-row');
             rows.forEach(row => {
+                row.dataset.filtered = 'true';
                 row.style.display = '';
             });
 
             document.getElementById('documentsTable').classList.remove('hidden');
             document.getElementById('noResultsMessage').classList.add('hidden');
             document.getElementById('visibleCount').textContent = rows.length;
+            documentsCurrentPage = 1;
+            renderDocumentsPagination();
 
             showToast('Filters cleared', 'info', 2000);
         }
@@ -1710,6 +1726,7 @@ if (isset($_SESSION['toast'])) {
             // Reorder table
             tbody.innerHTML = '';
             rows.forEach(row => tbody.appendChild(row));
+            renderDocumentsPagination();
 
             showToast(`Sorted by column`, 'info', 1500);
         }
@@ -1732,6 +1749,13 @@ if (isset($_SESSION['toast'])) {
 
         document.getElementById('stockFilter')?.addEventListener('change', function() {
             applyFilters(false);
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.document-row').forEach(row => {
+                row.dataset.filtered = 'true';
+            });
+            renderDocumentsPagination();
         });
 
         // Close modals when clicking outside

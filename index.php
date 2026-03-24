@@ -577,6 +577,10 @@ try {
                                     </tbody>
                                 </table>
                             </div>
+                            <div id="dashboardParcelsPagination" class="px-6 pb-5 flex flex-wrap items-center justify-between gap-3 <?php echo (!$dashboard_parcels || $dashboard_parcels->num_rows === 0) ? 'hidden' : ''; ?>">
+                                <span id="dashboardParcelsPaginationInfo" class="text-xs muted"></span>
+                                <div class="flex items-center gap-2" id="dashboardParcelsPaginationControls"></div>
+                            </div>
                         </div>
 
                         <div class="panel circular-panel">
@@ -698,6 +702,54 @@ try {
 
             renderClock();
             setInterval(renderClock, 1000);
+        })();
+
+        (function() {
+            const rows = Array.from(document.querySelectorAll('.circular-table-wrap tbody tr'));
+                const info = document.getElementById('dashboardParcelsPaginationInfo');
+                const controls = document.getElementById('dashboardParcelsPaginationControls');
+                const wrapper = document.getElementById('dashboardParcelsPagination');
+            const pageSize = 5;
+            let currentPage = 1;
+
+            if (!rows.length || !info || !controls || !wrapper) {
+                return;
+            }
+
+            function render() {
+                const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+                if (currentPage > totalPages) {
+                    currentPage = totalPages;
+                }
+
+                const startIndex = (currentPage - 1) * pageSize;
+                const endIndex = startIndex + pageSize;
+
+                rows.forEach((row, index) => {
+                    row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+                });
+
+                const from = startIndex + 1;
+                const to = Math.min(endIndex, rows.length);
+                info.textContent = `Page ${currentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
+                wrapper.classList.toggle('hidden', rows.length <= pageSize);
+                controls.innerHTML = `
+                    <button class="simple-button" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>
+                    <button class="simple-button" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+                `;
+
+                const [prevButton, nextButton] = controls.querySelectorAll('button');
+                prevButton.addEventListener('click', function() {
+                    currentPage = Math.max(1, currentPage - 1);
+                    render();
+                });
+                nextButton.addEventListener('click', function() {
+                    currentPage = Math.min(totalPages, currentPage + 1);
+                    render();
+                });
+            }
+
+            render();
         })();
     </script>
 </body>
