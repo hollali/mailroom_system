@@ -271,6 +271,16 @@ try {
         ORDER BY pp.date_picked DESC 
         LIMIT 5
     ");
+
+    // Dashboard ledger rows
+    $dashboard_parcels = $conn->query("
+        SELECT pr.id, pr.tracking_id, pr.sender, pr.addressed_to, pr.date_received,
+               CASE WHEN pp.id IS NULL THEN 'Pending' ELSE 'Picked Up' END as status
+        FROM parcels_received pr
+        LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
+        ORDER BY pr.date_received DESC, pr.id DESC
+        LIMIT 6
+    ");
 } catch (Exception $e) {
     $error = "Error loading data: " . $e->getMessage();
 }
@@ -288,385 +298,322 @@ try {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: #f5f5f4;
+            color: #1c1917;
         }
 
-        .stat-card {
-            background: white;
-            border: 1px solid #e5e5e5;
-            padding: 1.25rem;
-            transition: all 0.2s ease;
-            border-radius: 0.5rem;
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e7e5e4;
+            border-radius: 10px;
         }
 
-        .stat-card:hover {
-            border-color: #9e9e9e;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        .panel-header {
+            padding: 18px 20px;
+            border-bottom: 1px solid #e7e5e4;
+        }
+
+        .panel-body {
+            padding: 20px;
+        }
+
+        .stat-box {
+            background: #ffffff;
+            border: 1px solid #e7e5e4;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #57534e;
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            line-height: 1.1;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .muted {
+            color: #78716c;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            border: 1px solid transparent;
+        }
+
+        .status-pending {
+            background: #fff7ed;
+            color: #9a3412;
+            border-color: #fed7aa;
+        }
+
+        .status-picked {
+            background: #f0fdf4;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .simple-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #d6d3d1;
+            background: #ffffff;
+            color: #1c1917;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .simple-button:hover {
+            background: #fafaf9;
+        }
+
+        .primary-button {
+            background: #1c1917;
+            color: #ffffff;
+            border-color: #1c1917;
+        }
+
+        .primary-button:hover {
+            background: #292524;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            font-size: 13px;
+            font-weight: 500;
+            color: #57534e;
+            padding: 12px 20px;
+            background: #fafaf9;
+            border-bottom: 1px solid #e7e5e4;
+        }
+
+        td {
+            padding: 14px 20px;
+            border-bottom: 1px solid #f0ece8;
+            vertical-align: top;
+            font-size: 14px;
+        }
+
+        tr:hover td {
+            background: #fcfcfb;
+        }
+
+        .activity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
         .activity-item {
-            border-bottom: 1px solid #eaeaea;
-            transition: background-color 0.2s;
-            padding: 0.75rem;
-        }
-
-        .activity-item:hover {
-            background-color: #f9f9f9;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f0ece8;
         }
 
         .activity-item:last-child {
-            border-bottom: none;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.7rem;
-            border-radius: 9999px;
-            font-weight: 500;
-            background-color: #f0f0f0;
-            color: #4a4a4a;
-        }
-
-        .badge-success {
-            background-color: #e8f0e8;
-            color: #2c5e2c;
-        }
-
-        .badge-warning {
-            background-color: #fef7e0;
-            color: #9e6b0b;
-        }
-
-        .section-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #1e1e1e;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 1rem;
-        }
-
-        .value-large {
-            font-size: 2rem;
-            font-weight: 500;
-            color: #1e1e1e;
-            line-height: 1.2;
-        }
-
-        .value-small {
-            font-size: 1.25rem;
-            font-weight: 500;
-            color: #1e1e1e;
-        }
-
-        .metric-label {
-            font-size: 0.7rem;
-            color: #6e6e6e;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .icon-circle {
-            width: 2.5rem;
-            height: 2.5rem;
-            background-color: #f0f0f0;
-            border-radius: 0.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #4a4a4a;
+            border-bottom: 0;
+            padding-bottom: 0;
         }
     </style>
 </head>
 
-<body class="bg-[#f5f5f4]">
+<body>
     <div class="flex">
-        <!-- Sidebar -->
         <?php include 'sidebar.php'; ?>
 
-        <!-- Main Content -->
-        <main class="flex-1 ml-60 min-h-screen">
-            <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
-                <div class="flex justify-between items-center">
+        <main class="flex-1 ml-60 min-h-screen bg-[#f5f5f4]">
+            <div class="px-8 py-6 border-b border-[#e7e5e4] bg-white">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Mail Room Dashboard</h1>
-                        <p class="text-sm text-[#6e6e6e] mt-1"><?php echo date('l, F j, Y'); ?></p>
+                        <h1 class="text-[28px] font-semibold text-[#1c1917]">Dashboard</h1>
+                        <p class="mt-1 text-sm text-[#78716c]"><?php echo date('l, F j, Y g:i A', strtotime($stats['dashboard_refreshed_at'])); ?></p>
                     </div>
-
-                    <!-- Quick Action Buttons -->
-                 <!--   <div class="flex gap-2">
-                        <a href="./parcels.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-solid fa-gift mr-1 text-[#6e6e6e]"></i> Parcels
+                    <div class="flex items-center gap-3">
+                        <a href="parcels.php" class="simple-button">
+                            <i class="fa-solid fa-box"></i>
+                            View parcels
                         </a>
-                        <a href="./list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-solid fa-file mr-1 text-[#6e6e6e]"></i> Documents
+                        <a href="documents.php" class="simple-button primary-button">
+                            <i class="fa-solid fa-file-lines"></i>
+                            Open documents
                         </a>
-                        <a href="./newspaper_categories.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-solid fa-newspaper mr-1 text-[#6e6e6e]"></i> Newspapers
-                        </a>
-                    </div>-->
+                    </div>
                 </div>
             </div>
 
             <div class="p-8">
                 <?php if (isset($error)): ?>
-                    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+                    <div class="mb-6 rounded-2xl bg-[#ffdad6] px-5 py-4 text-[#93000a]">
                         <i class="fa-regular fa-circle-exclamation mr-2"></i>
                         <?php echo $error; ?>
                     </div>
                 <?php endif; ?>
 
-                <!-- Parcel Overview -->
-                <div class="mb-8">
-                    <div class="stat-card">
-                        <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                            <div class="flex items-start justify-between gap-4">
-                                <div>
-                                    <p class="metric-label">Parcel Overview</p>
-                                    <p class="value-large"><?php echo number_format($stats['parcels_received']); ?></p>
-                                    <div class="flex flex-wrap items-center gap-3 mt-2">
-                                        <span class="text-xs text-[#6e6e6e]">
-                                            <i class="fa-regular fa-clock mr-1"></i><?php echo $stats['pending_parcels']; ?> pending
-                                        </span>
-                                        <span class="text-xs text-[#6e6e6e]">
-                                            <i class="fa-solid fa-truck mr-1"></i><?php echo $stats['total_pickups']; ?> picked up
-                                        </span>
-                                        <span class="text-xs text-[#6e6e6e]">
-                                            <i class="fa-solid fa-arrows-rotate mr-1"></i>Updated <?php echo date('M j, Y g:i A', strtotime($stats['dashboard_refreshed_at'])); ?>
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="icon-circle">
-                                    <i class="fa-solid fa-box"></i>
-                                </div>
-                            </div>
-
-                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:min-w-[620px]">
-                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
-                                    <p class="metric-label">Today</p>
-                                    <p class="value-small"><?php echo number_format($stats['today_parcels']); ?></p>
-                                </div>
-                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
-                                    <p class="metric-label">This Week</p>
-                                    <p class="value-small"><?php echo number_format($stats['week_parcels']); ?></p>
-                                </div>
-                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
-                                    <p class="metric-label">This Month</p>
-                                    <p class="value-small"><?php echo number_format($stats['month_parcels']); ?></p>
-                                </div>
-                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
-                                    <p class="metric-label">Last Received</p>
-                                    <p class="text-sm font-medium text-[#1e1e1e] mt-1">
-                                        <?php echo $stats['latest_parcel_received'] ? date('M j, Y', strtotime($stats['latest_parcel_received'])) : 'No records'; ?>
-                                    </p>
-                                </div>
-                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
-                                    <p class="metric-label">Last Pickup</p>
-                                    <p class="text-sm font-medium text-[#1e1e1e] mt-1">
-                                        <?php echo $stats['latest_parcel_picked'] ? date('M j, Y', strtotime($stats['latest_parcel_picked'])) : 'No pickups'; ?>
-                                    </p>
-                                </div>
-                            </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+                    <div class="stat-box">
+                        <div class="stat-label">Documents</div>
+                        <div class="stat-value"><?php echo number_format($stats['documents']); ?></div>
+                        <div class="mt-2 text-sm muted">Today: <?php echo number_format($stats['today_documents']); ?></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Parcels received</div>
+                        <div class="stat-value"><?php echo number_format($stats['parcels_received']); ?></div>
+                        <div class="mt-2 text-sm muted">Pending: <?php echo number_format($stats['pending_parcels']); ?></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Pickups</div>
+                        <div class="stat-value"><?php echo number_format($stats['total_pickups']); ?></div>
+                        <div class="mt-2 text-sm muted">This week: <?php echo number_format($stats['week_parcels']); ?></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Latest parcel update</div>
+                        <div class="text-lg font-medium text-[#1c1917]">
+                            <?php echo $stats['latest_parcel_received'] ? date('M j, Y', strtotime($stats['latest_parcel_received'])) : 'No record'; ?>
                         </div>
+                        <div class="mt-2 text-sm muted">Last pickup: <?php echo $stats['latest_parcel_picked'] ? date('M j, Y', strtotime($stats['latest_parcel_picked'])) : 'No record'; ?></div>
                     </div>
                 </div>
 
-                <!-- Today's Activity Summary - Monochromatic -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                    <div class="bg-white border border-[#e5e5e5] rounded-lg p-4">
-                        <h3 class="text-sm font-medium text-[#1e1e1e] mb-3 flex items-center">
-                            <i class="fa-regular fa-calendar mr-2 text-[#6e6e6e]"></i> Today's Documents
-                        </h3>
-                        <p class="value-small"><?php echo $stats['today_documents']; ?></p>
-                        <div class="flex justify-between text-xs text-[#6e6e6e] mt-2">
-                            <span>Week: <?php echo $stats['week_documents']; ?></span>
-                            <span>Month: <?php echo $stats['month_documents']; ?></span>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border border-[#e5e5e5] rounded-lg p-4">
-                        <h3 class="text-sm font-medium text-[#1e1e1e] mb-3 flex items-center">
-                            <i class="fa-regular fa-calendar mr-2 text-[#6e6e6e]"></i> Today's Parcels
-                        </h3>
-                        <p class="value-small"><?php echo $stats['today_parcels']; ?></p>
-                        <div class="flex justify-between text-xs text-[#6e6e6e] mt-2">
-                            <span>Week: <?php echo $stats['week_parcels']; ?></span>
-                            <span>Month: <?php echo $stats['month_parcels']; ?></span>
-                        </div>
-                    </div>
-
-                </div>
-
-                <!-- Main Content Grid -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Left Column - Recent Activities (spans 2 columns) -->
-                    <div class="lg:col-span-2">
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5 mb-6">
-                            <h2 class="section-title flex items-center">
-                                <i class="fa-regular fa-clock mr-2 text-[#6e6e6e]"></i>
-                                Recent Activities
-                            </h2>
-                            <div class="divide-y divide-[#eaeaea]">
-                                <?php if (!empty($recent_activities)): ?>
-                                    <?php foreach (array_slice($recent_activities, 0, 8) as $activity): ?>
-                                        <div class="activity-item flex items-start gap-3">
-                                            <div class="icon-circle w-8 h-8 text-sm">
-                                                <?php if ($activity['type'] == 'document'): ?>
-                                                    <i class="fa-regular fa-file-lines"></i>
-                                                <?php elseif ($activity['type'] == 'parcel'): ?>
-                                                    <i class="fa-solid fa-box"></i>
-                                                <?php elseif ($activity['type'] == 'newspaper'): ?>
-                                                    <i class="fa-regular fa-newspaper"></i>
-                                                <?php elseif ($activity['type'] == 'distribution'): ?>
-                                                    <i class="fa-solid fa-share-from-square"></i>
-                                                <?php elseif ($activity['type'] == 'pickup'): ?>
-                                                    <i class="fa-solid fa-truck"></i>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="flex-1">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="text-xs font-medium uppercase tracking-wide text-[#6e6e6e]">
-                                                        <?php echo ucfirst($activity['type']); ?>
-                                                    </span>
-                                                    <?php if (isset($activity['status'])): ?>
-                                                        <span class="badge <?php echo $activity['status'] == 'Picked up' ? 'badge-success' : 'badge-warning'; ?>">
-                                                            <?php echo $activity['status']; ?>
+                <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div class="xl:col-span-2 flex flex-col gap-6">
+                        <div class="panel">
+                            <div class="panel-header flex items-center justify-between">
+                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent parcels</h2>
+                                <a href="parcels.php" class="text-sm text-[#57534e] hover:text-[#1c1917]">Open all</a>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Tracking ID</th>
+                                            <th>Recipient</th>
+                                            <th>Sender</th>
+                                            <th>Status</th>
+                                            <th>Received</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if ($dashboard_parcels && $dashboard_parcels->num_rows > 0): ?>
+                                            <?php while ($parcel = $dashboard_parcels->fetch_assoc()): ?>
+                                                <tr>
+                                                    <td class="font-medium text-[#1c1917]"><?php echo htmlspecialchars($parcel['tracking_id']); ?></td>
+                                                    <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
+                                                    <td class="muted"><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                                    <td>
+                                                        <span class="status-badge <?php echo $parcel['status'] === 'Picked Up' ? 'status-picked' : 'status-pending'; ?>">
+                                                            <?php echo htmlspecialchars($parcel['status']); ?>
                                                         </span>
-                                                    <?php endif; ?>
+                                                    </td>
+                                                    <td class="muted"><?php echo date('M j, Y', strtotime($parcel['date_received'])); ?></td>
+                                                </tr>
+                                            <?php endwhile; ?>
+                                        <?php else: ?>
+                                            <tr>
+                                                <td colspan="5" class="text-center muted py-8">No parcel records available.</td>
+                                            </tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-header flex items-center justify-between">
+                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent pickups</h2>
+                                <span class="text-sm muted"><?php echo number_format($stats['total_pickups']); ?> total</span>
+                            </div>
+                            <div class="panel-body">
+                                <?php if ($recent_pickups && $recent_pickups->num_rows > 0): ?>
+                                    <div class="activity-list">
+                                        <?php while ($pickup = $recent_pickups->fetch_assoc()): ?>
+                                            <div class="activity-item">
+                                                <div class="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($pickup['tracking_id']); ?></p>
+                                                        <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($pickup['picked_by']); ?></p>
+                                                        <p class="mt-1 text-sm muted"><?php echo date('M j, Y', strtotime($pickup['date_picked'])); ?></p>
+                                                    </div>
+                                                    <span class="status-badge status-picked">Picked up</span>
                                                 </div>
-                                                <p class="text-sm font-medium text-[#1e1e1e] mt-1">
-                                                    <?php echo htmlspecialchars(substr($activity['title'], 0, 60)); ?>
-                                                </p>
-                                                <p class="text-xs text-[#6e6e6e] mt-1">
-                                                    <?php echo htmlspecialchars($activity['details']); ?>
-                                                </p>
-                                                <p class="text-xs text-[#9e9e9e] mt-1">
-                                                    <i class="fa-regular fa-calendar mr-1"></i>
-                                                    <?php echo date('M j, Y', strtotime($activity['date'])); ?>
-                                                </p>
                                             </div>
-                                        </div>
-                                    <?php endforeach; ?>
+                                        <?php endwhile; ?>
+                                    </div>
                                 <?php else: ?>
-                                    <p class="text-sm text-[#6e6e6e] text-center py-4">No recent activities</p>
+                                    <p class="text-sm muted">No recent pickups available.</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-6">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent activity</h2>
+                            </div>
+                            <div class="panel-body">
+                                <?php if (!empty($recent_activities)): ?>
+                                    <div class="activity-list">
+                                        <?php foreach (array_slice($recent_activities, 0, 6) as $activity): ?>
+                                            <div class="activity-item">
+                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars(substr($activity['title'], 0, 52)); ?></p>
+                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
+                                                <p class="mt-2 text-xs muted"><?php echo ucfirst($activity['type']); ?> • <?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <p class="text-sm muted">No recent activities found.</p>
                                 <?php endif; ?>
                             </div>
                         </div>
 
-                        <!-- Recent Pickups Section -->
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <div class="flex justify-between items-center mb-4">
-                                <h2 class="section-title flex items-center">
-                                    <i class="fa-solid fa-truck mr-2 text-[#6e6e6e]"></i>
-                                    Recent Parcel Pickups
-                                </h2>
-                                <a href="./parcels.php" class="text-xs text-[#6e6e6e] hover:text-[#1e1e1e] flex items-center">
-                                    View all <i class="fa-solid fa-arrow-right ml-1"></i>
-                                </a>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <h2 class="text-lg font-semibold text-[#1c1917]">Overview</h2>
                             </div>
-                            <?php if ($recent_pickups && $recent_pickups->num_rows > 0): ?>
-                                <div class="space-y-3">
-                                    <?php while ($pickup = $recent_pickups->fetch_assoc()): ?>
-                                        <div class="flex items-start gap-3 p-2 hover:bg-[#f5f5f4] rounded-lg transition-colors">
-                                            <div class="icon-circle w-8 h-8 text-sm">
-                                                <i class="fa-solid fa-truck"></i>
-                                            </div>
-                                            <div class="flex-1">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="text-xs font-mono font-medium text-[#4a4a4a]">
-                                                        <?php echo htmlspecialchars($pickup['tracking_id']); ?>
-                                                    </span>
-                                                    <span class="badge badge-success">Picked up</span>
-                                                </div>
-                                                <p class="text-sm text-[#1e1e1e] mt-1">
-                                                    <?php echo htmlspecialchars(substr($pickup['description'], 0, 50)); ?>
-                                                </p>
-                                                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-[#6e6e6e]">
-                                                    <span><i class="fa-regular fa-user mr-1"></i> <?php echo htmlspecialchars($pickup['picked_by']); ?></span>
-                                                    <span><i class="fa-solid fa-phone mr-1"></i> <?php echo htmlspecialchars($pickup['phone_number']); ?></span>
-                                                    <span><i class="fa-regular fa-calendar mr-1"></i> <?php echo date('M j, Y', strtotime($pickup['date_picked'])); ?></span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endwhile; ?>
+                            <div class="panel-body space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm muted">Documents this month</span>
+                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['month_documents']); ?></span>
                                 </div>
-                            <?php else: ?>
-                                <p class="text-sm text-[#6e6e6e] text-center py-4">No recent pickups</p>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <!-- Right Column - Stats and Breakdowns -->
-                    <div class="space-y-6">
-                        <!-- Quick Stats -->
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <h3 class="section-title flex items-center">
-                                <i class="fa-solid fa-chart-simple mr-2 text-[#6e6e6e]"></i>
-                                Quick Stats
-                            </h3>
-                            <div class="space-y-4">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Pending Parcels</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo $stats['pending_parcels']; ?></span>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm muted">Parcels this month</span>
+                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['month_parcels']); ?></span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Total Pickups</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo $stats['total_pickups']; ?></span>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm muted">Pending parcels</span>
+                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['pending_parcels']); ?></span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Documents</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo number_format($stats['documents']); ?></span>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm muted">Total copies received</span>
+                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['total_copies_received']); ?></span>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Parcels Received</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo number_format($stats['parcels_received']); ?></span>
-                                </div>
-                                <div class="flex justify-between items-center pt-2 border-t border-[#e5e5e5]">
-                                    <span class="text-sm text-[#6e6e6e]">Total Records</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]">
-                                        <?php echo number_format($stats['documents'] + $stats['parcels_received'] + $stats['newspapers']); ?>
-                                    </span>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm muted">Total copies distributed</span>
+                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['total_copies_distributed']); ?></span>
                                 </div>
                             </div>
                         </div>
-
-                        <!-- System Info -->
-                        <!--<div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <h3 class="section-title flex items-center">
-                                <i class="fa-solid fa-circle-info mr-2 text-[#6e6e6e]"></i>
-                                System Information
-                            </h3>
-                            <div class="space-y-2 text-sm">
-                                <div class="flex justify-between">
-                                    <span class="text-[#6e6e6e]">Server Time</span>
-                                    <span class="text-[#1e1e1e]"><?php echo date('H:i:s'); ?></span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-[#6e6e6e]">Total Tables</span>
-                                    <span class="text-[#1e1e1e]">
-                                        <?/*php
-                                        $tables = $conn->query("SHOW TABLES");
-                                        echo $tables ? $tables->num_rows : 0;
-                                        */ ?>
-                                    </span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-[#6e6e6e]">Database</span>
-                                    <span class="text-[#1e1e1e]">mailroom_system</span>
-                                </div>
-                            </div>
-                        </div>-->
                     </div>
-                </div>
+                </section>
             </div>
         </main>
     </div>
