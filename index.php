@@ -485,7 +485,7 @@ try {
             <div class="px-8 py-6 border-b border-[#e7e5e4] bg-white">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <h1 class="text-[28px] font-semibold text-[#1c1917]">Dashboard</h1>
+                        <h1 class="text-[28px] font-semibold text-[#1c1917]">Mailroom Dashboard</h1>
                         <p id="dashboardClock" class="mt-1 text-sm text-[#78716c]" data-server-time="<?php echo htmlspecialchars($stats['dashboard_refreshed_at']); ?>">
                             <?php echo date('l, F j, Y g:i:s A', strtotime($stats['dashboard_refreshed_at'])); ?>
                         </p>
@@ -706,9 +706,9 @@ try {
 
         (function() {
             const rows = Array.from(document.querySelectorAll('.circular-table-wrap tbody tr'));
-                const info = document.getElementById('dashboardParcelsPaginationInfo');
-                const controls = document.getElementById('dashboardParcelsPaginationControls');
-                const wrapper = document.getElementById('dashboardParcelsPagination');
+            const info = document.getElementById('dashboardParcelsPaginationInfo');
+            const controls = document.getElementById('dashboardParcelsPaginationControls');
+            const wrapper = document.getElementById('dashboardParcelsPagination');
             const pageSize = 5;
             let currentPage = 1;
 

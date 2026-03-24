@@ -1241,14 +1241,54 @@ include './sidebar.php';
                         class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                         Cancel
                     </button>
-                    <button type="submit" name="distribute_submit"
+                    <button type="button" name="distribute_submit"
                         class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]"
-                        onclick="return validateDistribution()">
+                        onclick="promptDistributionConfirmation()">
                         <i class="fa-solid fa-hand-holding-hand mr-1"></i>
                         Distribute Selected (<span id="modalSelectedCount">0</span>)
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="distributionConfirmModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Distribution</h2>
+                <button type="button" onclick="closeDistributionConfirmModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <p class="text-sm text-[#6e6e6e]">You are about to distribute the selected newspapers with the details below.</p>
+                <div class="p-4 bg-[#fafafa] border border-[#e5e5e5] rounded-md space-y-2">
+                    <div class="flex justify-between gap-3 text-sm">
+                        <span class="text-[#6e6e6e]">Recipient</span>
+                        <span class="font-medium text-[#1e1e1e]" id="confirmRecipientName">-</span>
+                    </div>
+                    <div class="flex justify-between gap-3 text-sm">
+                        <span class="text-[#6e6e6e]">Distributed by</span>
+                        <span class="font-medium text-[#1e1e1e]" id="confirmDistributedBy">-</span>
+                    </div>
+                    <div class="flex justify-between gap-3 text-sm">
+                        <span class="text-[#6e6e6e]">Selected newspapers</span>
+                        <span class="font-medium text-[#1e1e1e]" id="confirmDistributionCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="closeDistributionConfirmModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <button type="button" onclick="submitDistributionForm()"
+                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                    Confirm Distribution
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1475,7 +1515,7 @@ include './sidebar.php';
         // ========== MODAL FUNCTIONS ==========
         function openDistributeModal() {
             if (selectedNewspapers.size === 0) {
-                alert('Please select at least one newspaper to distribute');
+                showToast('error', 'Please select at least one newspaper to distribute');
                 return;
             }
 
@@ -1715,28 +1755,40 @@ include './sidebar.php';
             document.getElementById('modalSelectedCount').textContent = checkboxes.length;
         }
 
-        function validateDistribution() {
+        function promptDistributionConfirmation() {
             let checkboxes = document.querySelectorAll('#distributeModal .newspaper-checkbox:checked');
             let recipientSelect = document.getElementById('recipient_select');
             let distributedBy = document.getElementById('modal_distributed_by').value.trim();
 
             if (checkboxes.length === 0) {
-                alert('Please select at least one newspaper to distribute');
-                return false;
+                showToast('error', 'Please select at least one newspaper to distribute');
+                return;
             }
 
             if (!recipientSelect.value) {
-                alert('Please select a recipient');
-                return false;
+                showToast('error', 'Please select a recipient');
+                return;
             }
 
             if (distributedBy === '') {
-                alert('Please enter who is distributing');
-                return false;
+                showToast('error', 'Please enter who is distributing');
+                return;
             }
 
             let recipientName = recipientSelect.options[recipientSelect.selectedIndex].text;
-            return confirm(`Distribute 1 copy each of ${checkboxes.length} newspaper(s) to ${recipientName}?`);
+            document.getElementById('confirmRecipientName').textContent = recipientName;
+            document.getElementById('confirmDistributedBy').textContent = distributedBy;
+            document.getElementById('confirmDistributionCount').textContent = `${checkboxes.length} newspaper(s)`;
+            document.getElementById('distributionConfirmModal').style.display = 'flex';
+        }
+
+        function closeDistributionConfirmModal() {
+            document.getElementById('distributionConfirmModal').style.display = 'none';
+        }
+
+        function submitDistributionForm() {
+            closeDistributionConfirmModal();
+            document.getElementById('distributeForm').submit();
         }
 
         // ========== SORTING FUNCTION ==========
@@ -1807,12 +1859,16 @@ include './sidebar.php';
         // Close modals when clicking outside
         window.onclick = function(event) {
             const distributeModal = document.getElementById('distributeModal');
+            const distributionConfirmModal = document.getElementById('distributionConfirmModal');
             const viewModal = document.getElementById('viewModal');
             const editModal = document.getElementById('editModal');
             const deleteModal = document.getElementById('deleteModal');
 
             if (event.target == distributeModal) {
                 closeDistributeModal();
+            }
+            if (event.target == distributionConfirmModal) {
+                closeDistributionConfirmModal();
             }
             if (event.target == viewModal) {
                 closeViewModal();
@@ -1829,6 +1885,7 @@ include './sidebar.php';
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeDistributeModal();
+                closeDistributionConfirmModal();
                 closeViewModal();
                 closeEditModal();
                 closeDeleteModal();
