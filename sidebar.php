@@ -153,16 +153,6 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-box w-4"></i>
                 <span class="sidebar-text">Parcel Management</span>
             </a>
-            <!--<a href="parcels.php?tab=pickup"
-                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'parcels.php' && isset($_GET['tab']) && $_GET['tab'] == 'pickup' ? 'active' : ''; ?>">
-                <i class="fa-solid fa-truck w-4"></i>
-                <span class="sidebar-text">Pickups</span>
-            </a>
-            <a href="parcels.php?tab=records"
-                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'parcels.php' && isset($_GET['tab']) && $_GET['tab'] == 'records' ? 'active' : ''; ?>">
-                <i class="fa-regular fa-rectangle-list w-4"></i>
-                <span class="sidebar-text">All Records</span>
-            </a>-->
         </nav>
 
         <!-- User info (fixed at bottom) -->
