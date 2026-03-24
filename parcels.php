@@ -1610,8 +1610,23 @@ $recent_parcels = $conn->query("
         }
 
         function printReceiveRecords() {
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
+            let rowsHtml = '';
+            document.querySelectorAll('.receive-row:not([style*="display: none"])').forEach(row => {
+                const cells = row.querySelectorAll('td');
+                rowsHtml += `
+                    <tr>
+                        <td>${cells[0].textContent}</td>
+                        <td>${cells[1].textContent}</td>
+                        <td>${cells[2].textContent}</td>
+                        <td>${cells[3].textContent}</td>
+                        <td>${cells[4].textContent}</td>
+                        <td>${cells[5].textContent}</td>
+                        <td>${cells[6].textContent.trim()}</td>
+                    </tr>
+                `;
+            });
+
+            const printContent = `
                 <html>
                 <head>
                     <title>Received Parcels</title>
@@ -1643,31 +1658,13 @@ $recent_parcels = $conn->query("
                             </tr>
                         </thead>
                         <tbody>
-            `);
-
-            document.querySelectorAll('.receive-row:not([style*="display: none"])').forEach(row => {
-                const cells = row.querySelectorAll('td');
-                printWindow.document.write(`
-                    <tr>
-                        <td>${cells[0].textContent}</td>
-                        <td>${cells[1].textContent}</td>
-                        <td>${cells[2].textContent}</td>
-                        <td>${cells[3].textContent}</td>
-                        <td>${cells[4].textContent}</td>
-                        <td>${cells[5].textContent}</td>
-                        <td>${cells[6].textContent.trim()}</td>
-                    </tr>
-                `);
-            });
-
-            printWindow.document.write(`
+                            ${rowsHtml}
                         </tbody>
                     </table>
                 </body>
                 </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
+            `;
+            printHtmlOnPage(printContent);
             showToast('Print dialog opened', 'info');
         }
 
@@ -1712,8 +1709,23 @@ $recent_parcels = $conn->query("
         }
 
         function printRecords() {
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
+            let rowsHtml = '';
+            document.querySelectorAll('.record-row:not([style*="display: none"])').forEach(row => {
+                const cells = row.querySelectorAll('td');
+                rowsHtml += `
+                    <tr>
+                        <td>${cells[0].textContent}</td>
+                        <td>${cells[1].textContent}</td>
+                        <td>${cells[2].textContent}</td>
+                        <td>${cells[3].textContent}</td>
+                        <td>${cells[4].textContent}</td>
+                        <td>${cells[5].innerHTML.replace(/<[^>]*>/g, '')}</td>
+                        <td>${cells[6].innerHTML.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</td>
+                    </tr>
+                `;
+            });
+
+            const printContent = `
                 <html>
                 <head>
                     <title>Parcel Records</title>
@@ -1745,32 +1757,38 @@ $recent_parcels = $conn->query("
                             </tr>
                         </thead>
                         <tbody>
-            `);
-
-            document.querySelectorAll('.record-row:not([style*="display: none"])').forEach(row => {
-                const cells = row.querySelectorAll('td');
-                printWindow.document.write(`
-                    <tr>
-                        <td>${cells[0].textContent}</td>
-                        <td>${cells[1].textContent}</td>
-                        <td>${cells[2].textContent}</td>
-                        <td>${cells[3].textContent}</td>
-                        <td>${cells[4].textContent}</td>
-                        <td>${cells[5].innerHTML.replace(/<[^>]*>/g, '')}</td>
-                        <td>${cells[6].innerHTML.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</td>
-                    </tr>
-                `);
-            });
-
-            printWindow.document.write(`
+                            ${rowsHtml}
                         </tbody>
                     </table>
                 </body>
                 </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
+            `;
+            printHtmlOnPage(printContent);
             showToast('Print dialog opened', 'info');
+        }
+
+        function printHtmlOnPage(html) {
+            const frame = document.createElement('iframe');
+            frame.style.position = 'fixed';
+            frame.style.right = '0';
+            frame.style.bottom = '0';
+            frame.style.width = '0';
+            frame.style.height = '0';
+            frame.style.border = '0';
+            document.body.appendChild(frame);
+
+            const frameWindow = frame.contentWindow;
+            const frameDocument = frameWindow.document;
+            frameDocument.open();
+            frameDocument.write(html);
+            frameDocument.close();
+
+            frameWindow.focus();
+            frameWindow.print();
+
+            setTimeout(() => {
+                frame.remove();
+            }, 1000);
         }
 
         // Close modals when clicking outside

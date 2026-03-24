@@ -1205,8 +1205,7 @@ if ($action == 'list') {
 
         // Print table
         function printTable() {
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
+            const printContent = `
                 <html>
                 <head>
                     <title>Document Types</title>
@@ -1249,11 +1248,34 @@ if ($action == 'list') {
                     </table>
                 </body>
                 </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
+            `;
+            printHtmlOnPage(printContent);
 
             showToast('Print dialog opened', 'success');
+        }
+
+        function printHtmlOnPage(html) {
+            const frame = document.createElement('iframe');
+            frame.style.position = 'fixed';
+            frame.style.right = '0';
+            frame.style.bottom = '0';
+            frame.style.width = '0';
+            frame.style.height = '0';
+            frame.style.border = '0';
+            document.body.appendChild(frame);
+
+            const frameWindow = frame.contentWindow;
+            const frameDocument = frameWindow.document;
+            frameDocument.open();
+            frameDocument.write(html);
+            frameDocument.close();
+
+            frameWindow.focus();
+            frameWindow.print();
+
+            setTimeout(() => {
+                frame.remove();
+            }, 1000);
         }
 
         // Enter key for search
