@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost
--- Generation Time: Mar 09, 2026 at 10:04 AM
+-- Generation Time: Mar 24, 2026 at 04:10 AM
 -- Server version: 10.11.16-MariaDB
--- PHP Version: 8.4.18
+-- PHP Version: 8.4.19
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -47,7 +47,10 @@ INSERT INTO `distribution` (`id`, `newspaper_id`, `distributed_to`, `department`
 (3, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat'),
 (4, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat'),
 (5, 2, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat'),
-(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat');
+(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat'),
+(7, 7, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat'),
+(8, 4, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat'),
+(9, 3, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat');
 
 -- --------------------------------------------------------
 
@@ -70,7 +73,7 @@ CREATE TABLE `documents` (
 --
 
 INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `copies_received`, `date_received`) VALUES
-(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 4, '2026-03-07');
+(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07');
 
 -- --------------------------------------------------------
 
@@ -88,6 +91,13 @@ CREATE TABLE `document_distribution` (
   `date_distributed` date NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+--
+-- Dumping data for table `document_distribution`
+--
+
+INSERT INTO `document_distribution` (`id`, `document_id`, `department`, `recipient_name`, `number_received`, `number_distributed`, `date_distributed`, `created_at`) VALUES
+(1, 1, 'Finance', 'Gloria', 1, 1, '2026-03-18', '2026-03-18 11:34:49');
 
 -- --------------------------------------------------------
 
@@ -145,8 +155,9 @@ CREATE TABLE `newspapers` (
 INSERT INTO `newspapers` (`id`, `newspaper_name`, `newspaper_number`, `date_received`, `received_by`, `status`, `distributed_to`, `department`, `date_distributed`, `category_id`, `total_copies`, `available_copies`) VALUES
 (1, 'financial', '1234', '2026-03-07', 'Doreenda Abbey', 'distributed', NULL, NULL, NULL, 3, 1, 0),
 (2, 'Daily Guide', 'DAI-20260308-015', '2026-03-08', 'Doreenda Abbey', 'available', NULL, NULL, NULL, 4, 1, 7),
-(3, 'The Chronicle', 'THE-20260308-519', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 5, 1, 19),
-(4, 'Ghanaian Times', 'GHA-20260308-923', '2026-03-08', 'Doreenda Abbey', 'available', NULL, NULL, NULL, 2, 1, 10);
+(3, 'The Chronicle', 'THE-20260308-519', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 5, 1, 18),
+(4, 'Ghanaian Times', 'GHA-20260308-923', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 2, 1, 9),
+(7, 'Business & Financial Times', 'BUS-20260318-367', '2026-03-18', 'Nadjat', 'partial', NULL, NULL, NULL, 3, 1, 8);
 
 -- --------------------------------------------------------
 
@@ -192,7 +203,8 @@ CREATE TABLE `parcels_pickup` (
 --
 
 INSERT INTO `parcels_pickup` (`id`, `parcel_id`, `picked_by`, `phone_number`, `designation`, `date_picked`) VALUES
-(1, 1, 'Doreenda Abbey', '0505306932', 'PVC', '2026-03-08');
+(1, 1, 'Doreenda Abbey', '0505306932', 'PVC', '2026-03-08'),
+(2, 2, 'Nadjat', '0505306932', 'IT Department', '2026-03-18');
 
 -- --------------------------------------------------------
 
@@ -216,7 +228,32 @@ CREATE TABLE `parcels_received` (
 
 INSERT INTO `parcels_received` (`id`, `description`, `sender`, `addressed_to`, `date_received`, `received_by`, `tracking_id`) VALUES
 (1, 'A gift', 'Hollali Kelvin', 'Mr Kelvin Hollali', '2026-03-07', 'Doreenda Abbey', 'PRCL-20260307-9B102A'),
-(2, 'An Egonomic Chair', 'Archiver Asare', 'Mr Kelvin Hollali', '2026-03-08', 'Doreenda Abbey', 'PRCL-20260308-7D19FA');
+(2, 'An Egonomic Chair', 'Archiver Asare', 'Mr Kelvin Hollali', '2026-03-08', 'Doreenda Abbey', 'PRCL-20260308-7D19FA'),
+(3, 'item', 'Ben', 'Mr Kobby', '2026-03-18', 'salma', 'PRCL-20260318-9F3156');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `recipients`
+--
+
+CREATE TABLE `recipients` (
+  `id` int(11) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+--
+-- Dumping data for table `recipients`
+--
+
+INSERT INTO `recipients` (`id`, `name`, `is_active`, `created_at`) VALUES
+(1, 'Hollali Kelvin - IT Department', 1, '2026-03-24 03:53:23'),
+(2, 'Mr John - HR Department', 1, '2026-03-24 03:53:23'),
+(3, 'Doreenda Abbey - PVC Office', 1, '2026-03-24 03:53:23'),
+(4, 'Mrs Sarah Johnson - Administration', 1, '2026-03-24 03:53:23'),
+(5, 'Mr Michael Williams - Procurement', 1, '2026-03-24 03:53:23');
 
 --
 -- Indexes for dumped tables
@@ -280,6 +317,13 @@ ALTER TABLE `parcels_received`
   ADD KEY `idx_date_received` (`date_received`);
 
 --
+-- Indexes for table `recipients`
+--
+ALTER TABLE `recipients`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_name` (`name`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -287,7 +331,7 @@ ALTER TABLE `parcels_received`
 -- AUTO_INCREMENT for table `distribution`
 --
 ALTER TABLE `distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `documents`
@@ -299,7 +343,7 @@ ALTER TABLE `documents`
 -- AUTO_INCREMENT for table `document_distribution`
 --
 ALTER TABLE `document_distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `document_types`
@@ -311,7 +355,7 @@ ALTER TABLE `document_types`
 -- AUTO_INCREMENT for table `newspapers`
 --
 ALTER TABLE `newspapers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `newspaper_categories`
@@ -323,13 +367,19 @@ ALTER TABLE `newspaper_categories`
 -- AUTO_INCREMENT for table `parcels_pickup`
 --
 ALTER TABLE `parcels_pickup`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `parcels_received`
 --
 ALTER TABLE `parcels_received`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `recipients`
+--
+ALTER TABLE `recipients`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- Constraints for dumped tables
