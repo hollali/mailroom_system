@@ -109,7 +109,7 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
             <a href="newspaper_categories.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'newspaper_categories.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-tags w-4"></i>
-                <span class="sidebar-text">Newspaper Categories</span>
+                <span class="sidebar-text">Newspaper Subscription</span>
             </a>
             <a href="list.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'list.php' ? 'active' : ''; ?>">

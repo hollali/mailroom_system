@@ -11,6 +11,42 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+function tableHasColumn($conn, $table, $column)
+{
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $result = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && $result->num_rows > 0;
+}
+
+function normalizeDateTimeInput($value)
+{
+    if (!$value) {
+        return null;
+    }
+
+    return str_replace('T', ' ', trim($value));
+}
+
+function formatTimestampDisplay($value)
+{
+    if (empty($value)) {
+        return 'N/A';
+    }
+
+    $timestamp = strtotime($value);
+    if ($timestamp === false) {
+        return htmlspecialchars($value);
+    }
+
+    return date('M j, Y g:i A', $timestamp);
+}
+
+$documents_has_created_at = tableHasColumn($conn, 'documents', 'created_at');
+$document_received_expr = $documents_has_created_at
+    ? "COALESCE(d.created_at, d.date_received) as received_timestamp"
+    : "d.date_received as received_timestamp";
+
 // Handle AJAX request for quick distribution
 if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'quick_distribute') {
     header('Content-Type: application/json');
@@ -202,6 +238,8 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     $origin = trim($_POST['origin']);
     $copies_received = (int)$_POST['copies_received'];
     $date_received = $_POST['date_received'];
+    $normalized_received_timestamp = normalizeDateTimeInput($date_received);
+    $date_received_only = $normalized_received_timestamp ? date('Y-m-d', strtotime($normalized_received_timestamp)) : null;
 
     // Validate inputs
     if (empty($document_name)) {
@@ -219,7 +257,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
         exit();
     }
 
-    if (empty($date_received)) {
+    if (empty($normalized_received_timestamp)) {
         echo json_encode(['success' => false, 'message' => 'Date received is required']);
         exit();
     }
@@ -246,10 +284,17 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     $check_stmt->close();
 
     // Insert new document
-    $insert_stmt = $conn->prepare("INSERT INTO documents 
-        (serial_number, document_name, type_id, origin, copies_received, date_received) 
-        VALUES (?, ?, ?, ?, ?, ?)");
-    $insert_stmt->bind_param("ssissi", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received);
+    if ($documents_has_created_at) {
+        $insert_stmt = $conn->prepare("INSERT INTO documents 
+            (serial_number, document_name, type_id, origin, copies_received, date_received, created_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $insert_stmt->bind_param("ssissss", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received_only, $normalized_received_timestamp);
+    } else {
+        $insert_stmt = $conn->prepare("INSERT INTO documents 
+            (serial_number, document_name, type_id, origin, copies_received, date_received) 
+            VALUES (?, ?, ?, ?, ?, ?)");
+        $insert_stmt->bind_param("ssisis", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received_only);
+    }
 
     if ($insert_stmt->execute()) {
         $new_id = $conn->insert_id;
@@ -269,6 +314,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
 $sql = "SELECT 
             d.*, 
             dt.type_name as document_type,
+            $document_received_expr,
             COALESCE((
                 SELECT SUM(number_distributed) 
                 FROM document_distribution 
@@ -802,8 +848,9 @@ if (isset($_SESSION['toast'])) {
                                     <th onclick="sortTable(2)">Document Name <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(3)">Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(4)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(5)">Available <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(6)">Total <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th onclick="sortTable(5)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th onclick="sortTable(6)">Available <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th onclick="sortTable(7)">Total <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -834,7 +881,7 @@ if (isset($_SESSION['toast'])) {
                                             data-name="<?php echo strtolower(htmlspecialchars($doc['document_name'])); ?>"
                                             data-serial="<?php echo strtolower(htmlspecialchars($doc['serial_number'] ?? '')); ?>"
                                             data-origin="<?php echo strtolower(htmlspecialchars($doc['origin'] ?? '')); ?>"
-                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . ($doc['serial_number'] ?? '') . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . $available . ' ' . $total))); ?>">
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . ($doc['serial_number'] ?? '') . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . ($doc['received_timestamp'] ?? '') . ' ' . $available . ' ' . $total))); ?>">
 
                                             <td class="checkbox-column">
                                                 <input type="checkbox" class="document-checkbox bulk-checkbox hidden rounded border-[#e5e5e5] text-[#1e1e1e] focus:ring-[#1e1e1e]" value="<?php echo $doc['id']; ?>">
@@ -855,6 +902,10 @@ if (isset($_SESSION['toast'])) {
                                             </td>
 
                                             <td><?php echo htmlspecialchars($doc['origin'] ?? 'N/A'); ?></td>
+
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap">
+                                                <?php echo formatTimestampDisplay($doc['received_timestamp'] ?? null); ?>
+                                            </td>
 
                                             <td class="font-mono font-medium <?php echo $available > 0 ? 'text-[#1e1e1e]' : 'text-[#9e9e9e]'; ?>">
                                                 <?php echo $available; ?>
@@ -890,7 +941,7 @@ if (isset($_SESSION['toast'])) {
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="8" class="text-center py-8 text-sm text-[#6e6e6e]">
+                                        <td colspan="9" class="text-center py-8 text-sm text-[#6e6e6e]">
                                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
                                             No documents found.
                                             <button onclick="openAddDocumentModal()" class="text-[#1e1e1e] underline">Add your first document</button>
@@ -1098,9 +1149,9 @@ if (isset($_SESSION['toast'])) {
                     </div>
 
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received <span class="text-red-400">*</span></label>
-                        <input type="date" id="add_date_received" required
-                            value="<?php echo date('Y-m-d'); ?>"
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp <span class="text-red-400">*</span></label>
+                        <input type="datetime-local" id="add_date_received" required
+                            value="<?php echo date('Y-m-d\TH:i'); ?>"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                             autocomplete="off">
                     </div>
@@ -1164,7 +1215,7 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('add_serial_number').value = '';
             document.getElementById('add_origin').value = '';
             document.getElementById('add_copies_received').value = '1';
-            document.getElementById('add_date_received').value = '<?php echo date('Y-m-d'); ?>';
+            document.getElementById('add_date_received').value = '<?php echo date('Y-m-d\TH:i'); ?>';
 
             document.getElementById('addDocumentModal').style.display = 'flex';
         }
@@ -1645,7 +1696,7 @@ if (isset($_SESSION['toast'])) {
                 const bCol = b.querySelectorAll('td')[columnIndex]?.textContent.trim() || '';
 
                 // Check if numeric (for Available and Total columns)
-                if (columnIndex === 5 || columnIndex === 6) {
+                if (columnIndex === 6 || columnIndex === 7) {
                     const aNum = parseInt(aCol) || 0;
                     const bNum = parseInt(bCol) || 0;
                     return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;

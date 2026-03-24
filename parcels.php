@@ -5,6 +5,42 @@ session_start();
 $message = '';
 $error = '';
 
+function tableHasColumn($conn, $table, $column)
+{
+    $table = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+    $result = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && $result->num_rows > 0;
+}
+
+function normalizeDateTimeInput($value)
+{
+    if (!$value) {
+        return null;
+    }
+
+    return str_replace('T', ' ', trim($value));
+}
+
+function formatTimestampDisplay($value)
+{
+    if (empty($value)) {
+        return 'N/A';
+    }
+
+    $timestamp = strtotime($value);
+    if ($timestamp === false) {
+        return htmlspecialchars($value);
+    }
+
+    return date('M j, Y g:i A', $timestamp);
+}
+
+$parcels_received_has_timestamp = tableHasColumn($conn, 'parcels_received', 'received_at');
+$parcels_pickup_has_timestamp = tableHasColumn($conn, 'parcels_pickup', 'picked_at');
+$received_timestamp_select = $parcels_received_has_timestamp ? "COALESCE(pr.received_at, pr.date_received) as received_timestamp" : "pr.date_received as received_timestamp";
+$picked_timestamp_select = $parcels_pickup_has_timestamp ? "COALESCE(pp.picked_at, pp.date_picked) as picked_timestamp" : "pp.date_picked as picked_timestamp";
+
 // Handle new parcel receipt
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'receive') {
     // Generate unique tracking ID
@@ -15,9 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $addressed_to = $_POST['addressed_to'];
     $received_by = $_POST['received_by'];
     $date_received = $_POST['date_received'];
+    $normalized_received_timestamp = normalizeDateTimeInput($date_received);
+    $date_received_only = $normalized_received_timestamp ? date('Y-m-d', strtotime($normalized_received_timestamp)) : null;
 
-    $stmt = $conn->prepare("INSERT INTO parcels_received (description, sender, addressed_to, date_received, received_by, tracking_id) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssssss", $description, $sender, $addressed_to, $date_received, $received_by, $tracking_id);
+    if ($parcels_received_has_timestamp) {
+        $stmt = $conn->prepare("INSERT INTO parcels_received (description, sender, addressed_to, date_received, received_by, tracking_id, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssssss", $description, $sender, $addressed_to, $date_received_only, $received_by, $tracking_id, $normalized_received_timestamp);
+    } else {
+        $stmt = $conn->prepare("INSERT INTO parcels_received (description, sender, addressed_to, date_received, received_by, tracking_id) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssss", $description, $sender, $addressed_to, $date_received_only, $received_by, $tracking_id);
+    }
 
     if ($stmt->execute()) {
         echo json_encode(['success' => true, 'message' => "Parcel received successfully! Tracking ID: $tracking_id"]);
@@ -34,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
     $picked_by = $_POST['picked_by'];
     $phone_number = $_POST['phone_number'];
     $designation = $_POST['designation'];
+    $picked_timestamp = date('Y-m-d H:i:s');
     $date_picked = date('Y-m-d');
 
     // Check if parcel exists and not picked up
@@ -41,8 +85,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
     if ($check->num_rows > 0) {
         $check_pickup = $conn->query("SELECT * FROM parcels_pickup WHERE parcel_id = $parcel_id");
         if ($check_pickup->num_rows == 0) {
-            $stmt = $conn->prepare("INSERT INTO parcels_pickup (parcel_id, picked_by, phone_number, designation, date_picked) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("issss", $parcel_id, $picked_by, $phone_number, $designation, $date_picked);
+            if ($parcels_pickup_has_timestamp) {
+                $stmt = $conn->prepare("INSERT INTO parcels_pickup (parcel_id, picked_by, phone_number, designation, date_picked, picked_at) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("isssss", $parcel_id, $picked_by, $phone_number, $designation, $date_picked, $picked_timestamp);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO parcels_pickup (parcel_id, picked_by, phone_number, designation, date_picked) VALUES (?, ?, ?, ?, ?)");
+                $stmt->bind_param("issss", $parcel_id, $picked_by, $phone_number, $designation, $date_picked);
+            }
 
             if ($stmt->execute()) {
                 echo json_encode(['success' => true, 'message' => "Parcel picked up successfully!"]);
@@ -70,7 +119,7 @@ $stats['parcels_received'] = $result->fetch_assoc()['total'];
 
 // Today's parcels
 $today = date('Y-m-d');
-$result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE date_received = '$today'");
+$result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE DATE(date_received) = '$today'");
 $stats['today_parcels'] = $result->fetch_assoc()['total'];
 
 // This week's parcels
@@ -104,6 +153,8 @@ $parcels = $conn->query("
            pp.phone_number as picker_phone,
            pp.designation as picker_designation,
            pp.date_picked,
+           $received_timestamp_select,
+           $picked_timestamp_select,
            CASE WHEN pp.id IS NULL THEN 'Pending' ELSE 'Picked Up' END as status
     FROM parcels_received pr
     LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
@@ -117,6 +168,7 @@ $recent_offset = ($recent_page - 1) * $records_per_page;
 
 $recent_parcels = $conn->query("
     SELECT pr.*, 
+           $received_timestamp_select,
            CASE WHEN pp.id IS NULL THEN 'Pending' ELSE 'Picked Up' END as status
     FROM parcels_received pr
     LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
@@ -470,7 +522,7 @@ $recent_parcels = $conn->query("
                                         <th class="text-xs">Description</th>
                                         <th class="text-xs">Sender</th>
                                         <th class="text-xs">Recipient</th>
-                                        <th class="text-xs">Date Received</th>
+                                        <th class="text-xs">Received Timestamp</th>
                                         <th class="text-xs">Received By</th>
                                         <th class="text-xs">Status</th>
                                         <th class="text-xs">Actions</th>
@@ -480,13 +532,13 @@ $recent_parcels = $conn->query("
                                     <?php if ($recent_parcels->num_rows > 0): ?>
                                         <?php while ($parcel = $recent_parcels->fetch_assoc()): ?>
                                             <tr class="hover:bg-[#fafafa] receive-row"
-                                                data-date="<?php echo $parcel['date_received']; ?>"
+                                                data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>"
                                                 data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
                                                 <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                                <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['date_received']; ?></td>
+                                                <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['received_by']; ?></td>
                                                 <td class="text-sm">
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
@@ -582,7 +634,8 @@ $recent_parcels = $conn->query("
                                         <th class="text-xs">Description</th>
                                         <th class="text-xs">Sender</th>
                                         <th class="text-xs">Recipient</th>
-                                        <th class="text-xs">Date Received</th>
+                                        <th class="text-xs">Received Timestamp</th>
+                                        <th class="text-xs">Picked Up Timestamp</th>
                                         <th class="text-xs">Status</th>
                                         <th class="text-xs">Actions</th>
                                     </tr>
@@ -599,7 +652,8 @@ $recent_parcels = $conn->query("
                                             <td class="text-sm text-[#1e1e1e]"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['date_received']; ?></td>
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></td>
                                             <td class="text-sm">
                                                 <?php if ($parcel['status'] == 'Pending'): ?>
                                                     <span class="badge badge-warning">Pending</span>
@@ -614,7 +668,7 @@ $recent_parcels = $conn->query("
                                                         <i class="fa-solid fa-truck mr-1"></i> Process
                                                     </button>
                                                 <?php else: ?>
-                                                    <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['date_picked']; ?>')"
+                                                    <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e]">
                                                         <i class="fa-solid fa-circle-info"></i>
                                                     </button>
@@ -786,12 +840,12 @@ $recent_parcels = $conn->query("
                                             data-sender="<?php echo strtolower($parcel['sender']); ?>"
                                             data-recipient="<?php echo strtolower($parcel['addressed_to']); ?>"
                                             data-picker="<?php echo strtolower($parcel['picked_by'] ?? ''); ?>"
-                                            data-date="<?php echo $parcel['date_received']; ?>">
+                                            data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>">
                                             <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
                                             <td class="text-sm text-[#1e1e1e] max-w-[200px] truncate"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo date('M j, Y', strtotime($parcel['date_received'])); ?></td>
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
                                             <td class="text-sm">
                                                 <?php if ($parcel['status'] == 'Pending'): ?>
                                                     <span class="badge badge-warning">Pending</span>
@@ -804,7 +858,7 @@ $recent_parcels = $conn->query("
                                                     <div class="text-xs">
                                                         <span class="font-medium"><?php echo $parcel['picked_by']; ?></span>
                                                         <?php if ($parcel['date_picked']): ?>
-                                                            <span class="text-[#6e6e6e] block"><?php echo date('M j, Y', strtotime($parcel['date_picked'])); ?></span>
+                                                            <span class="text-[#6e6e6e] block"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></span>
                                                         <?php endif; ?>
                                                     </div>
                                                 <?php else: ?>
@@ -823,7 +877,7 @@ $recent_parcels = $conn->query("
                                                             <i class="fa-solid fa-truck"></i>
                                                         </button>
                                                     <?php else: ?>
-                                                        <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['date_picked']; ?>')"
+                                                        <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
                                                             class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Pickup Details">
                                                             <i class="fa-solid fa-circle-info"></i>
                                                         </button>
@@ -910,8 +964,8 @@ $recent_parcels = $conn->query("
                     </div>
 
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received <span class="text-red-400">*</span></label>
-                        <input type="date" name="date_received" required value="<?php echo date('Y-m-d'); ?>"
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp <span class="text-red-400">*</span></label>
+                        <input type="datetime-local" name="date_received" required value="<?php echo date('Y-m-d\TH:i'); ?>"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
                             autocomplete="off">
                     </div>
@@ -1227,7 +1281,7 @@ $recent_parcels = $conn->query("
             document.getElementById('detailPickedBy').textContent = pickedBy || 'N/A';
             document.getElementById('detailPhone').textContent = phone || 'N/A';
             document.getElementById('detailDesignation').textContent = designation || 'N/A';
-            document.getElementById('detailDate').textContent = date || 'N/A';
+            document.getElementById('detailDate').textContent = date ? new Date(date.replace(' ', 'T')).toLocaleString() : 'N/A';
             document.getElementById('detailsModal').style.display = 'flex';
         }
 
@@ -1260,8 +1314,8 @@ $recent_parcels = $conn->query("
                     <p class="text-sm text-[#1e1e1e]">${parcel.addressed_to || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.date_received || 'N/A'}</p>
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp</label>
+                    <p class="text-sm text-[#1e1e1e]">${parcel.received_timestamp ? new Date(parcel.received_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_received || 'N/A')}</p>
                 </div>
                 <div>
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By</label>
@@ -1281,8 +1335,8 @@ $recent_parcels = $conn->query("
                         <p class="text-sm text-[#1e1e1e]">${parcel.picker_designation || 'N/A'}</p>
                     </div>
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Picked</label>
-                        <p class="text-sm text-[#1e1e1e]">${parcel.date_picked || 'N/A'}</p>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picked Up Timestamp</label>
+                        <p class="text-sm text-[#1e1e1e]">${parcel.picked_timestamp ? new Date(parcel.picked_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_picked || 'N/A')}</p>
                     </div>
                 ` : ''}
             `;

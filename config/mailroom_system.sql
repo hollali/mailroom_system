@@ -65,15 +65,16 @@ CREATE TABLE `documents` (
   `type_id` int(11) DEFAULT NULL,
   `origin` varchar(200) DEFAULT NULL,
   `copies_received` int(11) DEFAULT NULL,
-  `date_received` date DEFAULT NULL
+  `date_received` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
 -- Dumping data for table `documents`
 --
 
-INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `copies_received`, `date_received`) VALUES
-(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07');
+INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `copies_received`, `date_received`, `created_at`) VALUES
+(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07', '2026-03-07 09:00:00');
 
 -- --------------------------------------------------------
 
@@ -195,16 +196,17 @@ CREATE TABLE `parcels_pickup` (
   `picked_by` varchar(200) DEFAULT NULL,
   `phone_number` varchar(50) DEFAULT NULL,
   `designation` varchar(100) DEFAULT NULL,
-  `date_picked` date DEFAULT NULL
+  `date_picked` date DEFAULT NULL,
+  `picked_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
 -- Dumping data for table `parcels_pickup`
 --
 
-INSERT INTO `parcels_pickup` (`id`, `parcel_id`, `picked_by`, `phone_number`, `designation`, `date_picked`) VALUES
-(1, 1, 'Doreenda Abbey', '0505306932', 'PVC', '2026-03-08'),
-(2, 2, 'Nadjat', '0505306932', 'IT Department', '2026-03-18');
+INSERT INTO `parcels_pickup` (`id`, `parcel_id`, `picked_by`, `phone_number`, `designation`, `date_picked`, `picked_at`) VALUES
+(1, 1, 'Doreenda Abbey', '0505306932', 'PVC', '2026-03-08', '2026-03-08 10:15:00'),
+(2, 2, 'Nadjat', '0505306932', 'IT Department', '2026-03-18', '2026-03-18 14:20:00');
 
 -- --------------------------------------------------------
 
@@ -219,17 +221,18 @@ CREATE TABLE `parcels_received` (
   `addressed_to` varchar(200) DEFAULT NULL,
   `date_received` date DEFAULT NULL,
   `received_by` varchar(100) DEFAULT NULL,
-  `tracking_id` varchar(50) DEFAULT NULL
+  `tracking_id` varchar(50) DEFAULT NULL,
+  `received_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
 -- Dumping data for table `parcels_received`
 --
 
-INSERT INTO `parcels_received` (`id`, `description`, `sender`, `addressed_to`, `date_received`, `received_by`, `tracking_id`) VALUES
-(1, 'A gift', 'Hollali Kelvin', 'Mr Kelvin Hollali', '2026-03-07', 'Doreenda Abbey', 'PRCL-20260307-9B102A'),
-(2, 'An Egonomic Chair', 'Archiver Asare', 'Mr Kelvin Hollali', '2026-03-08', 'Doreenda Abbey', 'PRCL-20260308-7D19FA'),
-(3, 'item', 'Ben', 'Mr Kobby', '2026-03-18', 'salma', 'PRCL-20260318-9F3156');
+INSERT INTO `parcels_received` (`id`, `description`, `sender`, `addressed_to`, `date_received`, `received_by`, `tracking_id`, `received_at`) VALUES
+(1, 'A gift', 'Hollali Kelvin', 'Mr Kelvin Hollali', '2026-03-07', 'Doreenda Abbey', 'PRCL-20260307-9B102A', '2026-03-07 08:30:00'),
+(2, 'An Egonomic Chair', 'Archiver Asare', 'Mr Kelvin Hollali', '2026-03-08', 'Doreenda Abbey', 'PRCL-20260308-7D19FA', '2026-03-08 13:45:00'),
+(3, 'item', 'Ben', 'Mr Kobby', '2026-03-18', 'salma', 'PRCL-20260318-9F3156', '2026-03-18 09:10:00');
 
 -- --------------------------------------------------------
 

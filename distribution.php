@@ -10,6 +10,20 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+function formatTimestampDisplay($value)
+{
+    if (empty($value)) {
+        return 'N/A';
+    }
+
+    $timestamp = strtotime($value);
+    if ($timestamp === false) {
+        return htmlspecialchars($value);
+    }
+
+    return date('M j, Y g:i A', $timestamp);
+}
+
 // Handle form submission
 if (isset($_POST['submit'])) {
 
@@ -670,6 +684,9 @@ if (isset($_SESSION['toast'])) {
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(5)">
                                     Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(6)">
+                                    Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
+                                </th>
                                 <th class="p-3">Actions</th>
                             </tr>
                         </thead>
@@ -680,7 +697,7 @@ if (isset($_SESSION['toast'])) {
                                 while ($row = $result->fetch_assoc()):
                             ?>
                                     <tr class="border-t text-sm hover:bg-[#fafafa] distribution-row" id="row-<?php echo $row['id']; ?>"
-                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['department'] ?? '') . ' ' . ($row['recipient_name'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '')))); ?>">
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['department'] ?? '') . ' ' . ($row['recipient_name'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
                                         <td class="p-3">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
                                                 class="text-[#1e1e1e] hover:underline font-medium">
@@ -704,6 +721,7 @@ if (isset($_SESSION['toast'])) {
                                         <td class="p-3"><?php echo htmlspecialchars($row['recipient_name'] ?? ''); ?></td>
                                         <td class="p-3 font-mono"><?php echo $row['number_distributed'] ?? 0; ?></td>
                                         <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
+                                        <td class="p-3 whitespace-nowrap"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
 
                                         <td class="p-3">
                                             <div class="flex gap-2">
@@ -723,7 +741,7 @@ if (isset($_SESSION['toast'])) {
                             else:
                                 ?>
                                 <tr>
-                                    <td colspan="7" class="p-8 text-center text-sm text-[#6e6e6e]">
+                                    <td colspan="8" class="p-8 text-center text-sm text-[#6e6e6e]">
                                         No distribution records found. Click "New Distribution" to get started.
                                     </td>
                                 </tr>
@@ -1297,6 +1315,10 @@ if (isset($_SESSION['toast'])) {
                     <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Distributed</p>
                         <p class="text-sm">${data.date_distributed ? new Date(data.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Created Timestamp</p>
+                        <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'N/A'}</p>
                     </div>
                     <div class="col-span-2">
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Total Copies of Document</p>

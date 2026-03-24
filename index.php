@@ -128,7 +128,7 @@ try {
     }
 
     // Today's parcels
-    $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE date_received = '$today'");
+    $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE DATE(date_received) = '$today'");
     if ($result) {
         $stats['today_parcels'] = $result->fetch_assoc()['total'];
     }
@@ -263,19 +263,6 @@ try {
         return strtotime($b['date']) - strtotime($a['date']);
     });
 
-    // Get top documents by distribution
-    $top_documents = $conn->query("
-        SELECT d.document_name, dt.type_name as document_type, 
-               COUNT(dd.id) as distribution_count,
-               SUM(dd.number_distributed) as total_distributed
-        FROM documents d
-        LEFT JOIN document_distribution dd ON d.id = dd.document_id
-        LEFT JOIN document_types dt ON d.type_id = dt.id
-        GROUP BY d.id
-        ORDER BY total_distributed DESC
-        LIMIT 5
-    ");
-
     // Get recent pickups detailed
     $recent_pickups = $conn->query("
         SELECT pp.*, pr.tracking_id, pr.description, pr.sender
@@ -283,24 +270,6 @@ try {
         JOIN parcels_received pr ON pp.parcel_id = pr.id
         ORDER BY pp.date_picked DESC 
         LIMIT 5
-    ");
-
-    // Get document type breakdown
-    $doc_types_breakdown = $conn->query("
-        SELECT dt.type_name, COUNT(d.id) as document_count
-        FROM document_types dt
-        LEFT JOIN documents d ON dt.id = d.type_id
-        GROUP BY dt.id
-        ORDER BY document_count DESC
-    ");
-
-    // Get newspaper category breakdown
-    $news_categories_breakdown = $conn->query("
-        SELECT nc.category_name, COUNT(n.id) as newspaper_count
-        FROM newspaper_categories nc
-        LEFT JOIN newspapers n ON nc.id = n.category_id
-        GROUP BY nc.id
-        ORDER BY newspaper_count DESC
     ");
 } catch (Exception $e) {
     $error = "Error loading data: " . $e->getMessage();
@@ -654,12 +623,12 @@ try {
                                     <span class="text-lg font-medium text-[#1e1e1e]"><?php echo $stats['total_pickups']; ?></span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Document Types</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo $stats['document_types']; ?></span>
+                                    <span class="text-sm text-[#6e6e6e]">Documents</span>
+                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo number_format($stats['documents']); ?></span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm text-[#6e6e6e]">Newspaper Categories</span>
-                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo $stats['newspaper_categories']; ?></span>
+                                    <span class="text-sm text-[#6e6e6e]">Parcels Received</span>
+                                    <span class="text-lg font-medium text-[#1e1e1e]"><?php echo number_format($stats['parcels_received']); ?></span>
                                 </div>
                                 <div class="flex justify-between items-center pt-2 border-t border-[#e5e5e5]">
                                     <span class="text-sm text-[#6e6e6e]">Total Records</span>
@@ -668,86 +637,6 @@ try {
                                     </span>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Top Distributed Documents -->
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <h3 class="section-title flex items-center">
-                                <i class="fa-solid fa-ranking-star mr-2 text-[#6e6e6e]"></i>
-                                Top Distributed Documents
-                            </h3>
-                            <?php if ($top_documents && $top_documents->num_rows > 0): ?>
-                                <div class="space-y-3">
-                                    <?php while ($doc = $top_documents->fetch_assoc()): ?>
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex-1">
-                                                <p class="text-sm font-medium text-[#1e1e1e]">
-                                                    <?php echo htmlspecialchars(substr($doc['document_name'], 0, 25)); ?>
-                                                </p>
-                                                <p class="text-xs text-[#6e6e6e]">
-                                                    <?php echo htmlspecialchars($doc['document_type'] ?? 'Uncategorized'); ?>
-                                                </p>
-                                            </div>
-                                            <div class="text-right">
-                                                <span class="text-sm font-medium text-[#1e1e1e]">
-                                                    <?php echo $doc['total_distributed'] ?? 0; ?>
-                                                </span>
-                                                <span class="text-xs text-[#6e6e6e] block">copies</span>
-                                            </div>
-                                        </div>
-                                    <?php endwhile; ?>
-                                </div>
-                            <?php else: ?>
-                                <p class="text-sm text-[#6e6e6e] text-center py-2">No distribution data</p>
-                            <?php endif; ?>
-                        </div>
-
-                        <!-- Document Types Breakdown -->
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <h3 class="section-title flex items-center">
-                                <i class="fa-solid fa-tags mr-2 text-[#6e6e6e]"></i>
-                                Document Types
-                            </h3>
-                            <?php if ($doc_types_breakdown && $doc_types_breakdown->num_rows > 0): ?>
-                                <div class="space-y-2">
-                                    <?php while ($type = $doc_types_breakdown->fetch_assoc()): ?>
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-sm text-[#1e1e1e]">
-                                                <?php echo htmlspecialchars($type['type_name']); ?>
-                                            </span>
-                                            <span class="text-sm font-medium text-[#6e6e6e]">
-                                                <?php echo $type['document_count']; ?>
-                                            </span>
-                                        </div>
-                                    <?php endwhile; ?>
-                                </div>
-                            <?php else: ?>
-                                <p class="text-sm text-[#6e6e6e] text-center py-2">No document types</p>
-                            <?php endif; ?>
-                        </div>
-
-                        <!-- Newspaper Categories Breakdown -->
-                        <div class="bg-white border border-[#e5e5e5] rounded-lg p-5">
-                            <h3 class="section-title flex items-center">
-                                <i class="fa-solid fa-tags mr-2 text-[#6e6e6e]"></i>
-                                Newspaper Categories
-                            </h3>
-                            <?php if ($news_categories_breakdown && $news_categories_breakdown->num_rows > 0): ?>
-                                <div class="space-y-2">
-                                    <?php while ($cat = $news_categories_breakdown->fetch_assoc()): ?>
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-sm text-[#1e1e1e]">
-                                                <?php echo htmlspecialchars($cat['category_name']); ?>
-                                            </span>
-                                            <span class="text-sm font-medium text-[#6e6e6e]">
-                                                <?php echo $cat['newspaper_count']; ?>
-                                            </span>
-                                        </div>
-                                    <?php endwhile; ?>
-                                </div>
-                            <?php else: ?>
-                                <p class="text-sm text-[#6e6e6e] text-center py-2">No newspaper categories</p>
-                            <?php endif; ?>
                         </div>
 
                         <!-- System Info -->
