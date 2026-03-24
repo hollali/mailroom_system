@@ -247,22 +247,6 @@ include './sidebar.php';
             transition: opacity 0.3s ease;
         }
 
-        .status-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .status-active {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .status-inactive {
-            background-color: #ffebee;
-            color: #c62828;
-        }
     </style>
 </head>
 
@@ -316,7 +300,6 @@ include './sidebar.php';
                                     <tr class="bg-[#fafafa] border-b border-[#e5e5e5]">
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">#</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Recipient Name</th>
-                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Status</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Created</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
@@ -327,11 +310,6 @@ include './sidebar.php';
                                         <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
-                                            <td class="p-3">
-                                                <span class="status-badge <?php echo $recipient['is_active'] ? 'status-active' : 'status-inactive'; ?>">
-                                                    <?php echo $recipient['is_active'] ? 'Active' : 'Inactive'; ?>
-                                                </span>
-                                            </td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
                                             </td>

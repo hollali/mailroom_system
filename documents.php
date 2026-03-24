@@ -723,30 +723,6 @@ if (isset($_SESSION['toast'])) {
                         </div>
                     </div>
 
-                    <div class="stat-card rounded-md p-4">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Document Status</p>
-                                <div class="flex items-center gap-3 mt-2">
-                                    <div>
-                                        <span class="stock-indicator stock-high"></span>
-                                        <span class="text-xs text-[#1e1e1e]"><?php echo number_format($stats['in_stock'] ?? 0); ?></span>
-                                    </div>
-                                    <div>
-                                        <span class="stock-indicator stock-medium"></span>
-                                        <span class="text-xs text-[#1e1e1e]"><?php echo number_format($stats['low_stock'] ?? 0); ?></span>
-                                    </div>
-                                    <div>
-                                        <span class="stock-indicator stock-out"></span>
-                                        <span class="text-xs text-[#1e1e1e]"><?php echo number_format($stats['out_of_stock'] ?? 0); ?></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                <i class="fa-solid fa-chart-pie text-[#6e6e6e] text-lg"></i>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Filters and Bulk Actions -->
@@ -828,7 +804,6 @@ if (isset($_SESSION['toast'])) {
                                     <th onclick="sortTable(4)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(5)">Available <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(6)">Total <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -843,24 +818,12 @@ if (isset($_SESSION['toast'])) {
 
                                         // Determine stock level class
                                         if ($available <= 0) {
-                                            $stockClass = 'stock-out';
-                                            $stockText = 'Out of Documents';
-                                            $badgeClass = 'badge-danger';
                                             $progressClass = 'bg-[#9e9e9e]';
                                         } elseif ($available <= 5) {
-                                            $stockClass = 'stock-low';
-                                            $stockText = 'Low Amount Documents';
-                                            $badgeClass = 'badge-warning';
                                             $progressClass = 'bg-[#ef4444]';
                                         } elseif ($available <= 10) {
-                                            $stockClass = 'stock-medium';
-                                            $stockText = 'Medium';
-                                            $badgeClass = 'badge-warning';
                                             $progressClass = 'bg-[#f59e0b]';
                                         } else {
-                                            $stockClass = 'stock-high';
-                                            $stockText = 'High Amount Documents';
-                                            $badgeClass = 'badge-success';
                                             $progressClass = 'bg-[#10b981]';
                                         }
                                     ?>
@@ -901,13 +864,6 @@ if (isset($_SESSION['toast'])) {
                                             <td class="font-mono"><?php echo $total; ?></td>
 
                                             <td>
-                                                <div class="flex items-center">
-                                                    <span class="stock-indicator <?php echo $stockClass; ?>"></span>
-                                                    <span class="badge <?php echo $badgeClass; ?>"><?php echo $stockText; ?></span>
-                                                </div>
-                                            </td>
-
-                                            <td>
                                                 <div class="flex items-center gap-2">
                                                     <?php if ($available > 0): ?>
                                                         <button onclick="openDistributeModal(<?php echo $doc['id']; ?>, '<?php echo htmlspecialchars(addslashes($doc['document_name'])); ?>', <?php echo $available; ?>)"
@@ -932,7 +888,7 @@ if (isset($_SESSION['toast'])) {
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="9" class="text-center py-8 text-sm text-[#6e6e6e]">
+                                        <td colspan="8" class="text-center py-8 text-sm text-[#6e6e6e]">
                                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
                                             No documents found.
                                             <button onclick="openAddDocumentModal()" class="text-[#1e1e1e] underline">Add your first document</button>
