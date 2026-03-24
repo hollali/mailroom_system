@@ -26,7 +26,10 @@ $stats = [
     'total_distributions' => 0,
     'total_pickups' => 0,
     'total_copies_received' => 0,
-    'total_copies_distributed' => 0
+    'total_copies_distributed' => 0,
+    'latest_parcel_received' => null,
+    'latest_parcel_picked' => null,
+    'dashboard_refreshed_at' => date('Y-m-d H:i:s')
 ];
 
 // Check connection
@@ -140,6 +143,16 @@ try {
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE date_received >= '$month_start'");
     if ($result) {
         $stats['month_parcels'] = $result->fetch_assoc()['total'];
+    }
+
+    $result = $conn->query("SELECT MAX(date_received) as latest_date FROM parcels_received");
+    if ($result) {
+        $stats['latest_parcel_received'] = $result->fetch_assoc()['latest_date'] ?? null;
+    }
+
+    $result = $conn->query("SELECT MAX(date_picked) as latest_date FROM parcels_pickup");
+    if ($result) {
+        $stats['latest_parcel_picked'] = $result->fetch_assoc()['latest_date'] ?? null;
     }
 
     // Today's newspapers
@@ -443,85 +456,63 @@ try {
                     </div>
                 <?php endif; ?>
 
-                <!-- System Overview Cards - Monochromatic -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <!-- Parcel Overview -->
+                <div class="mb-8">
                     <div class="stat-card">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="metric-label">Total Documents</p>
-                                <p class="value-large"><?php echo number_format($stats['documents']); ?></p>
-                                <div class="flex items-center gap-3 mt-2">
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-solid fa-tag mr-1"></i><?php echo $stats['document_types']; ?> types
-                                    </span>
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-regular fa-copy mr-1"></i><?php echo number_format($stats['total_copies_received']); ?> copies
-                                    </span>
+                        <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <p class="metric-label">Parcel Overview</p>
+                                    <p class="value-large"><?php echo number_format($stats['parcels_received']); ?></p>
+                                    <div class="flex flex-wrap items-center gap-3 mt-2">
+                                        <span class="text-xs text-[#6e6e6e]">
+                                            <i class="fa-regular fa-clock mr-1"></i><?php echo $stats['pending_parcels']; ?> pending
+                                        </span>
+                                        <span class="text-xs text-[#6e6e6e]">
+                                            <i class="fa-solid fa-truck mr-1"></i><?php echo $stats['total_pickups']; ?> picked up
+                                        </span>
+                                        <span class="text-xs text-[#6e6e6e]">
+                                            <i class="fa-solid fa-arrows-rotate mr-1"></i>Updated <?php echo date('M j, Y g:i A', strtotime($stats['dashboard_refreshed_at'])); ?>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="icon-circle">
+                                    <i class="fa-solid fa-box"></i>
                                 </div>
                             </div>
-                            <div class="icon-circle">
-                                <i class="fa-regular fa-file-lines"></i>
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="stat-card">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="metric-label">Total Parcels</p>
-                                <p class="value-large"><?php echo number_format($stats['parcels_received']); ?></p>
-                                <div class="flex items-center gap-3 mt-2">
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-regular fa-clock mr-1"></i><?php echo $stats['pending_parcels']; ?> pending
-                                    </span>
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-solid fa-truck mr-1"></i><?php echo $stats['total_pickups']; ?> picked up
-                                    </span>
+                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:min-w-[620px]">
+                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                                    <p class="metric-label">Today</p>
+                                    <p class="value-small"><?php echo number_format($stats['today_parcels']); ?></p>
                                 </div>
-                            </div>
-                            <div class="icon-circle">
-                                <i class="fa-solid fa-box"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="metric-label">Total Newspapers</p>
-                                <p class="value-large"><?php echo number_format($stats['newspapers']); ?></p>
-                                <div class="flex items-center gap-3 mt-2">
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-solid fa-tag mr-1"></i><?php echo $stats['newspaper_categories']; ?> categories
-                                    </span>
+                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                                    <p class="metric-label">This Week</p>
+                                    <p class="value-small"><?php echo number_format($stats['week_parcels']); ?></p>
                                 </div>
-                            </div>
-                            <div class="icon-circle">
-                                <i class="fa-regular fa-newspaper"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="metric-label">Distributions</p>
-                                <p class="value-large"><?php echo number_format($stats['total_distributions']); ?></p>
-                                <div class="flex items-center gap-3 mt-2">
-                                    <span class="text-xs text-[#6e6e6e]">
-                                        <i class="fa-regular fa-copy mr-1"></i><?php echo number_format($stats['total_copies_distributed']); ?> copies
-                                    </span>
+                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                                    <p class="metric-label">This Month</p>
+                                    <p class="value-small"><?php echo number_format($stats['month_parcels']); ?></p>
                                 </div>
-                            </div>
-                            <div class="icon-circle">
-                                <i class="fa-solid fa-share-from-square"></i>
+                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                                    <p class="metric-label">Last Received</p>
+                                    <p class="text-sm font-medium text-[#1e1e1e] mt-1">
+                                        <?php echo $stats['latest_parcel_received'] ? date('M j, Y', strtotime($stats['latest_parcel_received'])) : 'No records'; ?>
+                                    </p>
+                                </div>
+                                <div class="rounded-md border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                                    <p class="metric-label">Last Pickup</p>
+                                    <p class="text-sm font-medium text-[#1e1e1e] mt-1">
+                                        <?php echo $stats['latest_parcel_picked'] ? date('M j, Y', strtotime($stats['latest_parcel_picked'])) : 'No pickups'; ?>
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Today's Activity Summary - Monochromatic -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                     <div class="bg-white border border-[#e5e5e5] rounded-lg p-4">
                         <h3 class="text-sm font-medium text-[#1e1e1e] mb-3 flex items-center">
                             <i class="fa-regular fa-calendar mr-2 text-[#6e6e6e]"></i> Today's Documents
@@ -544,16 +535,6 @@ try {
                         </div>
                     </div>
 
-                    <div class="bg-white border border-[#e5e5e5] rounded-lg p-4">
-                        <h3 class="text-sm font-medium text-[#1e1e1e] mb-3 flex items-center">
-                            <i class="fa-regular fa-calendar mr-2 text-[#6e6e6e]"></i> Today's Newspapers
-                        </h3>
-                        <p class="value-small"><?php echo $stats['today_newspapers']; ?></p>
-                        <div class="flex justify-between text-xs text-[#6e6e6e] mt-2">
-                            <span>Week: <?php echo $stats['week_newspapers']; ?></span>
-                            <span>Month: <?php echo $stats['month_newspapers']; ?></span>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Main Content Grid -->

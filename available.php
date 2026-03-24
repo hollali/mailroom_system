@@ -886,12 +886,12 @@ include './sidebar.php';
 
                         <!-- Search and Filter Bar -->
                         <div class="mt-3">
-                            <form method="GET" class="flex flex-wrap gap-2 items-end">
+                            <form method="GET" id="availableHistoryForm" class="flex flex-wrap gap-2 items-end">
                                 <div class="flex-1 min-w-[200px]">
                                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
                                     <div class="relative">
                                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
-                                        <input type="text" name="search"
+                                        <input type="text" name="search" id="availableLiveSearch"
                                             placeholder="Newspaper, recipient, department, staff..."
                                             value="<?php echo htmlspecialchars($search); ?>"
                                             class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
@@ -1036,7 +1036,10 @@ include './sidebar.php';
                                 </thead>
                                 <tbody>
                                     <?php while ($dist = $distribution_history->fetch_assoc()): ?>
-                                        <tr class="hover:bg-[#fafafa]" id="distribution-row-<?php echo $dist['id']; ?>">
+                                        <tr class="hover:bg-[#fafafa] available-distribution-row" id="distribution-row-<?php echo $dist['id']; ?>"
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($dist['newspaper_name'] ?? '') . ' ' . ($dist['newspaper_number'] ?? '') . ' ' . ($dist['category_name'] ?? '') . ' ' . ($dist['distributed_to'] ?? '') . ' ' . ($dist['department'] ?? '') . ' ' . ($dist['distributed_by'] ?? '') . ' ' . ($dist['copies'] ?? 0) . ' ' . date('Y-m-d', strtotime($dist['date_distributed']))))); ?>"
+                                            data-category="<?php echo (int) ($dist['category_id'] ?? 0); ?>"
+                                            data-date="<?php echo htmlspecialchars(date('Y-m-d', strtotime($dist['date_distributed']))); ?>">
                                             <td class="text-sm"><?php echo date('M j, Y', strtotime($dist['date_distributed'])); ?></td>
                                             <td class="text-sm font-medium">
                                                 <?php echo htmlspecialchars($dist['newspaper_name']); ?>
@@ -1065,6 +1068,11 @@ include './sidebar.php';
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
+                                    <tr id="availableNoResultsRow" class="hidden">
+                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
+                                            No distribution history matches the current live search on this page.
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -1074,7 +1082,7 @@ include './sidebar.php';
                             <div class="px-4 py-3 bg-[#fafafa] border-t border-[#e5e5e5]">
                                 <div class="flex justify-between items-center">
                                     <div class="text-xs text-[#6e6e6e]">
-                                        Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $limit, $total_distributions); ?> of <?php echo $total_distributions; ?> entries
+                                        Showing <span id="visibleAvailableCount"><?php echo $distribution_history ? $distribution_history->num_rows : 0; ?></span> entries on this page
                                     </div>
                                     <div class="pagination">
                                         <?php if ($page > 1): ?>
@@ -1757,6 +1765,45 @@ include './sidebar.php';
             return div.innerHTML;
         }
 
+        function filterAvailableHistoryLive() {
+            const searchTokens = (document.getElementById('availableLiveSearch')?.value || '')
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
+            const categoryFilter = document.querySelector('#availableHistoryForm select[name="filter_category"]')?.value || '0';
+            const fromDate = document.querySelector('#availableHistoryForm input[name="date_from"]')?.value || '';
+            const toDate = document.querySelector('#availableHistoryForm input[name="date_to"]')?.value || '';
+            const rows = document.querySelectorAll('.available-distribution-row');
+            const noResultsRow = document.getElementById('availableNoResultsRow');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const searchText = row.getAttribute('data-search') || '';
+                const category = row.getAttribute('data-category') || '0';
+                const rowDate = row.getAttribute('data-date') || '';
+
+                const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
+                const matchesCategory = categoryFilter === '0' || category === categoryFilter;
+                const matchesFrom = !fromDate || rowDate >= fromDate;
+                const matchesTo = !toDate || rowDate <= toDate;
+                const show = matchesSearch && matchesCategory && matchesFrom && matchesTo;
+
+                row.style.display = show ? '' : 'none';
+                if (show) {
+                    visibleCount++;
+                }
+            });
+
+            if (noResultsRow) {
+                noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
+            }
+
+            const visibleCountEl = document.getElementById('visibleAvailableCount');
+            if (visibleCountEl) {
+                visibleCountEl.textContent = visibleCount;
+            }
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const distributeModal = document.getElementById('distributeModal');
@@ -1787,6 +1834,11 @@ include './sidebar.php';
                 closeDeleteModal();
             }
         });
+
+        document.getElementById('availableLiveSearch')?.addEventListener('input', filterAvailableHistoryLive);
+        document.querySelector('#availableHistoryForm select[name="filter_category"]')?.addEventListener('change', filterAvailableHistoryLive);
+        document.querySelector('#availableHistoryForm input[name="date_from"]')?.addEventListener('change', filterAvailableHistoryLive);
+        document.querySelector('#availableHistoryForm input[name="date_to"]')?.addEventListener('change', filterAvailableHistoryLive);
     </script>
 </body>
 

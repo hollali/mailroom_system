@@ -679,7 +679,8 @@ if (isset($_SESSION['toast'])) {
                             if ($result && $result->num_rows > 0):
                                 while ($row = $result->fetch_assoc()):
                             ?>
-                                    <tr class="border-t text-sm hover:bg-[#fafafa]" id="row-<?php echo $row['id']; ?>">
+                                    <tr class="border-t text-sm hover:bg-[#fafafa] distribution-row" id="row-<?php echo $row['id']; ?>"
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['department'] ?? '') . ' ' . ($row['recipient_name'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '')))); ?>">
                                         <td class="p-3">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
                                                 class="text-[#1e1e1e] hover:underline font-medium">
@@ -1318,14 +1319,19 @@ if (isset($_SESSION['toast'])) {
         }
 
         // Table search functionality
-        document.getElementById('tableSearch')?.addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#tableBody tr');
+        let distributionSearchTimer;
+
+        function filterDistributionTable(showFeedback = false) {
+            const searchTokens = (document.getElementById('tableSearch')?.value || '')
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
+            const rows = document.querySelectorAll('.distribution-row');
             let visibleCount = 0;
 
             rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                const matches = text.includes(searchTerm);
+                const text = row.getAttribute('data-search') || row.textContent.toLowerCase();
+                const matches = searchTokens.length === 0 || searchTokens.every(token => text.includes(token));
                 row.style.display = matches ? '' : 'none';
                 if (matches) visibleCount++;
             });
@@ -1333,9 +1339,14 @@ if (isset($_SESSION['toast'])) {
             const countEl = document.getElementById('visibleCount');
             if (countEl) countEl.textContent = visibleCount;
 
-            if (visibleCount === 0) {
+            if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info', 2000);
             }
+        }
+
+        document.getElementById('tableSearch')?.addEventListener('input', function() {
+            clearTimeout(distributionSearchTimer);
+            distributionSearchTimer = setTimeout(() => filterDistributionTable(false), 150);
         });
 
         // Table sorting

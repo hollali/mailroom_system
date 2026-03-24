@@ -592,11 +592,11 @@ include './sidebar.php';
 
                     <!-- Filters -->
                     <div class="p-4 border-b border-[#e5e5e5]">
-                        <form method="GET" class="flex flex-wrap gap-3 items-center">
+                        <form method="GET" id="newspaperFilterForm" class="flex flex-wrap gap-3 items-center">
                             <input type="hidden" name="page" value="1">
 
                             <div class="flex-1 min-w-[200px]">
-                                <input type="text" name="search"
+                                <input type="text" name="search" id="newspaperLiveSearch"
                                     placeholder="Search by name or issue number..."
                                     value="<?php echo htmlspecialchars($search); ?>"
                                     autocomplete="off"
@@ -700,7 +700,10 @@ include './sidebar.php';
                             <tbody>
                                 <?php if ($all_newspapers && $all_newspapers->num_rows > 0): ?>
                                     <?php while ($paper = $all_newspapers->fetch_assoc()): ?>
-                                        <tr class="hover:bg-[#fafafa]" id="newspaper-row-<?php echo $paper['id']; ?>">
+                                        <tr class="hover:bg-[#fafafa] newspaper-row" id="newspaper-row-<?php echo $paper['id']; ?>"
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
+                                            data-category="<?php echo (int) ($paper['category_id'] ?? 0); ?>"
+                                            data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
                                             <td class="text-sm text-[#6e6e6e]"><?php echo $paper['id']; ?></td>
                                             <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($paper['newspaper_name']); ?></td>
                                             <td class="text-sm font-mono text-[#1e1e1e] issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
@@ -740,6 +743,11 @@ include './sidebar.php';
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
+                                    <tr id="newspaperNoResultsRow" class="hidden">
+                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
+                                            No newspapers match the current live search on this page.
+                                        </td>
+                                    </tr>
                                 <?php else: ?>
                                     <tr>
                                         <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
@@ -757,7 +765,7 @@ include './sidebar.php';
                         <div class="px-4 py-3 bg-[#fafafa] border-t border-[#e5e5e5]">
                             <div class="flex justify-between items-center">
                                 <div class="text-xs text-[#6e6e6e]">
-                                    Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $limit, $total_rows); ?> of <?php echo $total_rows; ?> entries
+                                    Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> entries on this page
                                 </div>
                                 <div class="pagination">
                                     <?php if ($page > 1): ?>
@@ -1200,6 +1208,43 @@ include './sidebar.php';
             return div.innerHTML;
         }
 
+        function filterNewspapersLive() {
+            const searchTokens = (document.getElementById('newspaperLiveSearch')?.value || '')
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
+            const categoryFilter = document.querySelector('#newspaperFilterForm select[name="filter_category"]')?.value || '0';
+            const statusFilter = document.querySelector('#newspaperFilterForm select[name="filter_status"]')?.value?.toLowerCase() || '';
+            const rows = document.querySelectorAll('.newspaper-row');
+            const noResultsRow = document.getElementById('newspaperNoResultsRow');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const searchText = row.getAttribute('data-search') || '';
+                const category = row.getAttribute('data-category') || '0';
+                const status = row.getAttribute('data-status') || '';
+
+                const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
+                const matchesCategory = categoryFilter === '0' || category === categoryFilter;
+                const matchesStatus = !statusFilter || status === statusFilter;
+                const show = matchesSearch && matchesCategory && matchesStatus;
+
+                row.style.display = show ? '' : 'none';
+                if (show) {
+                    visibleCount++;
+                }
+            });
+
+            if (noResultsRow) {
+                noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
+            }
+
+            const visibleCountEl = document.getElementById('visibleNewspaperCount');
+            if (visibleCountEl) {
+                visibleCountEl.textContent = visibleCount;
+            }
+        }
+
         // ========== MODAL CLICK HANDLERS ==========
         window.onclick = function(event) {
             const addModal = document.getElementById('addModal');
@@ -1236,6 +1281,10 @@ include './sidebar.php';
                 document.getElementById('quickActionMenu').classList.remove('show');
             }
         });
+
+        document.getElementById('newspaperLiveSearch')?.addEventListener('input', filterNewspapersLive);
+        document.querySelector('#newspaperFilterForm select[name="filter_category"]')?.addEventListener('change', filterNewspapersLive);
+        document.querySelector('#newspaperFilterForm select[name="filter_status"]')?.addEventListener('change', filterNewspapersLive);
     </script>
 </body>
 

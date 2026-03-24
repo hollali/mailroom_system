@@ -637,7 +637,8 @@ if ($action == 'list') {
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($types as $type): ?>
-                                    <tr class="hover:bg-[#fafafa]" id="row-<?php echo $type['id']; ?>">
+                                    <tr class="hover:bg-[#fafafa] type-row" id="row-<?php echo $type['id']; ?>"
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim($type['id'] . ' ' . ($type['type_name'] ?? '') . ' ' . ($type['description'] ?? '') . ' ' . ($type['document_count'] ?? 0) . ' ' . date('M j, Y', strtotime($type['created_at']))))); ?>">
                                         <td class="text-sm text-[#6e6e6e]"><?php echo $type['id']; ?></td>
                                         <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
                                         <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
@@ -661,6 +662,11 @@ if ($action == 'list') {
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
+                                <tr id="noResultsRow" class="hidden">
+                                    <td colspan="6" class="text-sm text-[#6e6e6e] text-center py-8">
+                                        No document types match your search on this page.
+                                    </td>
+                                </tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -670,7 +676,7 @@ if ($action == 'list') {
                 <?php if ($totalPages > 0): ?>
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-4">
                         <div class="text-sm text-[#6e6e6e]">
-                            Showing <?php echo ($offset + 1); ?> to <?php echo min($offset + $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> records
+                            Showing <span id="visibleTypeCount"><?php echo count($types); ?></span> of <?php echo count($types); ?> records on this page
                         </div>
 
                         <div class="pagination">
@@ -1124,6 +1130,34 @@ if ($action == 'list') {
             window.location.href = `?action=list&limit=${limit}`;
         }
 
+        function filterTableLive() {
+            const searchTokens = (document.getElementById('searchInput')?.value || '')
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
+            const rows = document.querySelectorAll('.type-row');
+            const noResultsRow = document.getElementById('noResultsRow');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const searchText = row.getAttribute('data-search') || '';
+                const matches = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
+                row.style.display = matches ? '' : 'none';
+                if (matches) {
+                    visibleCount++;
+                }
+            });
+
+            if (noResultsRow) {
+                noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
+            }
+
+            const visibleTypeCount = document.getElementById('visibleTypeCount');
+            if (visibleTypeCount) {
+                visibleTypeCount.textContent = visibleCount;
+            }
+        }
+
         // Pagination
         function goToPage(page) {
             const filter = '<?php echo $filter; ?>';
@@ -1228,6 +1262,8 @@ if ($action == 'list') {
                 applyFilter();
             }
         });
+
+        document.getElementById('searchInput')?.addEventListener('input', filterTableLive);
 
         // Close modals when clicking outside
         window.onclick = function(event) {

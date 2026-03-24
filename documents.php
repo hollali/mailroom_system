@@ -832,7 +832,9 @@ if (isset($_SESSION['toast'])) {
                                             data-type="<?php echo strtolower(htmlspecialchars($doc['document_type'] ?? 'uncategorized')); ?>"
                                             data-available="<?php echo $available; ?>"
                                             data-name="<?php echo strtolower(htmlspecialchars($doc['document_name'])); ?>"
-                                            data-serial="<?php echo strtolower(htmlspecialchars($doc['serial_number'] ?? '')); ?>">
+                                            data-serial="<?php echo strtolower(htmlspecialchars($doc['serial_number'] ?? '')); ?>"
+                                            data-origin="<?php echo strtolower(htmlspecialchars($doc['origin'] ?? '')); ?>"
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . ($doc['serial_number'] ?? '') . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . $available . ' ' . $total))); ?>">
 
                                             <td class="checkbox-column">
                                                 <input type="checkbox" class="document-checkbox bulk-checkbox hidden rounded border-[#e5e5e5] text-[#1e1e1e] focus:ring-[#1e1e1e]" value="<?php echo $doc['id']; ?>">
@@ -1540,10 +1542,16 @@ if (isset($_SESSION['toast'])) {
         }
 
         // Filter Functions
-        function applyFilters() {
+        let filterDebounceTimer;
+
+        function getSearchTokens(value) {
+            return value.toLowerCase().split(/\s+/).filter(Boolean);
+        }
+
+        function applyFilters(showFeedback = true) {
             const typeFilter = document.getElementById('typeFilter').value.toLowerCase();
             const stockFilter = document.getElementById('stockFilter').value;
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const searchTokens = getSearchTokens(document.getElementById('searchInput').value);
 
             const rows = document.querySelectorAll('.document-row');
             let visibleCount = 0;
@@ -1551,8 +1559,7 @@ if (isset($_SESSION['toast'])) {
             rows.forEach(row => {
                 const docType = row.getAttribute('data-type');
                 const available = parseInt(row.getAttribute('data-available'));
-                const docName = row.getAttribute('data-name');
-                const docSerial = row.getAttribute('data-serial');
+                const searchText = row.getAttribute('data-search') || '';
 
                 // Type filter
                 let typeMatch = !typeFilter || docType.includes(typeFilter);
@@ -1570,10 +1577,8 @@ if (isset($_SESSION['toast'])) {
                 }
 
                 // Search filter
-                let searchMatch = !searchTerm ||
-                    docName.includes(searchTerm) ||
-                    docSerial.includes(searchTerm) ||
-                    docType.includes(searchTerm);
+                let searchMatch = searchTokens.length === 0 ||
+                    searchTokens.every(token => searchText.includes(token));
 
                 if (typeMatch && stockMatch && searchMatch) {
                     row.style.display = '';
@@ -1596,7 +1601,9 @@ if (isset($_SESSION['toast'])) {
             }
 
             document.getElementById('visibleCount').textContent = visibleCount;
-            showToast(`Showing ${visibleCount} document(s)`, 'info', 2000);
+            if (showFeedback) {
+                showToast(`Showing ${visibleCount} document(s)`, 'info', 2000);
+            }
         }
 
         function resetFilters() {
@@ -1661,6 +1668,19 @@ if (isset($_SESSION['toast'])) {
             if (e.key === 'Enter') {
                 applyFilters();
             }
+        });
+
+        document.getElementById('searchInput')?.addEventListener('input', function() {
+            clearTimeout(filterDebounceTimer);
+            filterDebounceTimer = setTimeout(() => applyFilters(false), 180);
+        });
+
+        document.getElementById('typeFilter')?.addEventListener('change', function() {
+            applyFilters(false);
+        });
+
+        document.getElementById('stockFilter')?.addEventListener('change', function() {
+            applyFilters(false);
         });
 
         // Close modals when clicking outside

@@ -1293,12 +1293,16 @@ $recent_parcels = $conn->query("
             document.getElementById('parcelDetailsModal').style.display = 'none';
         }
 
+        function getSearchTokens(value) {
+            return value.toLowerCase().split(/\s+/).filter(Boolean);
+        }
+
         // Search and filter for Receive tab
         document.getElementById('receiveSearch')?.addEventListener('input', filterReceiveTable);
         document.getElementById('receiveFilter')?.addEventListener('change', filterReceiveTable);
 
         function filterReceiveTable() {
-            const searchTerm = document.getElementById('receiveSearch').value.toLowerCase();
+            const searchTokens = getSearchTokens(document.getElementById('receiveSearch').value);
             const filterValue = document.getElementById('receiveFilter').value;
             const rows = document.getElementsByClassName('receive-row');
             const today = new Date().toISOString().split('T')[0];
@@ -1322,7 +1326,7 @@ $recent_parcels = $conn->query("
                     showByDate = rowDate >= monthStart;
                 }
 
-                const matchesSearch = searchText.includes(searchTerm);
+                const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
                 const show = matchesSearch && showByDate;
                 row.style.display = show ? '' : 'none';
                 if (show) visibleCount++;
@@ -1338,7 +1342,7 @@ $recent_parcels = $conn->query("
         document.getElementById('statusFilterPickup')?.addEventListener('change', filterPickupTable);
 
         function filterPickupTable() {
-            const searchTerm = document.getElementById('searchPickup').value.toLowerCase();
+            const searchTokens = getSearchTokens(document.getElementById('searchPickup').value);
             const statusFilter = document.getElementById('statusFilterPickup').value;
             const rows = document.getElementsByClassName('pickup-row');
 
@@ -1347,7 +1351,7 @@ $recent_parcels = $conn->query("
                 const searchText = row.getAttribute('data-search');
                 const status = row.getAttribute('data-status');
 
-                const matchesSearch = searchText.includes(searchTerm);
+                const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
                 const matchesStatus = statusFilter === 'all' || status === statusFilter;
 
                 const show = matchesSearch && matchesStatus;
@@ -1395,34 +1399,15 @@ $recent_parcels = $conn->query("
 
         // Quick search
         function applyQuickSearch() {
-            const searchTerm = document.getElementById('quickSearch').value.toLowerCase();
-            const rows = document.getElementsByClassName('record-row');
-
-            let visibleCount = 0;
-            for (let row of rows) {
-                const searchText = row.getAttribute('data-search');
-                const show = searchText.includes(searchTerm);
-                row.style.display = show ? '' : 'none';
-                if (show) visibleCount++;
-            }
-
-            document.getElementById('totalRecords').textContent = visibleCount;
-
-            if (visibleCount === 0) {
-                showToast('No matching records found', 'info');
-            } else {
-                showToast(`Found ${visibleCount} matching records`, 'success');
-            }
-
-            updateActiveFiltersCount();
+            applyAdvancedFilters(true);
         }
 
         // Advanced filters
-        function applyAdvancedFilters() {
+        function applyAdvancedFilters(showFeedback = false) {
             const status = document.getElementById('filterStatus').value;
             const dateFrom = document.getElementById('dateFrom').value;
             const dateTo = document.getElementById('dateTo').value;
-            const quickSearchTerm = document.getElementById('quickSearch').value.toLowerCase();
+            const quickSearchTokens = getSearchTokens(document.getElementById('quickSearch').value);
 
             const rows = document.getElementsByClassName('record-row');
             let visibleCount = 0;
@@ -1431,9 +1416,9 @@ $recent_parcels = $conn->query("
                 let show = true;
 
                 // Apply quick search if present
-                if (quickSearchTerm) {
+                if (quickSearchTokens.length > 0) {
                     const searchText = row.getAttribute('data-search');
-                    if (!searchText.includes(quickSearchTerm)) show = false;
+                    if (!quickSearchTokens.every(token => searchText.includes(token))) show = false;
                 }
 
                 // Apply status filter
@@ -1458,9 +1443,9 @@ $recent_parcels = $conn->query("
 
             document.getElementById('totalRecords').textContent = visibleCount;
 
-            if (visibleCount === 0) {
+            if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info');
-            } else {
+            } else if (showFeedback) {
                 showToast(`Found ${visibleCount} matching records`, 'success');
             }
 
@@ -1514,6 +1499,22 @@ $recent_parcels = $conn->query("
             if (e.key === 'Enter') {
                 applyQuickSearch();
             }
+        });
+
+        document.getElementById('quickSearch')?.addEventListener('input', function() {
+            applyAdvancedFilters(false);
+        });
+
+        document.getElementById('filterStatus')?.addEventListener('change', function() {
+            applyAdvancedFilters(false);
+        });
+
+        document.getElementById('dateFrom')?.addEventListener('change', function() {
+            applyAdvancedFilters(false);
+        });
+
+        document.getElementById('dateTo')?.addEventListener('change', function() {
+            applyAdvancedFilters(false);
         });
 
         // Refresh receive tab
