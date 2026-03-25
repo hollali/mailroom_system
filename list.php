@@ -336,30 +336,114 @@ include './sidebar.php';
             font-size: 0.875rem;
         }
 
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #e5e5e5;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
-            gap: 0.25rem;
+            gap: 0.4rem;
             justify-content: flex-end;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .pagination-item {
-            padding: 0.375rem 0.75rem;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            padding: 0 0.85rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 0.8rem;
             font-size: 0.875rem;
-            color: #1e1e1e;
+            font-weight: 500;
+            color: #292524;
             background-color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+            transition: all 0.2s ease;
         }
 
         .pagination-item:hover {
             background-color: #f5f5f4;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
         }
 
         .pagination-item.active {
-            background-color: #1e1e1e;
+            background-color: #1c1917;
             color: white;
-            border-color: #1e1e1e;
+            border-color: #1c1917;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
+        }
+
+        .pagination-item.compact {
+            min-width: auto;
+            padding: 0 0.9rem;
+        }
+
+        .pagination-ellipsis {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            color: #a8a29e;
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 768px) {
+            .pagination-shell {
+                padding: 1rem;
+            }
+
+            .pagination-controls {
+                width: 100%;
+                justify-content: flex-start;
+            }
         }
 
         .filter-badge {
@@ -452,66 +536,6 @@ include './sidebar.php';
             animation: fadeOut 0.3s ease-in-out forwards;
         }
 
-        /* Quick action button at top */
-        .quick-action-btn {
-            background-color: #1e1e1e;
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: none;
-            font-size: 0.875rem;
-        }
-
-        .quick-action-btn:hover {
-            background-color: #2d2d2d;
-            transform: scale(1.02);
-        }
-
-        .quick-action-menu {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            margin-top: 0.5rem;
-            background-color: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 0.5rem;
-            min-width: 200px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            display: none;
-            z-index: 50;
-        }
-
-        .quick-action-menu.show {
-            display: block;
-        }
-
-        .quick-action-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.75rem 1rem;
-            color: #1e1e1e;
-            text-decoration: none;
-            border-radius: 0.375rem;
-            transition: background-color 0.2s;
-            cursor: pointer;
-        }
-
-        .quick-action-item:hover {
-            background-color: #f5f5f4;
-        }
-
-        .quick-action-item i {
-            width: 20px;
-            color: #6e6e6e;
-        }
-
         /* Modal styles */
         .modal {
             transition: opacity 0.3s ease;
@@ -530,7 +554,7 @@ include './sidebar.php';
 
     <div class="flex">
         <main class="flex-1 ml-60 min-h-screen">
-            <!-- Header with Quick Action -->
+            <!-- Header -->
             <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
                     <div>
@@ -538,31 +562,9 @@ include './sidebar.php';
                         <p class="text-sm text-[#6e6e6e] mt-1">Manage newspapers and track distributions</p>
                     </div>
 
-                    <!-- Quick Action Button at Top -->
-                    <div class="relative">
-                        <button class="quick-action-btn" onclick="toggleQuickMenu()">
-                            <i class="fa-solid fa-bolt"></i>
-                            <span>Quick Actions</span>
-                            <i class="fa-solid fa-chevron-down text-sm"></i>
-                        </button>
-
-                        <!-- Quick Action Menu -->
-                        <div id="quickActionMenu" class="quick-action-menu">
-                            <div class="quick-action-item" onclick="openAddModal()">
-                                <i class="fa-regular fa-plus"></i>
-                                <span>Add Newspaper</span>
-                            </div>
-                            <div class="quick-action-item" onclick="openAddCategoryModal()">
-                                <i class="fa-solid fa-tags"></i>
-                                <span>Add Category</span>
-                            </div>
-                            
-                            <div class="quick-action-item" onclick="window.location.href='available.php'">
-                                <i class="fa-solid fa-clock-rotate-left"></i>
-                                <span>View Available</span>
-                            </div>
-                        </div>
-                    </div>
+                    <button onclick="openAddModal()" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                        <i class="fa-regular fa-plus mr-1"></i>Add Newspaper
+                    </button>
                 </div>
             </div>
 
@@ -762,40 +764,58 @@ include './sidebar.php';
 
                     <!-- Pagination -->
                     <?php if ($total_pages > 1): ?>
-                        <div class="px-4 py-3 bg-[#fafafa] border-t border-[#e5e5e5]">
-                            <div class="flex justify-between items-center">
-                                <div class="text-xs text-[#6e6e6e]">
-                                    Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> entries on this page
+                        <?php
+                        $pageStart = $total_rows > 0 ? $offset + 1 : 0;
+                        $pageEnd = min($offset + ($all_newspapers ? $all_newspapers->num_rows : 0), $total_rows);
+                        $start = max(1, $page - 2);
+                        $end = min($total_pages, $page + 2);
+                        ?>
+                        <div class="pagination-shell">
+                            <div class="pagination-meta">
+                                <div class="pagination-title">
+                                    Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> item<?php echo ($all_newspapers && $all_newspapers->num_rows == 1) ? '' : 's'; ?> on this page
                                 </div>
+                                <div class="pagination-subtitle">
+                                    Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_rows; ?> total
+                                </div>
+                            </div>
+                            <div class="pagination-controls">
+                                <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                                 <div class="pagination">
-                                    <?php if ($page > 1): ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">
-                                            <i class="fa-regular fa-chevrons-left"></i>
-                                        </a>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page - 1])); ?>" class="pagination-item">
-                                            <i class="fa-regular fa-chevron-left"></i>
-                                        </a>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                        <i class="fa-regular fa-chevrons-left"></i>
+                                    </a>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                        <i class="fa-regular fa-chevron-left"></i>
+                                    </a>
+
+                                    <?php if ($start > 1): ?>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
+                                        <?php if ($start > 2): ?>
+                                            <span class="pagination-ellipsis">...</span>
+                                        <?php endif; ?>
                                     <?php endif; ?>
 
-                                    <?php
-                                    $start = max(1, $page - 2);
-                                    $end = min($total_pages, $page + 2);
-                                    for ($i = $start; $i <= $end; $i++):
-                                    ?>
+                                    <?php for ($i = $start; $i <= $end; $i++): ?>
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
                                             class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
                                             <?php echo $i; ?>
                                         </a>
                                     <?php endfor; ?>
 
-                                    <?php if ($page < $total_pages): ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page + 1])); ?>" class="pagination-item">
-                                            <i class="fa-regular fa-chevron-right"></i>
-                                        </a>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item">
-                                            <i class="fa-regular fa-chevrons-right"></i>
-                                        </a>
+                                    <?php if ($end < $total_pages): ?>
+                                        <?php if ($end < $total_pages - 1): ?>
+                                            <span class="pagination-ellipsis">...</span>
+                                        <?php endif; ?>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
                                     <?php endif; ?>
+
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                        <i class="fa-regular fa-chevron-right"></i>
+                                    </a>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                        <i class="fa-regular fa-chevrons-right"></i>
+                                    </a>
                                 </div>
                             </div>
                         </div>
@@ -1055,21 +1075,6 @@ include './sidebar.php';
             });
         <?php endif; ?>
 
-        // ========== QUICK ACTION MENU ==========
-        function toggleQuickMenu() {
-            document.getElementById('quickActionMenu').classList.toggle('show');
-        }
-
-        // Close quick menu when clicking outside
-        document.addEventListener('click', function(event) {
-            const menu = document.getElementById('quickActionMenu');
-            const button = document.querySelector('.quick-action-btn');
-
-            if (!button.contains(event.target) && !menu.contains(event.target)) {
-                menu.classList.remove('show');
-            }
-        });
-
         // ========== ISSUE NUMBER PREVIEW ==========
         function updateIssuePreview() {
             const categorySelect = document.getElementById('categorySelect');
@@ -1093,7 +1098,6 @@ include './sidebar.php';
         function openAddModal() {
             document.getElementById('addModal').style.display = 'flex';
             updateIssuePreview();
-            document.getElementById('quickActionMenu').classList.remove('show');
         }
 
         function closeAddModal() {
@@ -1114,7 +1118,6 @@ include './sidebar.php';
         // ========== CATEGORY MODAL FUNCTIONS ==========
         function openAddCategoryModal() {
             document.getElementById('addCategoryModal').style.display = 'flex';
-            document.getElementById('quickActionMenu').classList.remove('show');
         }
 
         function closeAddCategoryModal() {
@@ -1278,7 +1281,6 @@ include './sidebar.php';
                 closeAddCategoryModal();
                 closeViewModal();
                 closeDeleteModal();
-                document.getElementById('quickActionMenu').classList.remove('show');
             }
         });
 

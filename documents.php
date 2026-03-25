@@ -619,36 +619,111 @@ if (isset($_SESSION['toast'])) {
         }
 
         /* Pagination styles */
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 1rem;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
-            gap: 0.25rem;
-            margin-top: 1rem;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            align-items: center;
         }
 
         .pagination-item {
-            padding: 0.5rem 0.75rem;
-            border: 1px solid #e5e5e5;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            padding: 0 0.85rem;
+            border: 1px solid #e7e5e4;
             background-color: white;
             font-size: 0.875rem;
-            color: #1e1e1e;
+            font-weight: 500;
+            color: #292524;
             cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 0.25rem;
+            transition: all 0.2s ease;
+            border-radius: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
         }
 
         .pagination-item:hover:not(.disabled):not(.active) {
             background-color: #f5f5f4;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
         }
 
         .pagination-item.active {
-            background-color: #1e1e1e;
+            background-color: #1c1917;
             color: white;
-            border-color: #1e1e1e;
+            border-color: #1c1917;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
         }
 
         .pagination-item.disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .pagination-item.compact {
+            min-width: auto;
+            padding: 0 0.9rem;
+        }
+
+        .pagination-ellipsis {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            color: #a8a29e;
+            font-size: 0.95rem;
         }
 
         /* Floating Action Button */
@@ -925,9 +1000,15 @@ if (isset($_SESSION['toast'])) {
                     <button onclick="resetFilters()" class="mt-2 text-sm text-[#1e1e1e] underline">Clear filters</button>
                 </div>
 
-                <div id="documentsPagination" class="mt-4 flex flex-wrap items-center justify-between gap-3 <?php echo (!$documents_result || $documents_result->num_rows === 0) ? 'hidden' : ''; ?>">
-                    <span id="documentsPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
-                    <div class="pagination" id="documentsPaginationControls"></div>
+                <div id="documentsPagination" class="pagination-shell mt-4 <?php echo (!$documents_result || $documents_result->num_rows === 0) ? 'hidden' : ''; ?>">
+                    <div class="pagination-meta">
+                        <div id="documentsPaginationTitle" class="pagination-title"></div>
+                        <div id="documentsPaginationInfo" class="pagination-subtitle"></div>
+                    </div>
+                    <div class="pagination-controls">
+                        <div id="documentsPaginationPage" class="pagination-page-indicator"></div>
+                        <div class="pagination" id="documentsPaginationControls"></div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -1554,7 +1635,9 @@ if (isset($_SESSION['toast'])) {
             const visibleRows = getVisibleDocumentRows();
             const totalRows = visibleRows.length;
             const totalPages = Math.max(1, Math.ceil(totalRows / documentsPageSize));
+            const paginationTitle = document.getElementById('documentsPaginationTitle');
             const paginationInfo = document.getElementById('documentsPaginationInfo');
+            const paginationPage = document.getElementById('documentsPaginationPage');
             const paginationControls = document.getElementById('documentsPaginationControls');
             const paginationWrapper = document.getElementById('documentsPagination');
 
@@ -1578,7 +1661,13 @@ if (isset($_SESSION['toast'])) {
             });
 
             if (totalRows === 0) {
+                if (paginationTitle) {
+                    paginationTitle.textContent = '';
+                }
                 paginationInfo.textContent = 'No matching documents';
+                if (paginationPage) {
+                    paginationPage.textContent = '';
+                }
                 paginationControls.innerHTML = '';
                 paginationWrapper.classList.add('hidden');
                 return;
@@ -1587,17 +1676,53 @@ if (isset($_SESSION['toast'])) {
             const from = startIndex + 1;
             const to = Math.min(endIndex, totalRows);
 
-            paginationInfo.textContent = `Page ${documentsCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${totalRows}`;
+            const visibleCount = Math.max(0, to - startIndex);
+            if (paginationTitle) {
+                paginationTitle.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'document' : 'documents'} on this page`;
+            }
+            paginationInfo.textContent = `Records ${from}-${to} of ${totalRows} total`;
+            if (paginationPage) {
+                paginationPage.textContent = `Page ${documentsCurrentPage} of ${totalPages}`;
+            }
             paginationWrapper.classList.toggle('hidden', totalRows <= documentsPageSize);
-
-            paginationControls.innerHTML = `
-                <button class="pagination-item ${documentsCurrentPage === 1 ? 'disabled' : ''}" ${documentsCurrentPage === 1 ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage - 1})">
+            const startPage = Math.max(1, documentsCurrentPage - 2);
+            const endPage = Math.min(totalPages, documentsCurrentPage + 2);
+            let controlsHtml = `
+                <button class="pagination-item compact ${documentsCurrentPage === 1 ? 'disabled' : ''}" ${documentsCurrentPage === 1 ? 'disabled' : ''} onclick="changeDocumentsPage(1)" aria-label="First page">
+                    <i class="fa-solid fa-chevrons-left"></i>
+                </button>
+                <button class="pagination-item compact ${documentsCurrentPage === 1 ? 'disabled' : ''}" ${documentsCurrentPage === 1 ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage - 1})" aria-label="Previous page">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <button class="pagination-item ${documentsCurrentPage === totalPages ? 'disabled' : ''}" ${documentsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage + 1})">
+            `;
+
+            if (startPage > 1) {
+                controlsHtml += `<button class="pagination-item" onclick="changeDocumentsPage(1)">1</button>`;
+                if (startPage > 2) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                controlsHtml += `<button class="pagination-item ${i === documentsCurrentPage ? 'active' : ''}" onclick="changeDocumentsPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+                controlsHtml += `<button class="pagination-item" onclick="changeDocumentsPage(${totalPages})">${totalPages}</button>`;
+            }
+
+            controlsHtml += `
+                <button class="pagination-item compact ${documentsCurrentPage === totalPages ? 'disabled' : ''}" ${documentsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDocumentsPage(${documentsCurrentPage + 1})" aria-label="Next page">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
+                <button class="pagination-item compact ${documentsCurrentPage === totalPages ? 'disabled' : ''}" ${documentsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDocumentsPage(${totalPages})" aria-label="Last page">
+                    <i class="fa-solid fa-chevrons-right"></i>
+                </button>
             `;
+            paginationControls.innerHTML = controlsHtml;
         }
 
         function changeDocumentsPage(page) {

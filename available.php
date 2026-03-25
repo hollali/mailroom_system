@@ -440,6 +440,14 @@ include './sidebar.php';
             height: 1.2rem;
             cursor: pointer;
             accent-color: #1e1e1e;
+            margin-right: 0.75rem;
+        }
+
+        .category-checkbox {
+            width: 1.2rem;
+            height: 1.2rem;
+            cursor: pointer;
+            accent-color: #1e1e1e;
         }
 
         .issue-number {
@@ -547,30 +555,114 @@ include './sidebar.php';
             color: #dc2626;
         }
 
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #e5e5e5;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
-            gap: 0.25rem;
+            gap: 0.4rem;
             justify-content: flex-end;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .pagination-item {
-            padding: 0.375rem 0.75rem;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            padding: 0 0.85rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 0.8rem;
             font-size: 0.875rem;
-            color: #1e1e1e;
+            font-weight: 500;
+            color: #292524;
             background-color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+            transition: all 0.2s ease;
         }
 
         .pagination-item:hover {
             background-color: #f5f5f4;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
         }
 
         .pagination-item.active {
-            background-color: #1e1e1e;
+            background-color: #1c1917;
             color: white;
-            border-color: #1e1e1e;
+            border-color: #1c1917;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
+        }
+
+        .pagination-item.compact {
+            min-width: auto;
+            padding: 0 0.9rem;
+        }
+
+        .pagination-ellipsis {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            color: #a8a29e;
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 768px) {
+            .pagination-shell {
+                padding: 1rem;
+            }
+
+            .pagination-controls {
+                width: 100%;
+                justify-content: flex-start;
+            }
         }
 
         .filter-badge {
@@ -772,12 +864,6 @@ include './sidebar.php';
                             <i class="fa-solid fa-hand-holding-hand"></i>
                             <span>Distribute (<span id="selectedCount">0</span>)</span>
                         </button>
-                        <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            <i class="fa-solid fa-list mr-1"></i> Newspaper List
-                        </a>
-                        <a href="recipients.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                            <i class="fa-solid fa-users mr-1"></i> Manage Recipients
-                        </a>
                     </div>
                 </div>
             </div>
@@ -810,25 +896,14 @@ include './sidebar.php';
                     </div>
                 <?php endif; ?>
 
-                <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div class="stat-card">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Available Copies</p>
-                        <p class="text-3xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_available; ?></p>
-                    </div>
-                    <div class="stat-card">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Available Titles</p>
-                        <p class="text-3xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_titles; ?></p>
-                    </div>
-                    <div class="stat-card">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Categories</p>
-                        <p class="text-3xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_categories; ?></p>
-                    </div>
-                </div>
-
                 <!-- Available Newspapers Display (Selectable view) -->
                 <div class="bg-white border border-[#e5e5e5] rounded-lg p-6 mb-8">
-                    <h2 class="text-lg font-medium text-[#1e1e1e] mb-4">Select Newspapers to Distribute</h2>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-medium text-[#1e1e1e]">Select Newspapers to Distribute</h2>
+                        <div class="text-sm text-[#6e6e6e]">
+                            <span id="selectedCount">0</span> selected
+                        </div>
+                    </div>
 
                     <?php if (!empty($newspapers_by_category)): ?>
                         <div class="space-y-4">
@@ -836,17 +911,30 @@ include './sidebar.php';
                                 <?php $newspapers = $category_data['newspapers']; ?>
                                 <div class="category-card">
                                     <div class="category-header">
-                                        <div class="flex items-center gap-2">
-                                            <h3 class="font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($category_name); ?></h3>
+                                        <div class="flex items-center justify-between w-full">
+                                            <div class="flex items-center gap-3">
+                                                <input type="checkbox"
+                                                    class="category-checkbox newspaper-checkbox"
+                                                    id="category-<?php echo md5($category_name); ?>"
+                                                    onchange="toggleCategorySelection('<?php echo md5($category_name); ?>', [<?php echo implode(',', array_column($newspapers, 'id')); ?>])">
+                                                <div>
+                                                    <h3 class="font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($category_name); ?></h3>
+                                                    <span class="text-xs text-[#6e6e6e]"><?php echo count($newspapers); ?> titles</span>
+                                                </div>
+                                            </div>
                                             <span class="available-badge">
-                                                <?php echo $category_totals[$category_name]; ?> copies
+                                                <?php echo $category_totals[$category_name]; ?> copies available
                                             </span>
                                         </div>
-                                        <span class="text-xs text-[#6e6e6e]"><?php echo count($newspapers); ?> titles</span>
                                     </div>
                                     <div class="divide-y divide-[#f0f0f0]">
                                         <?php foreach ($newspapers as $paper): ?>
-                                            <div class="newspaper-item" onclick="toggleNewspaperSelection(<?php echo $paper['id']; ?>)">
+                                            <div class="newspaper-item">
+                                                <input type="checkbox"
+                                                    class="newspaper-checkbox mr-3"
+                                                    id="newspaper-<?php echo $paper['id']; ?>"
+                                                    value="<?php echo $paper['id']; ?>"
+                                                    onchange="toggleNewspaperSelection(<?php echo $paper['id']; ?>)">
                                                 <div class="flex-1 flex items-center justify-between">
                                                     <div>
                                                         <span class="font-medium"><?php echo htmlspecialchars($paper['newspaper_name']); ?></span>
@@ -859,7 +947,6 @@ include './sidebar.php';
                                                         <span class="text-xs text-[#6e6e6e]">
                                                             <?php echo date('M j, Y', strtotime($paper['date_received'])); ?>
                                                         </span>
-                                                        <i class="fa-regular fa-circle-check text-lg" id="selection-icon-<?php echo $paper['id']; ?>" style="color: #9e9e9e;"></i>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1079,40 +1166,58 @@ include './sidebar.php';
 
                         <!-- Pagination -->
                         <?php if ($total_pages > 1): ?>
-                            <div class="px-4 py-3 bg-[#fafafa] border-t border-[#e5e5e5]">
-                                <div class="flex justify-between items-center">
-                                    <div class="text-xs text-[#6e6e6e]">
-                                        Showing <span id="visibleAvailableCount"><?php echo $distribution_history ? $distribution_history->num_rows : 0; ?></span> entries on this page
+                            <?php
+                            $pageStart = $total_distributions > 0 ? $offset + 1 : 0;
+                            $pageEnd = min($offset + ($distribution_history ? $distribution_history->num_rows : 0), $total_distributions);
+                            $start = max(1, $page - 2);
+                            $end = min($total_pages, $page + 2);
+                            ?>
+                            <div class="pagination-shell">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">
+                                        Showing <span id="visibleAvailableCount"><?php echo $distribution_history ? $distribution_history->num_rows : 0; ?></span> entr<?php echo ($distribution_history && $distribution_history->num_rows == 1) ? 'y' : 'ies'; ?> on this page
                                     </div>
+                                    <div class="pagination-subtitle">
+                                        Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_distributions; ?> total
+                                    </div>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                                     <div class="pagination">
-                                        <?php if ($page > 1): ?>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">
-                                                <i class="fa-solid fa-chevrons-left"></i>
-                                            </a>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page - 1])); ?>" class="pagination-item">
-                                                <i class="fa-solid fa-chevron-left"></i>
-                                            </a>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                            <i class="fa-solid fa-chevrons-left"></i>
+                                        </a>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                            <i class="fa-solid fa-chevron-left"></i>
+                                        </a>
+
+                                        <?php if ($start > 1): ?>
+                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
+                                            <?php if ($start > 2): ?>
+                                                <span class="pagination-ellipsis">...</span>
+                                            <?php endif; ?>
                                         <?php endif; ?>
 
-                                        <?php
-                                        $start = max(1, $page - 2);
-                                        $end = min($total_pages, $page + 2);
-                                        for ($i = $start; $i <= $end; $i++):
-                                        ?>
+                                        <?php for ($i = $start; $i <= $end; $i++): ?>
                                             <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
                                                 class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
                                                 <?php echo $i; ?>
                                             </a>
                                         <?php endfor; ?>
 
-                                        <?php if ($page < $total_pages): ?>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page + 1])); ?>" class="pagination-item">
-                                                <i class="fa-solid fa-chevron-right"></i>
-                                            </a>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item">
-                                                <i class="fa-solid fa-chevrons-right"></i>
-                                            </a>
+                                        <?php if ($end < $total_pages): ?>
+                                            <?php if ($end < $total_pages - 1): ?>
+                                                <span class="pagination-ellipsis">...</span>
+                                            <?php endif; ?>
+                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
                                         <?php endif; ?>
+
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                            <i class="fa-solid fa-chevron-right"></i>
+                                        </a>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                            <i class="fa-solid fa-chevrons-right"></i>
+                                        </a>
                                     </div>
                                 </div>
                             </div>
@@ -1483,21 +1588,58 @@ include './sidebar.php';
         let selectedNewspapers = new Set();
 
         function toggleNewspaperSelection(id) {
-            const icon = document.getElementById(`selection-icon-${id}`);
+            const checkbox = document.getElementById(`newspaper-${id}`);
+            const item = checkbox.closest('.newspaper-item');
 
-            if (selectedNewspapers.has(id)) {
-                selectedNewspapers.delete(id);
-                icon.style.color = '#9e9e9e';
-                icon.classList.remove('fa-solid');
-                icon.classList.add('fa-regular');
-            } else {
+            if (checkbox.checked) {
                 selectedNewspapers.add(id);
-                icon.style.color = '#1e1e1e';
-                icon.classList.remove('fa-regular');
-                icon.classList.add('fa-solid');
+                item.classList.add('selected');
+            } else {
+                selectedNewspapers.delete(id);
+                item.classList.remove('selected');
             }
 
             updateSelectionCount();
+            updateCategoryCheckboxes();
+        }
+
+        function toggleCategorySelection(categoryId, newspaperIds) {
+            const categoryCheckbox = document.getElementById(`category-${categoryId}`);
+            const checkboxes = newspaperIds.map(id => document.getElementById(`newspaper-${id}`));
+
+            checkboxes.forEach(cb => {
+                cb.checked = categoryCheckbox.checked;
+                const item = cb.closest('.newspaper-item');
+                if (categoryCheckbox.checked) {
+                    selectedNewspapers.add(parseInt(cb.value));
+                    item.classList.add('selected');
+                } else {
+                    selectedNewspapers.delete(parseInt(cb.value));
+                    item.classList.remove('selected');
+                }
+            });
+
+            updateSelectionCount();
+        }
+
+        function updateCategoryCheckboxes() {
+            const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
+            categoryCheckboxes.forEach(cb => {
+                const categoryId = cb.id.replace('category-', '');
+                const newspaperIds = Array.from(cb.closest('.category-card').querySelectorAll('.newspaper-checkbox')).map(cb => parseInt(cb.value));
+                const checkedCount = newspaperIds.filter(id => selectedNewspapers.has(id)).length;
+
+                if (checkedCount === 0) {
+                    cb.checked = false;
+                    cb.indeterminate = false;
+                } else if (checkedCount === newspaperIds.length) {
+                    cb.checked = true;
+                    cb.indeterminate = false;
+                } else {
+                    cb.checked = false;
+                    cb.indeterminate = true;
+                }
+            });
         }
 
         function updateSelectionCount() {

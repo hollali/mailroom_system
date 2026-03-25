@@ -37,7 +37,19 @@ if (isset($_GET['delete'])) {
     $stmt->close();
 }
 
-$result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
+// Pagination settings
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$limit = 10;
+$offset = ($page - 1) * $limit;
+
+// Get total count for pagination
+$count_result = $conn->query("SELECT COUNT(*) as total FROM newspaper_categories");
+$total_categories = $count_result->fetch_assoc()['total'];
+$total_pages = ceil($total_categories / $limit);
+
+// Get categories with pagination
+$result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMIT $offset, $limit");
+?>
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -76,27 +88,109 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
             color: #1e1e1e;
         }
 
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #e5e5e5;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            flex-wrap: wrap;
+            gap: 0.4rem;
         }
 
         .pagination-item {
-            min-width: 2rem;
-            height: 2rem;
+            min-width: 2.5rem;
+            height: 2.5rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.5rem;
+            padding: 0 0.85rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 0.8rem;
             background: white;
-            color: #1e1e1e;
+            color: #292524;
+            font-size: 0.875rem;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+            transition: all 0.2s ease;
+        }
+
+        .pagination-item:hover {
+            background-color: #f5f5f4;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
+        }
+
+        .pagination-item.active {
+            background-color: #1c1917;
+            color: white;
+            border-color: #1c1917;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
         }
 
         .pagination-item.disabled {
             opacity: 0.45;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .pagination-item.compact {
+            min-width: auto;
+            padding: 0 0.9rem;
+        }
+
+        .pagination-ellipsis {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            color: #a8a29e;
+            font-size: 0.95rem;
         }
     </style>
 </head>
@@ -176,9 +270,15 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
                         <?php endif; ?>
                     </tbody>
                 </table>
-                <div id="categoriesPagination" class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
-                    <span id="categoriesPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
-                    <div class="pagination" id="categoriesPaginationControls"></div>
+                <div id="categoriesPagination" class="pagination-shell <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
+                    <div class="pagination-meta">
+                        <div id="categoriesPaginationTitle" class="pagination-title"></div>
+                        <div id="categoriesPaginationInfo" class="pagination-subtitle"></div>
+                    </div>
+                    <div class="pagination-controls">
+                        <div id="categoriesPaginationPage" class="pagination-page-indicator"></div>
+                        <div class="pagination" id="categoriesPaginationControls"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -242,44 +342,90 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
             document.getElementById('categoryModal').style.display = 'none';
         }
 
-        const categoriesPageSize = 10;
-        let categoriesCurrentPage = 1;
+        const categoriesPageSize = <?php echo $limit; ?>;
+        let categoriesCurrentPage = <?php echo $page; ?>;
 
         function renderCategoriesPagination() {
-            const rows = Array.from(document.querySelectorAll('.category-row'));
             const wrapper = document.getElementById('categoriesPagination');
+            const title = document.getElementById('categoriesPaginationTitle');
             const info = document.getElementById('categoriesPaginationInfo');
+            const pageIndicator = document.getElementById('categoriesPaginationPage');
             const controls = document.getElementById('categoriesPaginationControls');
 
-            if (!rows.length || !wrapper || !info || !controls) {
+            if (!wrapper || !title || !info || !pageIndicator || !controls) {
                 return;
             }
 
-            const totalPages = Math.max(1, Math.ceil(rows.length / categoriesPageSize));
-            if (categoriesCurrentPage > totalPages) {
-                categoriesCurrentPage = totalPages;
+            const totalPages = <?php echo $total_pages; ?>;
+            const totalRecords = <?php echo $total_categories; ?>;
+            const currentPage = <?php echo $page; ?>;
+            const visibleCount = <?php echo $result ? $result->num_rows : 0; ?>;
+
+            if (totalPages <= 1) {
+                wrapper.classList.add('hidden');
+                return;
             }
 
-            const startIndex = (categoriesCurrentPage - 1) * categoriesPageSize;
-            const endIndex = startIndex + categoriesPageSize;
+            wrapper.classList.remove('hidden');
 
-            rows.forEach((row, index) => {
-                row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
-            });
+            const from = <?php echo $offset + 1; ?>;
+            const to = <?php echo min($offset + $limit, $total_categories); ?>;
 
-            const from = startIndex + 1;
-            const to = Math.min(endIndex, rows.length);
-            info.textContent = `Page ${categoriesCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
-            wrapper.classList.toggle('hidden', rows.length <= categoriesPageSize);
-            controls.innerHTML = `
-                <button class="pagination-item ${categoriesCurrentPage === 1 ? 'disabled' : ''}" ${categoriesCurrentPage === 1 ? 'disabled' : ''} onclick="changeCategoriesPage(${categoriesCurrentPage - 1})">
+            title.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'category' : 'categories'} on this page`;
+            info.textContent = `Records ${from}-${to} of ${totalRecords} total`;
+            pageIndicator.textContent = `Page ${currentPage} of ${totalPages}`;
+
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+
+            let controlsHtml = `
+                <button class="pagination-item compact ${currentPage === 1 ? 'disabled' : ''}" ${currentPage === 1 ? 'disabled' : ''} onclick="changeCategoriesPage(1)" aria-label="First page">
+                    <i class="fa-solid fa-chevrons-left"></i>
+                </button>
+                <button class="pagination-item compact ${currentPage === 1 ? 'disabled' : ''}" ${currentPage === 1 ? 'disabled' : ''} onclick="changeCategoriesPage(${currentPage - 1})" aria-label="Previous page">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <button class="pagination-item ${categoriesCurrentPage === totalPages ? 'disabled' : ''}" ${categoriesCurrentPage === totalPages ? 'disabled' : ''} onclick="changeCategoriesPage(${categoriesCurrentPage + 1})">
+            `;
+
+            if (startPage > 1) {
+                controlsHtml += `<button class="pagination-item" onclick="changeCategoriesPage(1)">1</button>`;
+                if (startPage > 2) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                controlsHtml += `<button class="pagination-item ${i === currentPage ? 'active' : ''}" onclick="changeCategoriesPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+                controlsHtml += `<button class="pagination-item" onclick="changeCategoriesPage(${totalPages})">${totalPages}</button>`;
+            }
+
+            controlsHtml += `
+                <button class="pagination-item compact ${currentPage === totalPages ? 'disabled' : ''}" ${currentPage === totalPages ? 'disabled' : ''} onclick="changeCategoriesPage(${currentPage + 1})" aria-label="Next page">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
+                <button class="pagination-item compact ${currentPage === totalPages ? 'disabled' : ''}" ${currentPage === totalPages ? 'disabled' : ''} onclick="changeCategoriesPage(${totalPages})" aria-label="Last page">
+                    <i class="fa-solid fa-chevrons-right"></i>
+                </button>
             `;
+
+            controls.innerHTML = controlsHtml;
         }
+
+        function changeCategoriesPage(page) {
+            const url = new URL(window.location);
+            url.searchParams.set('page', page);
+            window.location.href = url.toString();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            renderCategoriesPagination();
+        });
 
         function changeCategoriesPage(page) {
             categoriesCurrentPage = Math.max(1, page);

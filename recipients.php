@@ -113,8 +113,18 @@ if (isset($_GET['activate'])) {
     exit();
 }
 
-// Get all recipients
-$recipients = $conn->query("SELECT * FROM recipients ORDER BY is_active DESC, name ASC");
+// Pagination settings
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$limit = 10;
+$offset = ($page - 1) * $limit;
+
+// Get total count for pagination
+$count_result = $conn->query("SELECT COUNT(*) as total FROM recipients");
+$total_recipients = $count_result->fetch_assoc()['total'];
+$total_pages = ceil($total_recipients / $limit);
+
+// Get recipients with pagination
+$recipients = $conn->query("SELECT * FROM recipients ORDER BY is_active DESC, name ASC LIMIT $offset, $limit");
 
 // Get toast message from session
 $toast = null;
@@ -143,19 +153,6 @@ include './sidebar.php';
             background-color: #f5f5f4;
         }
 
-        .stat-card {
-            background: white;
-            border: 1px solid #e5e5e5;
-            padding: 1.25rem;
-            border-radius: 0.5rem;
-            transition: all 0.2s ease;
-        }
-
-        .stat-card:hover {
-            border-color: #9e9e9e;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-
         .action-btn {
             color: #9e9e9e;
             transition: color 0.2s;
@@ -181,27 +178,109 @@ include './sidebar.php';
             color: #10b981;
         }
 
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #e5e5e5;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            flex-wrap: wrap;
+            gap: 0.4rem;
         }
 
         .pagination-item {
-            min-width: 2rem;
-            height: 2rem;
+            min-width: 2.5rem;
+            height: 2.5rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.5rem;
+            padding: 0 0.85rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 0.8rem;
             background: white;
-            color: #1e1e1e;
+            color: #292524;
+            font-size: 0.875rem;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+            transition: all 0.2s ease;
+        }
+
+        .pagination-item:hover {
+            background-color: #f5f5f4;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
+        }
+
+        .pagination-item.active {
+            background-color: #1c1917;
+            color: white;
+            border-color: #1c1917;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
         }
 
         .pagination-item.disabled {
             opacity: 0.45;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .pagination-item.compact {
+            min-width: auto;
+            padding: 0 0.9rem;
+        }
+
+        .pagination-ellipsis {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 2.5rem;
+            height: 2.5rem;
+            color: #a8a29e;
+            font-size: 0.95rem;
         }
 
         .toast-container {
@@ -293,22 +372,6 @@ include './sidebar.php';
             </div>
 
             <div class="p-8">
-                <!-- Stats Cards -->
-                <?php
-                $total_active = $conn->query("SELECT COUNT(*) as count FROM recipients WHERE is_active = 1")->fetch_assoc()['count'] ?? 0;
-                $total_inactive = $conn->query("SELECT COUNT(*) as count FROM recipients WHERE is_active = 0")->fetch_assoc()['count'] ?? 0;
-                ?>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div class="stat-card">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Active Recipients</p>
-                        <p class="text-3xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_active; ?></p>
-                    </div>
-                    <div class="stat-card">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Inactive Recipients</p>
-                        <p class="text-3xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_inactive; ?></p>
-                    </div>
-                </div>
-
                 <!-- Recipients Table -->
                 <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
                     <div class="px-5 py-4 bg-[#fafafa] border-b border-[#e5e5e5]">
@@ -328,7 +391,7 @@ include './sidebar.php';
                                     </tr>
                                 </thead>
                                 <tbody id="recipientsTableBody">
-                                    <?php $counter = 1;
+                                    <?php $counter = ($page - 1) * $limit + 1;
                                     while ($recipient = $recipients->fetch_assoc()): ?>
                                         <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row">
                                             <td class="p-3 text-sm recipient-index"><?php echo $counter++; ?></td>
@@ -361,9 +424,15 @@ include './sidebar.php';
                                 </tbody>
                             </table>
                         </div>
-                        <div id="recipientsPagination" class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa] flex flex-wrap items-center justify-between gap-3 <?php echo (!$recipients || $recipients->num_rows === 0) ? 'hidden' : ''; ?>">
-                            <span id="recipientsPaginationInfo" class="text-xs text-[#6e6e6e]"></span>
-                            <div class="pagination" id="recipientsPaginationControls"></div>
+                        <div id="recipientsPagination" class="pagination-shell <?php echo (!$recipients || $recipients->num_rows === 0) ? 'hidden' : ''; ?>">
+                            <div class="pagination-meta">
+                                <div id="recipientsPaginationTitle" class="pagination-title"></div>
+                                <div id="recipientsPaginationInfo" class="pagination-subtitle"></div>
+                            </div>
+                            <div class="pagination-controls">
+                                <div id="recipientsPaginationPage" class="pagination-page-indicator"></div>
+                                <div class="pagination" id="recipientsPaginationControls"></div>
+                            </div>
                         </div>
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
@@ -554,55 +623,82 @@ include './sidebar.php';
             return div.innerHTML;
         }
 
-        const recipientsPageSize = 10;
-        let recipientsCurrentPage = 1;
+        const recipientsPageSize = <?php echo $limit; ?>;
+        let recipientsCurrentPage = <?php echo $page; ?>;
 
         function renderRecipientsPagination() {
-            const rows = Array.from(document.querySelectorAll('.recipient-row'));
+            const title = document.getElementById('recipientsPaginationTitle');
             const info = document.getElementById('recipientsPaginationInfo');
+            const pageIndicator = document.getElementById('recipientsPaginationPage');
             const controls = document.getElementById('recipientsPaginationControls');
             const wrapper = document.getElementById('recipientsPagination');
 
-            if (!rows.length || !info || !controls || !wrapper) {
+            if (!info || !controls || !wrapper) {
                 return;
             }
 
-            const totalPages = Math.max(1, Math.ceil(rows.length / recipientsPageSize));
-            if (recipientsCurrentPage > totalPages) {
-                recipientsCurrentPage = totalPages;
+            const totalRecords = <?php echo $total_records; ?>;
+            const totalPages = Math.max(1, Math.ceil(totalRecords / recipientsPageSize));
+
+            const from = ((recipientsCurrentPage - 1) * recipientsPageSize) + 1;
+            const to = Math.min(recipientsCurrentPage * recipientsPageSize, totalRecords);
+            const visibleCount = Math.max(0, to - from + 1);
+
+            if (title) {
+                title.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'recipient' : 'recipients'} on this page`;
+            }
+            info.textContent = `Records ${from}-${to} of ${totalRecords} total`;
+            if (pageIndicator) {
+                pageIndicator.textContent = `Page ${recipientsCurrentPage} of ${totalPages}`;
             }
 
-            const startIndex = (recipientsCurrentPage - 1) * recipientsPageSize;
-            const endIndex = startIndex + recipientsPageSize;
+            wrapper.classList.toggle('hidden', totalPages <= 1);
 
-            rows.forEach((row, index) => {
-                const visible = index >= startIndex && index < endIndex;
-                row.style.display = visible ? '' : 'none';
-                if (visible) {
-                    const indexCell = row.querySelector('.recipient-index');
-                    if (indexCell) {
-                        indexCell.textContent = index + 1;
-                    }
-                }
-            });
+            const startPage = Math.max(1, recipientsCurrentPage - 2);
+            const endPage = Math.min(totalPages, recipientsCurrentPage + 2);
 
-            const from = startIndex + 1;
-            const to = Math.min(endIndex, rows.length);
-            info.textContent = `Page ${recipientsCurrentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
-            wrapper.classList.toggle('hidden', rows.length <= recipientsPageSize);
-            controls.innerHTML = `
-                <button class="pagination-item ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage - 1})">
+            let controlsHtml = `
+                <button class="pagination-item compact ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(1)" aria-label="First page">
+                    <i class="fa-solid fa-chevrons-left"></i>
+                </button>
+                <button class="pagination-item compact ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage - 1})" aria-label="Previous page">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <button class="pagination-item ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage + 1})">
+            `;
+
+            if (startPage > 1) {
+                controlsHtml += `<button class="pagination-item" onclick="changeRecipientsPage(1)">1</button>`;
+                if (startPage > 2) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                controlsHtml += `<button class="pagination-item ${i === recipientsCurrentPage ? 'active' : ''}" onclick="changeRecipientsPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
+                }
+                controlsHtml += `<button class="pagination-item" onclick="changeRecipientsPage(${totalPages})">${totalPages}</button>`;
+            }
+
+            controlsHtml += `
+                <button class="pagination-item compact ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage + 1})" aria-label="Next page">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
+                <button class="pagination-item compact ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${totalPages})" aria-label="Last page">
+                    <i class="fa-solid fa-chevrons-right"></i>
+                </button>
             `;
+            controls.innerHTML = controlsHtml;
         }
 
         function changeRecipientsPage(page) {
-            recipientsCurrentPage = Math.max(1, page);
-            renderRecipientsPagination();
+            const url = new URL(window.location);
+            url.searchParams.set('page', page);
+            window.location.href = url.toString();
         }
 
         // Close modals when clicking outside

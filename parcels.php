@@ -328,11 +328,57 @@ $recent_parcels = $conn->query("
         }
 
         /* Pagination styles */
+        .pagination-shell {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid #e5e5e5;
+            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .pagination-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .pagination-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1c1917;
+        }
+
+        .pagination-subtitle {
+            font-size: 0.82rem;
+            color: #78716c;
+        }
+
+        .pagination-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .pagination-page-indicator {
+            padding: 0.45rem 0.85rem;
+            border-radius: 9999px;
+            background-color: #f5f5f4;
+            color: #44403c;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .pagination {
             display: flex;
-            gap: 5px;
-            justify-content: center;
-            margin-top: 20px;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            align-items: center;
         }
 
         .pagination a,
@@ -340,32 +386,51 @@ $recent_parcels = $conn->query("
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 36px;
-            height: 36px;
-            padding: 0 8px;
-            border: 1px solid #e5e5e5;
+            min-width: 40px;
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid #e7e5e4;
             background: white;
-            color: #1e1e1e;
+            color: #292524;
             text-decoration: none;
             font-size: 14px;
-            border-radius: 4px;
-            transition: all 0.2s;
+            font-weight: 500;
+            border-radius: 12px;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
         }
 
         .pagination a:hover {
             background: #f5f5f4;
-            border-color: #9e9e9e;
+            border-color: #d6d3d1;
+            transform: translateY(-1px);
         }
 
         .pagination .active {
-            background: #1e1e1e;
-            border-color: #1e1e1e;
+            background: #1c1917;
+            border-color: #1c1917;
             color: white;
+            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
         }
 
         .pagination .disabled {
             opacity: 0.5;
             pointer-events: none;
+            box-shadow: none;
+        }
+
+        .pagination .compact {
+            min-width: auto;
+            padding: 0 14px;
+        }
+
+        .pagination-ellipsis {
+            color: #a8a29e;
+            box-shadow: none;
+            border-color: transparent !important;
+            background: transparent !important;
+            min-width: 32px;
+            padding: 0;
         }
 
         /* Filter panel */
@@ -572,27 +637,41 @@ $recent_parcels = $conn->query("
 
                         <!-- Pagination for Receive Tab -->
                         <?php if ($total_records > $records_per_page): ?>
-                            <div class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa]">
-                                <div class="pagination">
-                                    <?php if ($recent_page > 1): ?>
-                                        <a href="?recent_page=<?php echo $recent_page - 1; ?>&tab=receive"><i class="fa-regular fa-chevron-left"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-solid fa-chevron-left"></i></span>
-                                    <?php endif; ?>
-
-                                    <?php for ($i = 1; $i <= ceil($total_records / $records_per_page); $i++): ?>
-                                        <?php if ($i == $recent_page): ?>
-                                            <span class="active"><?php echo $i; ?></span>
-                                        <?php else: ?>
-                                            <a href="?recent_page=<?php echo $i; ?>&tab=receive"><?php echo $i; ?></a>
+                            <?php
+                            $receiveTotalPages = ceil($total_records / $records_per_page);
+                            $receiveStart = max(1, $recent_page - 2);
+                            $receiveEnd = min($receiveTotalPages, $recent_page + 2);
+                            $receiveFrom = (($recent_page - 1) * $records_per_page) + 1;
+                            $receiveTo = min($recent_page * $records_per_page, $total_records);
+                            ?>
+                            <div class="pagination-shell">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">Showing parcels on this page</div>
+                                    <div class="pagination-subtitle">Records <?php echo $receiveFrom; ?>-<?php echo $receiveTo; ?> of <?php echo $total_records; ?> total</div>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $recent_page; ?> of <?php echo $receiveTotalPages; ?></div>
+                                    <div class="pagination">
+                                        <a class="compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=1&tab=receive"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=<?php echo max(1, $recent_page - 1); ?>&tab=receive"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <?php if ($receiveStart > 1): ?>
+                                            <a href="?recent_page=1&tab=receive">1</a>
+                                            <?php if ($receiveStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
-                                    <?php endfor; ?>
-
-                                    <?php if ($recent_page < ceil($total_records / $records_per_page)): ?>
-                                        <a href="?recent_page=<?php echo $recent_page + 1; ?>&tab=receive"><i class="fa-regular fa-chevron-right"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-solid fa-chevron-right"></i></span>
-                                    <?php endif; ?>
+                                        <?php for ($i = $receiveStart; $i <= $receiveEnd; $i++): ?>
+                                            <?php if ($i == $recent_page): ?>
+                                                <span class="active"><?php echo $i; ?></span>
+                                            <?php else: ?>
+                                                <a href="?recent_page=<?php echo $i; ?>&tab=receive"><?php echo $i; ?></a>
+                                            <?php endif; ?>
+                                        <?php endfor; ?>
+                                        <?php if ($receiveEnd < $receiveTotalPages): ?>
+                                            <?php if ($receiveEnd < $receiveTotalPages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
+                                            <a href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><?php echo $receiveTotalPages; ?></a>
+                                        <?php endif; ?>
+                                        <a class="compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo min($receiveTotalPages, $recent_page + 1); ?>&tab=receive"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><i class="fa-regular fa-chevrons-right"></i></a>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -682,27 +761,40 @@ $recent_parcels = $conn->query("
 
                         <!-- Pagination for Pickup Tab -->
                         <?php if ($total_pages > 1): ?>
-                            <div class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa]">
-                                <div class="pagination">
-                                    <?php if ($page > 1): ?>
-                                        <a href="?page=<?php echo $page - 1; ?>&tab=pickup"><i class="fa-regular fa-chevron-left"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-solid fa-chevron-left"></i></span>
-                                    <?php endif; ?>
-
-                                    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                                        <?php if ($i == $page): ?>
-                                            <span class="active"><?php echo $i; ?></span>
-                                        <?php else: ?>
-                                            <a href="?page=<?php echo $i; ?>&tab=pickup"><?php echo $i; ?></a>
+                            <?php
+                            $pickupStart = max(1, $page - 2);
+                            $pickupEnd = min($total_pages, $page + 2);
+                            $pickupFrom = (($page - 1) * $limit) + 1;
+                            $pickupTo = min($page * $limit, $total_parcels);
+                            ?>
+                            <div class="pagination-shell">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">Showing pickups on this page</div>
+                                    <div class="pagination-subtitle">Records <?php echo $pickupFrom; ?>-<?php echo $pickupTo; ?> of <?php echo $total_parcels; ?> total</div>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                                    <div class="pagination">
+                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=pickup"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <?php if ($pickupStart > 1): ?>
+                                            <a href="?page=1&tab=pickup">1</a>
+                                            <?php if ($pickupStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
-                                    <?php endfor; ?>
-
-                                    <?php if ($page < $total_pages): ?>
-                                        <a href="?page=<?php echo $page + 1; ?>&tab=pickup"><i class="fa-regular fa-chevron-right"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-solid fa-chevron-right"></i></span>
-                                    <?php endif; ?>
+                                        <?php for ($i = $pickupStart; $i <= $pickupEnd; $i++): ?>
+                                            <?php if ($i == $page): ?>
+                                                <span class="active"><?php echo $i; ?></span>
+                                            <?php else: ?>
+                                                <a href="?page=<?php echo $i; ?>&tab=pickup"><?php echo $i; ?></a>
+                                            <?php endif; ?>
+                                        <?php endfor; ?>
+                                        <?php if ($pickupEnd < $total_pages): ?>
+                                            <?php if ($pickupEnd < $total_pages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
+                                            <a href="?page=<?php echo $total_pages; ?>&tab=pickup"><?php echo $total_pages; ?></a>
+                                        <?php endif; ?>
+                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=pickup"><i class="fa-regular fa-chevrons-right"></i></a>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -892,27 +984,40 @@ $recent_parcels = $conn->query("
 
                         <!-- Pagination for Records Tab -->
                         <?php if ($total_pages > 1): ?>
-                            <div class="px-5 py-4 border-t border-[#e5e5e5] bg-[#fafafa]">
-                                <div class="pagination">
-                                    <?php if ($page > 1): ?>
-                                        <a href="?page=<?php echo $page - 1; ?>&tab=records"><i class="fa-regular fa-chevron-left"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-left"></i></span>
-                                    <?php endif; ?>
-
-                                    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                                        <?php if ($i == $page): ?>
-                                            <span class="active"><?php echo $i; ?></span>
-                                        <?php else: ?>
-                                            <a href="?page=<?php echo $i; ?>&tab=records"><?php echo $i; ?></a>
+                            <?php
+                            $recordStart = max(1, $page - 2);
+                            $recordEnd = min($total_pages, $page + 2);
+                            $recordFrom = (($page - 1) * $limit) + 1;
+                            $recordTo = min($page * $limit, $total_parcels);
+                            ?>
+                            <div class="pagination-shell">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">Showing parcel records on this page</div>
+                                    <div class="pagination-subtitle">Records <?php echo $recordFrom; ?>-<?php echo $recordTo; ?> of <?php echo $total_parcels; ?> total</div>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                                    <div class="pagination">
+                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=records"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=records"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <?php if ($recordStart > 1): ?>
+                                            <a href="?page=1&tab=records">1</a>
+                                            <?php if ($recordStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
-                                    <?php endfor; ?>
-
-                                    <?php if ($page < $total_pages): ?>
-                                        <a href="?page=<?php echo $page + 1; ?>&tab=records"><i class="fa-regular fa-chevron-right"></i></a>
-                                    <?php else: ?>
-                                        <span class="disabled"><i class="fa-regular fa-chevron-right"></i></span>
-                                    <?php endif; ?>
+                                        <?php for ($i = $recordStart; $i <= $recordEnd; $i++): ?>
+                                            <?php if ($i == $page): ?>
+                                                <span class="active"><?php echo $i; ?></span>
+                                            <?php else: ?>
+                                                <a href="?page=<?php echo $i; ?>&tab=records"><?php echo $i; ?></a>
+                                            <?php endif; ?>
+                                        <?php endfor; ?>
+                                        <?php if ($recordEnd < $total_pages): ?>
+                                            <?php if ($recordEnd < $total_pages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
+                                            <a href="?page=<?php echo $total_pages; ?>&tab=records"><?php echo $total_pages; ?></a>
+                                        <?php endif; ?>
+                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=records"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=records"><i class="fa-regular fa-chevrons-right"></i></a>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
