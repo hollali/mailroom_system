@@ -679,61 +679,6 @@ if (isset($_SESSION['toast'])) {
 
         <div class="p-8">
 
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Distributions</p>
-                            <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $total_distributions; ?></p>
-                            <p class="text-xs text-[#6e6e6e] mt-1"><?php echo $total_copies_distributed; ?> copies</p>
-                        </div>
-                        <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                            <i class="fa-solid fa-share-from-square text-[#6e6e6e]"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Available Copies</p>
-                            <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $available_copies; ?></p>
-                            <p class="text-xs text-[#6e6e6e] mt-1">Ready to distribute</p>
-                        </div>
-                        <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                            <i class="fa-regular fa-circle-check text-[#6e6e6e]"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Today</p>
-                            <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $today_distributions; ?></p>
-                            <p class="text-xs text-[#6e6e6e] mt-1"><?php echo $today_copies ?? 0; ?> copies</p>
-                        </div>
-                        <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                            <i class="fa-regular fa-calendar text-[#6e6e6e]"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Document Types</p>
-                            <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $type_count; ?></p>
-                            <p class="text-xs text-[#6e6e6e] mt-1">Categories</p>
-                        </div>
-                        <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                            <i class="fa-solid fa-tags text-[#6e6e6e]"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Quick Links -->
             <!--<div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                 <div class="flex flex-wrap gap-3">
@@ -960,7 +905,7 @@ if (isset($_SESSION['toast'])) {
                             ?>
                         </select>
 
-                        
+
                     </div>
 
                     <div>
