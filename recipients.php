@@ -530,7 +530,7 @@ include './sidebar.php';
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Recipient Name *</label>
                     <input type="text" name="name" required
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="e.g., John Doe - HR Department">
+                        placeholder="e.g., John Doe - HR Department" autocomplete="off">
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
                 </div>
 
@@ -564,7 +564,7 @@ include './sidebar.php';
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Recipient Name *</label>
                     <input type="text" name="name" id="edit_name" required
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="e.g., John Doe - HR Department">
+                        placeholder="e.g., John Doe - HR Department" autocomplete="off">
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
                 </div>
 

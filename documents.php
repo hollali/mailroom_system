@@ -1058,7 +1058,7 @@ if (isset($_SESSION['toast'])) {
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
                     <div class="flex items-center gap-2">
                         <input type="number" id="modalCopies" required min="1" value="1"
-                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                         <button type="button" onclick="decrementCopies()" class="px-3 py-2 border border-[#e5e5e5] rounded-md hover:bg-[#f5f5f4]">
                             <i class="fa-solid fa-minus"></i>
                         </button>
@@ -1175,7 +1175,7 @@ if (isset($_SESSION['toast'])) {
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
                         <input type="number" id="add_copies_received" required min="1" value="1"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                     </div>
 
                     <div>
@@ -1525,18 +1525,18 @@ if (isset($_SESSION['toast'])) {
                                        min="1"
                                        max="${available}"
                                        value="1"
-                                       placeholder="Copies">
+                                       placeholder="Copies" autocomplete="off">
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <input type="text" 
                                    class="bulk-department w-full px-2 py-1 text-xs border border-[#e5e5e5] rounded-md"
                                    data-id="${docId}"
-                                   placeholder="Department">
+                                   placeholder="Department" autocomplete="off">
                             <input type="text" 
                                    class="bulk-recipient w-full px-2 py-1 text-xs border border-[#e5e5e5] rounded-md"
                                    data-id="${docId}"
-                                   placeholder="Recipient">
+                                   placeholder="Recipient" autocomplete="off">
                         </div>
                     `;
                     list.appendChild(itemDiv);

@@ -1001,13 +1001,13 @@ include './sidebar.php';
                                 <div>
                                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">From Date</label>
                                     <input type="date" name="date_from" value="<?php echo $date_from; ?>"
-                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md">
+                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md" autocomplete="off">
                                 </div>
 
                                 <div>
                                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">To Date</label>
                                     <input type="date" name="date_to" value="<?php echo $date_to; ?>"
-                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md">
+                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md" autocomplete="off">
                                 </div>
 
                                 <div class="flex gap-2">
@@ -1267,7 +1267,7 @@ include './sidebar.php';
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Distributed By *</label>
                         <input type="text" name="distributed_by" id="modal_distributed_by" required
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="Your name">
+                            placeholder="Your name" autocomplete="off">
                     </div>
                 </div>
 
@@ -1445,19 +1445,19 @@ include './sidebar.php';
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Individual's Name *</label>
                         <input type="text" name="edit_individual_name" id="edit_individual_name" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                     </div>
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Department</label>
                         <input type="text" name="edit_department" id="edit_department"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                     </div>
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Copies *</label>
                         <input type="number" name="edit_copies" id="edit_copies" min="1" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                         <p class="text-xs text-[#6e6e6e] mt-1">Note: Changing copies will update newspaper inventory</p>
                     </div>
                 </div>

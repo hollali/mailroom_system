@@ -904,7 +904,7 @@ include './sidebar.php';
                 <div class="mb-4">
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Available Copies</label>
                     <input type="number" name="available_copies" id="update_copies" min="0" required
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" onclick="closeUpdateModal()"

@@ -913,7 +913,7 @@ if (isset($_SESSION['toast'])) {
                             Date Distributed <span class="text-red-400">*</span>
                         </label>
                         <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                     </div>
 
                 </div>
@@ -956,7 +956,7 @@ if (isset($_SESSION['toast'])) {
                         <div class="flex gap-2">
                             <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
                                 class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
-                                onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()">
+                                onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
                             <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
