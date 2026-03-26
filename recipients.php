@@ -71,6 +71,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_recipient'])) {
 if (isset($_GET['delete'])) {
     $id = (int)$_GET['delete'];
 
+    // Get recipient name first
+    $name_query = $conn->query("SELECT name FROM recipients WHERE id = $id");
+    $recipient = $name_query->fetch_assoc();
+    $name = $recipient['name'] ?? '';
+
     // Check if recipient is used in distributions
     $check = $conn->query("SELECT COUNT(*) as count FROM distribution WHERE distributed_to LIKE '%" . $conn->real_escape_string($name) . "%'");
     $result = $check->fetch_assoc();
@@ -151,6 +156,19 @@ include './sidebar.php';
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #f5f5f4;
+        }
+
+        .stat-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            padding: 1.25rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            border-color: #9e9e9e;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .action-btn {
@@ -348,7 +366,6 @@ include './sidebar.php';
         .modal {
             transition: opacity 0.3s ease;
         }
-
     </style>
 </head>
 
@@ -390,11 +407,11 @@ include './sidebar.php';
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="recipientsTableBody">
+                                <tbody>
                                     <?php $counter = ($page - 1) * $limit + 1;
                                     while ($recipient = $recipients->fetch_assoc()): ?>
-                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row">
-                                            <td class="p-3 text-sm recipient-index"><?php echo $counter++; ?></td>
+                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+                                            <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
@@ -424,16 +441,66 @@ include './sidebar.php';
                                 </tbody>
                             </table>
                         </div>
-                        <div id="recipientsPagination" class="pagination-shell <?php echo (!$recipients || $recipients->num_rows === 0) ? 'hidden' : ''; ?>">
-                            <div class="pagination-meta">
-                                <div id="recipientsPaginationTitle" class="pagination-title"></div>
-                                <div id="recipientsPaginationInfo" class="pagination-subtitle"></div>
+
+                        <!-- Pagination -->
+                        <?php if ($total_pages > 1): ?>
+                            <div class="pagination-shell">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">
+                                        Showing <?php echo min($limit, $total_recipients - ($page - 1) * $limit); ?> recipient(s) on this page
+                                    </div>
+                                    <div class="pagination-subtitle">
+                                        Records <?php echo ($page - 1) * $limit + 1; ?>-<?php echo min($page * $limit, $total_recipients); ?> of <?php echo $total_recipients; ?> total
+                                    </div>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                                    <div class="pagination">
+                                        <?php if ($page > 1): ?>
+                                            <a href="?page=1" class="pagination-item compact" aria-label="First page">
+                                                <i class="fa-solid fa-chevrons-left"></i>
+                                            </a>
+                                            <a href="?page=<?php echo $page - 1; ?>" class="pagination-item compact" aria-label="Previous page">
+                                                <i class="fa-solid fa-chevron-left"></i>
+                                            </a>
+                                        <?php endif; ?>
+
+                                        <?php
+                                        $start = max(1, $page - 2);
+                                        $end = min($total_pages, $page + 2);
+
+                                        if ($start > 1) {
+                                            echo '<a href="?page=1" class="pagination-item">1</a>';
+                                            if ($start > 2) {
+                                                echo '<span class="pagination-ellipsis">...</span>';
+                                            }
+                                        }
+
+                                        for ($i = $start; $i <= $end; $i++) {
+                                            $active_class = ($i == $page) ? 'active' : '';
+                                            echo '<a href="?page=' . $i . '" class="pagination-item ' . $active_class . '">' . $i . '</a>';
+                                        }
+
+                                        if ($end < $total_pages) {
+                                            if ($end < $total_pages - 1) {
+                                                echo '<span class="pagination-ellipsis">...</span>';
+                                            }
+                                            echo '<a href="?page=' . $total_pages . '" class="pagination-item">' . $total_pages . '</a>';
+                                        }
+                                        ?>
+
+                                        <?php if ($page < $total_pages): ?>
+                                            <a href="?page=<?php echo $page + 1; ?>" class="pagination-item compact" aria-label="Next page">
+                                                <i class="fa-solid fa-chevron-right"></i>
+                                            </a>
+                                            <a href="?page=<?php echo $total_pages; ?>" class="pagination-item compact" aria-label="Last page">
+                                                <i class="fa-solid fa-chevrons-right"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="pagination-controls">
-                                <div id="recipientsPaginationPage" class="pagination-page-indicator"></div>
-                                <div class="pagination" id="recipientsPaginationControls"></div>
-                            </div>
-                        </div>
+                        <?php endif; ?>
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
                             <i class="fa-regular fa-user text-3xl mb-2"></i>
@@ -585,21 +652,29 @@ include './sidebar.php';
 
         // Modal Functions
         function openAddModal() {
-            document.getElementById('addModal').style.display = 'flex';
+            const modal = document.getElementById('addModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
         }
 
         function closeAddModal() {
-            document.getElementById('addModal').style.display = 'none';
+            const modal = document.getElementById('addModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
         }
 
         function editRecipient(id, name) {
             document.getElementById('edit_id').value = id;
             document.getElementById('edit_name').value = name;
-            document.getElementById('editModal').style.display = 'flex';
+            const modal = document.getElementById('editModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
         }
 
         function closeEditModal() {
-            document.getElementById('editModal').style.display = 'none';
+            const modal = document.getElementById('editModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
         }
 
         let currentDeleteId = null;
@@ -608,11 +683,15 @@ include './sidebar.php';
             currentDeleteId = id;
             document.getElementById('deleteMessage').innerHTML = `Are you sure you want to delete "<strong>${escapeHtml(name)}</strong>"?`;
             document.getElementById('confirmDeleteBtn').href = `?delete=${id}`;
-            document.getElementById('deleteModal').style.display = 'flex';
+            const modal = document.getElementById('deleteModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
         }
 
         function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
+            const modal = document.getElementById('deleteModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
             currentDeleteId = null;
         }
 
@@ -621,84 +700,6 @@ include './sidebar.php';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        const recipientsPageSize = <?php echo $limit; ?>;
-        let recipientsCurrentPage = <?php echo $page; ?>;
-
-        function renderRecipientsPagination() {
-            const title = document.getElementById('recipientsPaginationTitle');
-            const info = document.getElementById('recipientsPaginationInfo');
-            const pageIndicator = document.getElementById('recipientsPaginationPage');
-            const controls = document.getElementById('recipientsPaginationControls');
-            const wrapper = document.getElementById('recipientsPagination');
-
-            if (!info || !controls || !wrapper) {
-                return;
-            }
-
-            const totalRecords = <?php echo $total_records; ?>;
-            const totalPages = Math.max(1, Math.ceil(totalRecords / recipientsPageSize));
-
-            const from = ((recipientsCurrentPage - 1) * recipientsPageSize) + 1;
-            const to = Math.min(recipientsCurrentPage * recipientsPageSize, totalRecords);
-            const visibleCount = Math.max(0, to - from + 1);
-
-            if (title) {
-                title.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'recipient' : 'recipients'} on this page`;
-            }
-            info.textContent = `Records ${from}-${to} of ${totalRecords} total`;
-            if (pageIndicator) {
-                pageIndicator.textContent = `Page ${recipientsCurrentPage} of ${totalPages}`;
-            }
-
-            wrapper.classList.toggle('hidden', totalPages <= 1);
-
-            const startPage = Math.max(1, recipientsCurrentPage - 2);
-            const endPage = Math.min(totalPages, recipientsCurrentPage + 2);
-
-            let controlsHtml = `
-                <button class="pagination-item compact ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(1)" aria-label="First page">
-                    <i class="fa-solid fa-chevrons-left"></i>
-                </button>
-                <button class="pagination-item compact ${recipientsCurrentPage === 1 ? 'disabled' : ''}" ${recipientsCurrentPage === 1 ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage - 1})" aria-label="Previous page">
-                    <i class="fa-solid fa-chevron-left"></i>
-                </button>
-            `;
-
-            if (startPage > 1) {
-                controlsHtml += `<button class="pagination-item" onclick="changeRecipientsPage(1)">1</button>`;
-                if (startPage > 2) {
-                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
-                }
-            }
-
-            for (let i = startPage; i <= endPage; i++) {
-                controlsHtml += `<button class="pagination-item ${i === recipientsCurrentPage ? 'active' : ''}" onclick="changeRecipientsPage(${i})">${i}</button>`;
-            }
-
-            if (endPage < totalPages) {
-                if (endPage < totalPages - 1) {
-                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
-                }
-                controlsHtml += `<button class="pagination-item" onclick="changeRecipientsPage(${totalPages})">${totalPages}</button>`;
-            }
-
-            controlsHtml += `
-                <button class="pagination-item compact ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${recipientsCurrentPage + 1})" aria-label="Next page">
-                    <i class="fa-solid fa-chevron-right"></i>
-                </button>
-                <button class="pagination-item compact ${recipientsCurrentPage === totalPages ? 'disabled' : ''}" ${recipientsCurrentPage === totalPages ? 'disabled' : ''} onclick="changeRecipientsPage(${totalPages})" aria-label="Last page">
-                    <i class="fa-solid fa-chevrons-right"></i>
-                </button>
-            `;
-            controls.innerHTML = controlsHtml;
-        }
-
-        function changeRecipientsPage(page) {
-            const url = new URL(window.location);
-            url.searchParams.set('page', page);
-            window.location.href = url.toString();
         }
 
         // Close modals when clicking outside
@@ -726,8 +727,6 @@ include './sidebar.php';
                 closeDeleteModal();
             }
         });
-
-        document.addEventListener('DOMContentLoaded', renderRecipientsPagination);
     </script>
 </body>
 
