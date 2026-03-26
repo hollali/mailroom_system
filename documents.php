@@ -232,7 +232,6 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'bulk_distribute') 
 if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     header('Content-Type: application/json');
 
-    $serial_number = trim($_POST['serial_number']);
     $document_name = trim($_POST['document_name']);
     $type_id = (int)$_POST['type_id'];
     $origin = trim($_POST['origin']);
@@ -262,24 +261,22 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
         exit();
     }
 
-    // Generate serial number if not provided
-    if (empty($serial_number)) {
-        $prefix = 'DOC';
-        $year = date('Y');
-        $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
-        $serial_number = $prefix . $year . $random;
-    }
+    // Auto-generate serial number
+    $prefix = 'DOC';
+    $year = date('Y');
+    $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    $serial_number = $prefix . $year . $random;
 
-    // Check if serial number already exists
+    // Check if serial number already exists (very unlikely but just in case)
     $check_stmt = $conn->prepare("SELECT id FROM documents WHERE serial_number = ?");
     $check_stmt->bind_param("s", $serial_number);
     $check_stmt->execute();
     $check_result = $check_stmt->get_result();
 
     if ($check_result->num_rows > 0) {
-        echo json_encode(['success' => false, 'message' => 'Serial number already exists']);
-        $check_stmt->close();
-        exit();
+        // Generate a new one if duplicate
+        $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+        $serial_number = $prefix . $year . $random;
     }
     $check_stmt->close();
 
@@ -300,8 +297,9 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
         $new_id = $conn->insert_id;
         echo json_encode([
             'success' => true,
-            'message' => 'Document added successfully',
-            'document_id' => $new_id
+            'message' => 'Document added successfully with serial number: ' . $serial_number,
+            'document_id' => $new_id,
+            'serial_number' => $serial_number
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $insert_stmt->error]);
@@ -787,20 +785,6 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Available Documents</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">View and distribute documents with available copies</p>
                     </div>
-                    <!--<div class="flex gap-2">
-                        <a href="distribution.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-regular fa-clock mr-1 text-[#6e6e6e]"></i>
-                            Distribution History
-                        </a>
-                        <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-regular fa-folder mr-1 text-[#6e6e6e]"></i>
-                            Manage Documents
-                        </a>
-                        <a href="document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                            <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i>
-                            Document Types
-                        </a>
-                    </div>-->
                 </div>
             </div>
 
@@ -1156,15 +1140,6 @@ if (isset($_SESSION['toast'])) {
                     </div>
 
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Serial Number</label>
-                        <input type="text" id="add_serial_number"
-                            placeholder="Leave empty for auto-generation"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            autocomplete="off">
-                        <p class="text-xs text-[#6e6e6e] mt-1">Auto-generated if left empty (e.g., DOC202312345)</p>
-                    </div>
-
-                    <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Origin</label>
                         <input type="text" id="add_origin"
                             placeholder="e.g., Courier, Mail, Internal"
@@ -1176,6 +1151,7 @@ if (isset($_SESSION['toast'])) {
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
                         <input type="number" id="add_copies_received" required min="1" value="1"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
+                        <p class="text-xs text-[#6e6e6e] mt-1">Serial number will be auto-generated</p>
                     </div>
 
                     <div>
@@ -1242,7 +1218,6 @@ if (isset($_SESSION['toast'])) {
             // Reset form
             document.getElementById('add_document_name').value = '';
             document.getElementById('add_type_id').value = '';
-            document.getElementById('add_serial_number').value = '';
             document.getElementById('add_origin').value = '';
             document.getElementById('add_copies_received').value = '1';
             document.getElementById('add_date_received').value = '<?php echo date('Y-m-d\TH:i'); ?>';
@@ -1257,7 +1232,6 @@ if (isset($_SESSION['toast'])) {
         function submitAddDocument() {
             const document_name = document.getElementById('add_document_name').value.trim();
             const type_id = document.getElementById('add_type_id').value;
-            const serial_number = document.getElementById('add_serial_number').value.trim();
             const origin = document.getElementById('add_origin').value.trim();
             const copies_received = parseInt(document.getElementById('add_copies_received').value);
             const date_received = document.getElementById('add_date_received').value;
@@ -1295,7 +1269,7 @@ if (isset($_SESSION['toast'])) {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&serial_number=${encodeURIComponent(serial_number)}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
+                    body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
                 })
                 .then(response => response.json())
                 .then(data => {
