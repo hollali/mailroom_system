@@ -43,9 +43,19 @@ function formatTimestampDisplay($value)
 }
 
 $documents_has_created_at = tableHasColumn($conn, 'documents', 'created_at');
+$documents_has_serial_number = tableHasColumn($conn, 'documents', 'serial_number');
 $document_received_expr = $documents_has_created_at
     ? "COALESCE(d.created_at, d.date_received) as received_timestamp"
     : "d.date_received as received_timestamp";
+
+function getDocumentSerialDisplay(array $document, $hasSerialNumberColumn)
+{
+    if ($hasSerialNumberColumn && !empty($document['serial_number'])) {
+        return $document['serial_number'];
+    }
+
+    return 'DOC-' . str_pad((string)($document['id'] ?? 0), 6, '0', STR_PAD_LEFT);
+}
 
 // Handle AJAX request for quick distribution
 if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'quick_distribute') {
@@ -261,43 +271,60 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
         exit();
     }
 
-    // Auto-generate serial number
-    $prefix = 'DOC';
-    $year = date('Y');
-    $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
-    $serial_number = $prefix . $year . $random;
+    $serial_number = null;
 
-    // Check if serial number already exists (very unlikely but just in case)
-    $check_stmt = $conn->prepare("SELECT id FROM documents WHERE serial_number = ?");
-    $check_stmt->bind_param("s", $serial_number);
-    $check_stmt->execute();
-    $check_result = $check_stmt->get_result();
-
-    if ($check_result->num_rows > 0) {
-        // Generate a new one if duplicate
+    if ($documents_has_serial_number) {
+        // Auto-generate serial number only when the database supports it.
+        $prefix = 'DOC';
+        $year = date('Y');
         $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
         $serial_number = $prefix . $year . $random;
-    }
-    $check_stmt->close();
 
-    // Insert new document
-    if ($documents_has_created_at) {
+        $check_stmt = $conn->prepare("SELECT id FROM documents WHERE serial_number = ?");
+        $check_stmt->bind_param("s", $serial_number);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+
+        if ($check_result->num_rows > 0) {
+            $random = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
+            $serial_number = $prefix . $year . $random;
+        }
+        $check_stmt->close();
+    }
+
+    // Insert new document using the columns that actually exist in the table.
+    if ($documents_has_serial_number && $documents_has_created_at) {
         $insert_stmt = $conn->prepare("INSERT INTO documents 
             (serial_number, document_name, type_id, origin, copies_received, date_received, created_at) 
             VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $insert_stmt->bind_param("ssissss", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received_only, $normalized_received_timestamp);
-    } else {
+        $insert_stmt->bind_param("ssisiss", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received_only, $normalized_received_timestamp);
+    } elseif ($documents_has_serial_number) {
         $insert_stmt = $conn->prepare("INSERT INTO documents 
             (serial_number, document_name, type_id, origin, copies_received, date_received) 
             VALUES (?, ?, ?, ?, ?, ?)");
         $insert_stmt->bind_param("ssisis", $serial_number, $document_name, $type_id, $origin, $copies_received, $date_received_only);
+    } elseif ($documents_has_created_at) {
+        $insert_stmt = $conn->prepare("INSERT INTO documents 
+            (document_name, type_id, origin, copies_received, date_received, created_at) 
+            VALUES (?, ?, ?, ?, ?, ?)");
+        $insert_stmt->bind_param("sisiss", $document_name, $type_id, $origin, $copies_received, $date_received_only, $normalized_received_timestamp);
+    } else {
+        $insert_stmt = $conn->prepare("INSERT INTO documents 
+            (document_name, type_id, origin, copies_received, date_received) 
+            VALUES (?, ?, ?, ?, ?)");
+        $insert_stmt->bind_param("sisis", $document_name, $type_id, $origin, $copies_received, $date_received_only);
     }
 
     if ($insert_stmt->execute()) {
         $new_id = $conn->insert_id;
+        $success_message = 'Document added successfully';
+        if ($serial_number !== null) {
+            $success_message .= ' with serial number: ' . $serial_number;
+        }
+
         echo json_encode([
             'success' => true,
-            'message' => 'Document added successfully with serial number: ' . $serial_number,
+            'message' => $success_message,
             'document_id' => $new_id,
             'serial_number' => $serial_number
         ]);
@@ -879,6 +906,7 @@ if (isset($_SESSION['toast'])) {
                                     while ($doc = $documents_result->fetch_assoc()):
                                         $available = $doc['available_copies'];
                                         $total = $doc['copies_received'];
+                                        $serialDisplay = getDocumentSerialDisplay($doc, $documents_has_serial_number);
                                         $percentage = $total > 0 ? round(($available / $total) * 100) : 0;
 
                                         // Determine stock level class
@@ -897,15 +925,15 @@ if (isset($_SESSION['toast'])) {
                                             data-type="<?php echo strtolower(htmlspecialchars($doc['document_type'] ?? 'uncategorized')); ?>"
                                             data-available="<?php echo $available; ?>"
                                             data-name="<?php echo strtolower(htmlspecialchars($doc['document_name'])); ?>"
-                                            data-serial="<?php echo strtolower(htmlspecialchars($doc['serial_number'] ?? '')); ?>"
+                                            data-serial="<?php echo strtolower(htmlspecialchars($serialDisplay)); ?>"
                                             data-origin="<?php echo strtolower(htmlspecialchars($doc['origin'] ?? '')); ?>"
-                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . ($doc['serial_number'] ?? '') . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . ($doc['received_timestamp'] ?? '') . ' ' . $available . ' ' . $total))); ?>">
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . $serialDisplay . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . ($doc['received_timestamp'] ?? '') . ' ' . $available . ' ' . $total))); ?>">
 
                                             <td class="checkbox-column">
                                                 <input type="checkbox" class="document-checkbox bulk-checkbox hidden rounded border-[#e5e5e5] text-[#1e1e1e] focus:ring-[#1e1e1e]" value="<?php echo $doc['id']; ?>">
                                             </td>
 
-                                            <td class="serial-column"><?php echo htmlspecialchars($doc['serial_number'] ?? 'DOC-000001'); ?></td>
+                                            <td class="serial-column"><?php echo htmlspecialchars($serialDisplay); ?></td>
 
                                             <td class="font-medium">
                                                 <a href="list.php?search=<?php echo urlencode($doc['document_name']); ?>" class="hover:underline">
