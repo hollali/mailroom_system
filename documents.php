@@ -857,26 +857,11 @@ if (isset($_SESSION['toast'])) {
                             <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i>
                             Bulk Mode
                         </button>
-                    </div>
 
-                    <!-- Bulk Actions Bar (hidden by default) -->
-                    <div id="bulkBar" class="mt-4 bg-[#1e1e1e] text-white rounded-md p-3 hidden items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <i class="fa-solid fa-cubes"></i>
-                            <span id="selectedCount">0</span> document(s) selected
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="clearSelection()" class="px-3 py-1 text-sm bg-white text-[#1e1e1e] rounded-md hover:bg-[#f5f5f4]">
-                                Clear
-                            </button>
-                            <button onclick="processBulkDistribution()" class="px-3 py-1 text-sm bg-white text-[#1e1e1e] rounded-md hover:bg-[#f5f5f4]">
-                                <i class="fa-regular fa-share-from-square mr-1"></i>
-                                Distribute Selected
-                            </button>
-                            <button onclick="toggleBulkMode()" class="px-3 py-1 text-sm border border-white text-white rounded-md hover:bg-white hover:text-[#1e1e1e]">
-                                Exit Bulk Mode
-                            </button>
-                        </div>
+                        <button onclick="openBulkEntryModal()" id="bulkReviewBtn" class="px-4 py-1.5 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] hidden">
+                            <i class="fa-regular fa-share-from-square mr-1"></i>
+                            Review Selection
+                        </button>
                     </div>
                 </div>
 
@@ -1093,6 +1078,36 @@ if (isset($_SESSION['toast'])) {
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Bulk Entry Modal -->
+    <div id="bulkEntryModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Bulk Distribution Mode</h3>
+                <button onclick="toggleBulkMode(false)" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="mb-4 p-3 bg-[#f5f5f4] rounded-md">
+                <p class="text-sm font-medium text-[#1e1e1e]"><span id="selectedCount">0</span> document(s) selected</p>
+                <p class="text-xs text-[#6e6e6e] mt-1">Select documents from the table, then continue to enter the bulk distribution details.</p>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <button onclick="clearSelection()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Clear
+                </button>
+                <button onclick="processBulkDistribution()" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                    <i class="fa-regular fa-share-from-square mr-1"></i>
+                    Continue
+                </button>
+                <button onclick="toggleBulkMode(false)" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Exit
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1423,32 +1438,52 @@ if (isset($_SESSION['toast'])) {
         }
 
         // Bulk Mode Functions
-        function toggleBulkMode() {
-            bulkMode = !bulkMode;
+        function toggleBulkMode(forceState = null) {
+            bulkMode = forceState === null ? !bulkMode : forceState;
             const checkboxes = document.querySelectorAll('.bulk-checkbox, .bulk-checkbox-global');
-            const bulkBar = document.getElementById('bulkBar');
             const bulkBtn = document.getElementById('bulkModeBtn');
+            const bulkReviewBtn = document.getElementById('bulkReviewBtn');
+            const bulkEntryModal = document.getElementById('bulkEntryModal');
 
             checkboxes.forEach(cb => {
                 cb.classList.toggle('hidden', !bulkMode);
             });
 
             if (bulkMode) {
-                bulkBar.classList.remove('hidden');
-                bulkBar.classList.add('flex');
                 bulkBtn.classList.add('active');
+                bulkBtn.innerHTML = '<i class="fa-solid fa-xmark mr-1 text-[#6e6e6e]"></i>Exit Bulk Mode';
+                bulkReviewBtn.classList.remove('hidden');
                 selectedDocuments.clear();
                 updateSelectedCount();
                 document.getElementById('selectAllCheckbox').checked = false;
             } else {
-                bulkBar.classList.add('hidden');
-                bulkBar.classList.remove('flex');
                 bulkBtn.classList.remove('active');
+                bulkBtn.innerHTML = '<i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i>Bulk Mode';
+                bulkReviewBtn.classList.add('hidden');
+                bulkEntryModal.style.display = 'none';
+                document.getElementById('bulkModal').style.display = 'none';
                 // Uncheck all checkboxes
                 document.querySelectorAll('.document-checkbox').forEach(cb => {
                     cb.checked = false;
                 });
+                selectedDocuments.clear();
+                document.getElementById('selectAllCheckbox').checked = false;
+                updateSelectedCount();
             }
+        }
+
+        function openBulkEntryModal() {
+            if (!bulkMode) {
+                showToast('Enable bulk mode first', 'warning');
+                return;
+            }
+
+            if (selectedDocuments.size === 0) {
+                showToast('Please select at least one document', 'warning');
+                return;
+            }
+
+            document.getElementById('bulkEntryModal').style.display = 'flex';
         }
 
         function toggleSelectAll() {
@@ -1485,6 +1520,10 @@ if (isset($_SESSION['toast'])) {
 
         function updateSelectedCount() {
             document.getElementById('selectedCount').textContent = selectedDocuments.size;
+            const bulkReviewBtn = document.getElementById('bulkReviewBtn');
+            if (bulkMode) {
+                bulkReviewBtn.innerHTML = `<i class="fa-regular fa-share-from-square mr-1"></i>Review Selection (${selectedDocuments.size})`;
+            }
         }
 
         function clearSelection() {
@@ -1546,11 +1585,15 @@ if (isset($_SESSION['toast'])) {
             });
 
             document.getElementById('bulkCount').textContent = selectedDocuments.size;
+            document.getElementById('bulkEntryModal').style.display = 'none';
             document.getElementById('bulkModal').style.display = 'flex';
         }
 
         function closeBulkModal() {
             document.getElementById('bulkModal').style.display = 'none';
+            if (bulkMode) {
+                document.getElementById('bulkEntryModal').style.display = 'flex';
+            }
         }
 
         function processBulkDistributionSubmit() {
@@ -1600,7 +1643,7 @@ if (isset($_SESSION['toast'])) {
                     if (data.success) {
                         showToast(data.message, 'success');
                         closeBulkModal();
-                        toggleBulkMode(); // Exit bulk mode
+                        toggleBulkMode(false);
 
                         // Show any errors that occurred
                         if (data.errors && data.errors.length > 0) {
@@ -1888,11 +1931,15 @@ if (isset($_SESSION['toast'])) {
         // Close modals when clicking outside
         window.onclick = function(event) {
             const distributeModal = document.getElementById('distributeModal');
+            const bulkEntryModal = document.getElementById('bulkEntryModal');
             const bulkModal = document.getElementById('bulkModal');
             const addDocumentModal = document.getElementById('addDocumentModal');
 
             if (event.target == distributeModal) {
                 closeDistributeModal();
+            }
+            if (event.target == bulkEntryModal) {
+                toggleBulkMode(false);
             }
             if (event.target == bulkModal) {
                 closeBulkModal();
@@ -1906,7 +1953,11 @@ if (isset($_SESSION['toast'])) {
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeDistributeModal();
-                closeBulkModal();
+                if (document.getElementById('bulkModal').style.display === 'flex') {
+                    closeBulkModal();
+                } else if (bulkMode) {
+                    toggleBulkMode(false);
+                }
                 closeAddDocumentModal();
             }
         });

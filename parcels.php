@@ -71,6 +71,101 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'edit_received') {
+    header('Content-Type: application/json');
+
+    $parcel_id = isset($_POST['parcel_id']) ? (int)$_POST['parcel_id'] : 0;
+    $description = trim($_POST['description'] ?? '');
+    $sender = trim($_POST['sender'] ?? '');
+    $addressed_to = trim($_POST['addressed_to'] ?? '');
+    $received_by = trim($_POST['received_by'] ?? '');
+
+    if ($parcel_id <= 0 || $description === '' || $sender === '' || $addressed_to === '' || $received_by === '') {
+        echo json_encode(['success' => false, 'message' => 'All fields are required']);
+        exit;
+    }
+
+    $check_stmt = $conn->prepare("
+        SELECT pr.id, pr.tracking_id, pp.id AS pickup_id
+        FROM parcels_received pr
+        LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
+        WHERE pr.id = ?
+    ");
+    $check_stmt->bind_param("i", $parcel_id);
+    $check_stmt->execute();
+    $parcel = $check_stmt->get_result()->fetch_assoc();
+    $check_stmt->close();
+
+    if (!$parcel) {
+        echo json_encode(['success' => false, 'message' => 'Parcel not found']);
+        exit;
+    }
+
+    if (!empty($parcel['pickup_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Only pending parcels can be edited']);
+        exit;
+    }
+
+    $stmt = $conn->prepare("UPDATE parcels_received SET description = ?, sender = ?, addressed_to = ?, received_by = ? WHERE id = ?");
+    $stmt->bind_param("ssssi", $description, $sender, $addressed_to, $received_by, $parcel_id);
+
+    if ($stmt->execute()) {
+        echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' updated successfully']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Update failed: ' . $conn->error]);
+    }
+    $stmt->close();
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'delete_received') {
+    header('Content-Type: application/json');
+
+    $parcel_id = isset($_POST['parcel_id']) ? (int)$_POST['parcel_id'] : 0;
+
+    if ($parcel_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid parcel selected']);
+        exit;
+    }
+
+    $check_stmt = $conn->prepare("SELECT id, tracking_id FROM parcels_received WHERE id = ?");
+    $check_stmt->bind_param("i", $parcel_id);
+    $check_stmt->execute();
+    $parcel = $check_stmt->get_result()->fetch_assoc();
+    $check_stmt->close();
+
+    if (!$parcel) {
+        echo json_encode(['success' => false, 'message' => 'Parcel not found']);
+        exit;
+    }
+
+    $conn->begin_transaction();
+
+    try {
+        $delete_pickup_stmt = $conn->prepare("DELETE FROM parcels_pickup WHERE parcel_id = ?");
+        $delete_pickup_stmt->bind_param("i", $parcel_id);
+        if (!$delete_pickup_stmt->execute()) {
+            throw new Exception($delete_pickup_stmt->error);
+        }
+        $delete_pickup_stmt->close();
+
+        $delete_received_stmt = $conn->prepare("DELETE FROM parcels_received WHERE id = ?");
+        $delete_received_stmt->bind_param("i", $parcel_id);
+        if (!$delete_received_stmt->execute()) {
+            throw new Exception($delete_received_stmt->error);
+        }
+        $delete_received_stmt->close();
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' deleted successfully']);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['success' => false, 'message' => 'Delete failed: ' . $e->getMessage()]);
+    }
+
+    exit;
+}
+
 // Handle pickup
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
     $parcel_id = $_POST['parcel_id'];
@@ -618,11 +713,23 @@ $recent_parcels = $conn->query("
                                                         <i class="fa-solid fa-eye"></i>
                                                     </button>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <button onclick="quickPickup(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
-                                                            class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="Quick Pickup">
-                                                            <i class="fa-solid fa-truck"></i>
+                                                        <button onclick='openEditReceiveModal(<?php echo htmlspecialchars(json_encode([
+                                                            "id" => $parcel["id"],
+                                                            "tracking_id" => $parcel["tracking_id"],
+                                                            "description" => $parcel["description"],
+                                                            "sender" => $parcel["sender"],
+                                                            "addressed_to" => $parcel["addressed_to"],
+                                                            "received_by" => $parcel["received_by"],
+                                                            "received_timestamp" => $parcel["received_timestamp"] ?? $parcel["date_received"]
+                                                        ]), ENT_QUOTES, "UTF-8"); ?>)'
+                                                            class="text-[#2563eb] hover:text-[#1d4ed8] mr-2" title="Edit Parcel">
+                                                            <i class="fa-regular fa-pen-to-square"></i>
                                                         </button>
                                                     <?php endif; ?>
+                                                    <button onclick="openDeleteReceiveModal(<?php echo $parcel['id']; ?>, '<?php echo htmlspecialchars($parcel['tracking_id'], ENT_QUOTES); ?>')"
+                                                        class="text-[#dc2626] hover:text-[#991b1b]" title="Delete Parcel">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         <?php endwhile; ?>
@@ -823,80 +930,33 @@ $recent_parcels = $conn->query("
                         </div>
                     </div>
 
-                    <!-- Simplified Search Panel -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden mb-6">
-                        <!-- Search Header with Toggle -->
-                        <div class="px-5 py-3 bg-[#fafafa] border-b border-[#e5e5e5] flex justify-between items-center cursor-pointer" onclick="toggleSearchPanel()">
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid fa-magnifying-glass text-[#6e6e6e]"></i>
-                                <span class="text-sm font-medium text-[#1e1e1e]">Search & Filter</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <span class="text-xs text-[#6e6e6e] hidden md:inline" id="activeFiltersCount">No active filters</span>
-                                <i class="fa-solid fa-chevron-down text-[#6e6e6e] transition-transform" id="searchToggleIcon"></i>
-                            </div>
-                        </div>
-
-                        <!-- Search Panel Content (Collapsible) -->
-                        <div id="searchPanel" class="p-5 filter-panel">
-                            <!-- Quick Search Bar (Primary) -->
-                            <div class="mb-4">
-                                <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">Quick Search</label>
-                                <div class="flex gap-2">
-                                    <div class="relative flex-1">
-                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
-                                        <input type="text" id="quickSearch" placeholder="Search by tracking ID, sender, recipient, or picker..."
-                                            class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                                            autocomplete="off">
-                                    </div>
-                                    <button onclick="applyQuickSearch()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
-                                        Search
-                                    </button>
-                                    <button onclick="clearSearch()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                        <i class="fa-solid fa-xmark"></i>
-                                    </button>
-                                </div>
+                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <div class="relative flex-1 min-w-[260px]">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
+                                <input type="text" id="quickSearch" placeholder="Search by tracking ID, sender, recipient, or picker..."
+                                    class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
+                                    autocomplete="off">
                             </div>
 
-                            <!-- Advanced Filters (Hidden by default, can be expanded) -->
-                            <div class="border-t border-[#e5e5e5] pt-4">
-                                <div class="flex justify-between items-center mb-3">
-                                    <span class="text-xs text-[#6e6e6e] uppercase tracking-wide">Advanced Filters</span>
-                                    <button type="button" onclick="toggleAdvancedFilters()" class="text-xs text-[#6e6e6e] hover:text-[#1e1e1e] flex items-center gap-1">
-                                        <span id="advancedToggleText">Show More</span>
-                                        <i class="fa-solid fa-chevron-down text-xs" id="advancedToggleIcon"></i>
-                                    </button>
-                                </div>
+                            <select id="filterStatus" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                                <option value="all">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="picked-up">Picked Up</option>
+                            </select>
 
-                                <div id="advancedFilters" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div>
-                                        <label class="block text-xs text-[#6e6e6e] mb-1">Status</label>
-                                        <select id="filterStatus" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                                            <option value="all">All Status</option>
-                                            <option value="pending">Pending</option>
-                                            <option value="picked-up">Picked Up</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-[#6e6e6e] mb-1">From Date</label>
-                                        <input type="date" id="dateFrom" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-[#6e6e6e] mb-1">To Date</label>
-                                        <input type="date" id="dateTo" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                                    </div>
-                                </div>
+                            <input type="date" id="dateFrom" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
+                            <input type="date" id="dateTo" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
 
-                                <!-- Filter Action Buttons -->
-                                <div class="flex justify-end gap-2 mt-4">
-                                    <button onclick="resetFilters()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                        Reset All
-                                    </button>
-                                    <button onclick="applyAdvancedFilters()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium">
-                                        Apply Filters
-                                    </button>
-                                </div>
-                            </div>
+                            <button onclick="applyQuickSearch()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
+                                Search
+                            </button>
+
+                            <button onclick="clearSearch()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
+                                Reset
+                            </button>
+
+                            <span class="text-xs text-[#6e6e6e] whitespace-nowrap ml-auto" id="activeFiltersCount">No active filters</span>
                         </div>
                     </div>
 
@@ -963,12 +1023,7 @@ $recent_parcels = $conn->query("
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Details">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </button>
-                                                    <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <button onclick="openPickupModal(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
-                                                            class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="Process Pickup">
-                                                            <i class="fa-solid fa-truck"></i>
-                                                        </button>
-                                                    <?php else: ?>
+                                                    <?php if ($parcel['status'] != 'Pending'): ?>
                                                         <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
                                                             class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Pickup Details">
                                                             <i class="fa-solid fa-circle-info"></i>
@@ -1108,6 +1163,67 @@ $recent_parcels = $conn->query("
         </div>
     </div>
 
+    <div id="editReceiveModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6">
+            <div class="flex justify-between items-center mb-5">
+                <div>
+                    <h3 class="text-base font-medium text-[#1e1e1e]">Edit Pending Parcel</h3>
+                    <p class="text-xs text-[#6e6e6e] mt-1">Tracking ID: <span id="editTrackingId" class="font-mono"></span></p>
+                </div>
+                <button onclick="closeEditReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="editReceiveForm" onsubmit="submitEditReceiveForm(event)">
+                <input type="hidden" name="action" value="edit_received">
+                <input type="hidden" name="parcel_id" id="editParcelId">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description <span class="text-red-400">*</span></label>
+                        <textarea name="description" id="editDescription" rows="3" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
+                            autocomplete="off"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sender <span class="text-red-400">*</span></label>
+                        <input type="text" name="sender" id="editSender" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
+                            autocomplete="off">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Addressed To <span class="text-red-400">*</span></label>
+                        <input type="text" name="addressed_to" id="editAddressedTo" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
+                            autocomplete="off">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By <span class="text-red-400">*</span></label>
+                        <input type="text" name="received_by" id="editReceivedBy" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
+                            autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="closeEditReceiveModal()"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium">
+                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Pickup Modal -->
     <div id="pickupModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
         <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
@@ -1159,6 +1275,38 @@ $recent_parcels = $conn->query("
                     <button type="submit"
                         class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                         Confirm Pickup
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="deleteReceiveModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Delete Parcel</h3>
+                <button onclick="closeDeleteReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="deleteReceiveForm" onsubmit="submitDeleteReceiveForm(event)">
+                <input type="hidden" name="action" value="delete_received">
+                <input type="hidden" name="parcel_id" id="deleteParcelId">
+
+                <div class="mb-5 p-3 bg-[#fafafa] border border-[#e5e5e5] rounded-md">
+                    <p class="text-sm text-[#1e1e1e]">Are you sure you want to delete parcel <span id="deleteTrackingId" class="font-mono font-medium"></span>?</p>
+                    <p class="text-xs text-[#6e6e6e] mt-2">This also removes any pickup record linked to it.</p>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeDeleteReceiveModal()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                        class="px-3 py-1.5 text-sm bg-[#dc2626] text-white rounded-md hover:bg-[#b91c1c]">
+                        Delete Parcel
                     </button>
                 </div>
             </form>
@@ -1311,6 +1459,22 @@ $recent_parcels = $conn->query("
             document.getElementById('receiveForm').reset();
         }
 
+        function openEditReceiveModal(parcel) {
+            document.getElementById('editReceiveModal').style.display = 'flex';
+            document.getElementById('editParcelId').value = parcel.id || '';
+            document.getElementById('editTrackingId').textContent = parcel.tracking_id || '';
+            document.getElementById('editDescription').value = parcel.description || '';
+            document.getElementById('editSender').value = parcel.sender || '';
+            document.getElementById('editAddressedTo').value = parcel.addressed_to || '';
+            document.getElementById('editReceivedBy').value = parcel.received_by || '';
+        }
+
+        function closeEditReceiveModal() {
+            document.getElementById('editReceiveModal').style.display = 'none';
+            document.getElementById('editReceiveForm').reset();
+            document.getElementById('editTrackingId').textContent = '';
+        }
+
         // Submit receive form via AJAX
         function submitReceiveForm(event) {
             event.preventDefault();
@@ -1326,6 +1490,30 @@ $recent_parcels = $conn->query("
                     if (data.success) {
                         showToast(data.message, 'success');
                         closeReceiveModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred', 'error');
+                });
+        }
+
+        function submitEditReceiveForm(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+
+            fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeEditReceiveModal();
                         setTimeout(() => location.reload(), 1000);
                     } else {
                         showToast(data.message, 'error');
@@ -1373,11 +1561,40 @@ $recent_parcels = $conn->query("
                 });
         }
 
-        // Quick pickup from receive tab
-        function quickPickup(id, trackingId) {
-            switchTab('pickup');
-            openPickupModal(id, trackingId);
-            showToast('Quick pickup initiated', 'info');
+        function openDeleteReceiveModal(id, trackingId) {
+            document.getElementById('deleteReceiveModal').style.display = 'flex';
+            document.getElementById('deleteParcelId').value = id;
+            document.getElementById('deleteTrackingId').textContent = trackingId;
+        }
+
+        function closeDeleteReceiveModal() {
+            document.getElementById('deleteReceiveModal').style.display = 'none';
+            document.getElementById('deleteReceiveForm').reset();
+            document.getElementById('deleteTrackingId').textContent = '';
+        }
+
+        function submitDeleteReceiveForm(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+
+            fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeDeleteReceiveModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred', 'error');
+                });
         }
 
         // Details Modal functions
@@ -1523,40 +1740,7 @@ $recent_parcels = $conn->query("
             }
         }
 
-        // REDESIGNED RECORDS TAB SEARCH FUNCTIONS
-        let searchPanelVisible = true;
-
-        function toggleSearchPanel() {
-            const panel = document.getElementById('searchPanel');
-            const icon = document.getElementById('searchToggleIcon');
-
-            if (searchPanelVisible) {
-                panel.style.display = 'none';
-                icon.style.transform = 'rotate(0deg)';
-            } else {
-                panel.style.display = 'block';
-                icon.style.transform = 'rotate(180deg)';
-            }
-            searchPanelVisible = !searchPanelVisible;
-        }
-
-        function toggleAdvancedFilters() {
-            const advanced = document.getElementById('advancedFilters');
-            const toggleText = document.getElementById('advancedToggleText');
-            const toggleIcon = document.getElementById('advancedToggleIcon');
-
-            if (advanced.classList.contains('hidden')) {
-                advanced.classList.remove('hidden');
-                toggleText.textContent = 'Show Less';
-                toggleIcon.style.transform = 'rotate(180deg)';
-            } else {
-                advanced.classList.add('hidden');
-                toggleText.textContent = 'Show More';
-                toggleIcon.style.transform = 'rotate(0deg)';
-            }
-        }
-
-        // Quick search
+        // Records tab search functions
         function applyQuickSearch() {
             applyAdvancedFilters(true);
         }
@@ -1899,15 +2083,23 @@ $recent_parcels = $conn->query("
         // Close modals when clicking outside
         window.onclick = function(event) {
             const receiveModal = document.getElementById('receiveModal');
+            const editReceiveModal = document.getElementById('editReceiveModal');
             const pickupModal = document.getElementById('pickupModal');
+            const deleteReceiveModal = document.getElementById('deleteReceiveModal');
             const detailsModal = document.getElementById('detailsModal');
             const parcelDetailsModal = document.getElementById('parcelDetailsModal');
 
             if (event.target == receiveModal) {
                 closeReceiveModal();
             }
+            if (event.target == editReceiveModal) {
+                closeEditReceiveModal();
+            }
             if (event.target == pickupModal) {
                 closePickupModal();
+            }
+            if (event.target == deleteReceiveModal) {
+                closeDeleteReceiveModal();
             }
             if (event.target == detailsModal) {
                 closeDetailsModal();
@@ -1921,7 +2113,9 @@ $recent_parcels = $conn->query("
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeReceiveModal();
+                closeEditReceiveModal();
                 closePickupModal();
+                closeDeleteReceiveModal();
                 closeDetailsModal();
                 closeParcelDetailsModal();
             }
