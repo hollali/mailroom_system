@@ -58,8 +58,8 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Newspaper Subscription - Mailroom</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="icon" type="image/png" href="./images/logo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
@@ -202,7 +202,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
         <!-- Header -->
         <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
-                <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Categories</h1>
+                <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Subscription</h1>
                 <button onclick="openModal()"
                     class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                     <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Category
