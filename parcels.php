@@ -714,20 +714,20 @@ $recent_parcels = $conn->query("
                                                     </button>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
                                                         <button onclick='openEditReceiveModal(<?php echo htmlspecialchars(json_encode([
-                                                            "id" => $parcel["id"],
-                                                            "tracking_id" => $parcel["tracking_id"],
-                                                            "description" => $parcel["description"],
-                                                            "sender" => $parcel["sender"],
-                                                            "addressed_to" => $parcel["addressed_to"],
-                                                            "received_by" => $parcel["received_by"],
-                                                            "received_timestamp" => $parcel["received_timestamp"] ?? $parcel["date_received"]
-                                                        ]), ENT_QUOTES, "UTF-8"); ?>)'
-                                                            class="text-[#2563eb] hover:text-[#1d4ed8] mr-2" title="Edit Parcel">
+                                                                                                    "id" => $parcel["id"],
+                                                                                                    "tracking_id" => $parcel["tracking_id"],
+                                                                                                    "description" => $parcel["description"],
+                                                                                                    "sender" => $parcel["sender"],
+                                                                                                    "addressed_to" => $parcel["addressed_to"],
+                                                                                                    "received_by" => $parcel["received_by"],
+                                                                                                    "received_timestamp" => $parcel["received_timestamp"] ?? $parcel["date_received"]
+                                                                                                ]), ENT_QUOTES, "UTF-8"); ?>)'
+                                                            class="text-[#6e6e6e] hover:text-[#1d4ed8] mr-2" title="Edit Parcel">
                                                             <i class="fa-regular fa-pen-to-square"></i>
                                                         </button>
                                                     <?php endif; ?>
                                                     <button onclick="openDeleteReceiveModal(<?php echo $parcel['id']; ?>, '<?php echo htmlspecialchars($parcel['tracking_id'], ENT_QUOTES); ?>')"
-                                                        class="text-[#dc2626] hover:text-[#991b1b]" title="Delete Parcel">
+                                                        class="text-[#6e6e6e] hover:text-[#991b1b]" title="Delete Parcel">
                                                         <i class="fa-regular fa-trash-can"></i>
                                                     </button>
                                                 </td>
@@ -917,7 +917,7 @@ $recent_parcels = $conn->query("
                                 <button onclick="exportToCSV()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                                     <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
                                 </button>
-                               <!-- <button onclick="exportToPDF()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                                <!-- <button onclick="exportToPDF()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
                                     <i class="fa-regular fa-file-pdf mr-1 text-[#6e6e6e]"></i> Export PDF
                                 </button>-->
                                 <button onclick="printRecords()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">

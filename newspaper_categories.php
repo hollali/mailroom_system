@@ -50,7 +50,6 @@ $total_pages = ceil($total_categories / $limit);
 // Get categories with pagination
 $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMIT $offset, $limit");
 ?>
-?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -205,7 +204,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Subscription</h1>
                 <button onclick="openModal()"
                     class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Category
+                    <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Subscription
                 </button>
             </div>
         </div>
