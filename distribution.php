@@ -682,7 +682,7 @@ if (isset($_SESSION['toast'])) {
                                     Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(2)">
-                                    Copies <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
+                                    Copies Distributed <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
                                     Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
