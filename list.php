@@ -598,18 +598,10 @@ include './sidebar.php';
                                 <?php endforeach; ?>
                             </select>
 
-                            <select name="filter_status" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
-                                <option value="">All Status</option>
-                                <option value="available" <?php echo $filter_status == 'available' ? 'selected' : ''; ?>>Available</option>
-                                <option value="partial" <?php echo $filter_status == 'partial' ? 'selected' : ''; ?>>Partial</option>
-                                <option value="distributed" <?php echo $filter_status == 'distributed' ? 'selected' : ''; ?>>Distributed</option>
-                            </select>
-
                             <select name="sort_by" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
                                 <option value="date_received" <?php echo $sort_by == 'date_received' ? 'selected' : ''; ?>>Sort by Date</option>
                                 <option value="newspaper_name" <?php echo $sort_by == 'newspaper_name' ? 'selected' : ''; ?>>Sort by Name</option>
                                 <option value="category_name" <?php echo $sort_by == 'category_name' ? 'selected' : ''; ?>>Sort by Category</option>
-                                <option value="status" <?php echo $sort_by == 'status' ? 'selected' : ''; ?>>Sort by Status</option>
                                 <option value="available_copies" <?php echo $sort_by == 'available_copies' ? 'selected' : ''; ?>>Sort by Copies</option>
                             </select>
 
@@ -628,7 +620,7 @@ include './sidebar.php';
                         </form>
 
                         <!-- Active Filters Display -->
-                        <?php if ($filter_category > 0 || !empty($filter_status) || !empty($search)): ?>
+                        <?php if ($filter_category > 0 || !empty($search)): ?>
                             <div class="flex flex-wrap gap-2 mt-3">
                                 <?php if ($filter_category > 0):
                                     $cat_name = '';
@@ -643,15 +635,6 @@ include './sidebar.php';
                                         Category: <?php echo htmlspecialchars($cat_name); ?>
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_category' => 0, 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
                                             <i class="fa-regular fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if (!empty($filter_status)): ?>
-                                    <span class="filter-badge">
-                                        Status: <?php echo ucfirst($filter_status); ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_status' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
                                         </a>
                                     </span>
                                 <?php endif; ?>
@@ -679,7 +662,6 @@ include './sidebar.php';
                                     <th class="text-xs">Category</th>
                                     <th class="text-xs">Date Received</th>
                                     <th class="text-xs">Available</th>
-                                    <th class="text-xs">Status</th>
                                     <th class="text-xs">Actions</th>
                                 </tr>
                             </thead>
@@ -696,21 +678,6 @@ include './sidebar.php';
                                             <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $paper['available_copies']; ?></td>
-                                            <td class="text-sm">
-                                                <?php
-                                                $status_class = '';
-                                                if ($paper['status'] == 'available') {
-                                                    $status_class = 'status-available';
-                                                } elseif ($paper['status'] == 'partial') {
-                                                    $status_class = 'status-partial';
-                                                } else {
-                                                    $status_class = 'status-distributed';
-                                                }
-                                                ?>
-                                                <span class="status-badge <?php echo $status_class; ?>">
-                                                    <?php echo ucfirst($paper['status'] ?? 'available'); ?>
-                                                </span>
-                                            </td>
                                             <td class="text-sm">
                                                 <div class="flex gap-2">
                                                     <button onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)"
@@ -730,13 +697,13 @@ include './sidebar.php';
                                         </tr>
                                     <?php endwhile; ?>
                                     <tr id="newspaperNoResultsRow" class="hidden">
-                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
+                                        <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
                                             No newspapers match the current live search on this page.
                                         </td>
                                     </tr>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
+                                        <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
                                             No newspapers found.
                                             <button onclick="openAddModal()" class="text-blue-600 hover:underline">Add one</button> to get started.
                                         </td>
@@ -1112,21 +1079,6 @@ include './sidebar.php';
         function viewNewspaper(paper) {
             const content = document.getElementById('viewContent');
 
-            // Determine status display
-            let statusClass = '';
-            let statusText = '';
-
-            if (paper.status == 'available') {
-                statusClass = 'bg-green-100 text-green-800';
-                statusText = 'Available';
-            } else if (paper.status == 'partial') {
-                statusClass = 'bg-yellow-100 text-yellow-800';
-                statusText = 'Partial';
-            } else {
-                statusClass = 'bg-red-100 text-red-800';
-                statusText = 'Distributed';
-            }
-
             content.innerHTML = `
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
@@ -1140,10 +1092,6 @@ include './sidebar.php';
                     <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Category</p>
                         <p class="text-sm">${escapeHtml(paper.category_name || 'Uncategorized')}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Status</p>
-                        <span class="inline-block px-2 py-1 text-xs rounded-md ${statusClass}">${statusText}</span>
                     </div>
                     <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Received</p>
