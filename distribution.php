@@ -26,13 +26,9 @@ function formatTimestampDisplay($value)
 
 // Handle form submission
 if (isset($_POST['submit'])) {
-
     $document_id = $_POST['document_id'];
     $date_distributed = $_POST['date_distributed'];
-
-    $departments = $_POST['department'];
-    $recipients = $_POST['recipient_name'];
-    $numbers = $_POST['number_distributed'];
+    $numbers = $_POST['number_distributed'] ?? [];
 
     $success_count = 0;
     $error_messages = [];
@@ -59,31 +55,26 @@ if (isset($_POST['submit'])) {
             throw new Exception("Insufficient copies. Available: " . $document['copies_received'] . ", Requested: " . $total_requested);
         }
 
-        // Process each distribution
-        for ($i = 0; $i < count($departments); $i++) {
-
-            $department = trim($departments[$i]);
-            $recipient = trim($recipients[$i]);
+        // Process each distribution entry
+        for ($i = 0; $i < count($numbers); $i++) {
             $number = (int)$numbers[$i];
 
-            if ($department != "" && $recipient != "" && $number > 0) {
-
-                // Insert distribution record
+            if ($number > 0) {
+                // Insert distribution record (without department and recipient name)
                 $sql = "INSERT INTO document_distribution 
-                        (document_id, department, recipient_name, number_received, number_distributed, date_distributed)
+                        (document_id, number_received, number_distributed, date_distributed)
                         VALUES 
-                        (?, ?, ?, ?, ?, ?)";
+                        (?, ?, ?, ?)";
 
                 $stmt = $conn->prepare($sql);
                 if (!$stmt) {
                     throw new Exception("Prepare failed: " . $conn->error);
                 }
 
-                // Using same number for both received and distributed
-                $stmt->bind_param("issiis", $document_id, $department, $recipient, $number, $number, $date_distributed);
+                $stmt->bind_param("iiis", $document_id, $number, $number, $date_distributed);
 
                 if (!$stmt->execute()) {
-                    throw new Exception("Error for row " . ($i + 1) . ": " . $stmt->error);
+                    throw new Exception("Error for entry " . ($i + 1) . ": " . $stmt->error);
                 }
                 $stmt->close();
 
@@ -216,7 +207,7 @@ $document_types = $conn->query("
     ORDER BY type_name ASC
 ");
 
-// Get distribution records with document and type information
+// Get distribution records with document information
 $result = $conn->query("
     SELECT dd.*, d.document_name, d.type_id, dt.type_name as document_type,
            d.copies_received as total_copies
@@ -457,14 +448,6 @@ if (isset($_SESSION['toast'])) {
             overflow-y: auto;
         }
 
-        .newspaper-grid {
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 0.5rem;
-        }
-
         .action-btn {
             color: #9e9e9e;
             transition: color 0.2s;
@@ -660,42 +643,18 @@ if (isset($_SESSION['toast'])) {
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution</h1>
-                    <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across departments</p>
+                    <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across the organization</p>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="openDistributionModal()" class="new-distribution-btn">
                         <i class="fa-regular fa-plus"></i>
                         <span>New Distribution</span>
                     </button>
-                    <!--<a href="./available_documents.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-regular fa-folder-open mr-1 text-[#6e6e6e]"></i> Available Documents
-                    </a>
-                    <a href="./document_types.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-solid fa-tags mr-1 text-[#6e6e6e]"></i> Manage Types
-                    </a>-->
                 </div>
             </div>
         </div>
 
         <div class="p-8">
-
-            <!-- Quick Links -->
-            <!--<div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
-                <div class="flex flex-wrap gap-3">
-                    <span class="text-sm text-[#6e6e6e] mr-2">Quick Links:</span>
-                    <a href="available_documents.php" class="text-sm text-[#1e1e1e] hover:underline flex items-center">
-                        <i class="fa-regular fa-folder-open mr-1 text-[#6e6e6e]"></i> View Available Documents
-                    </a>
-                    <span class="text-[#e5e5e5]">|</span>
-                    <a href="document_types.php?action=create" class="text-sm text-[#1e1e1e] hover:underline flex items-center">
-                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> New Type
-                    </a>
-                    <span class="text-[#e5e5e5]">|</span>
-                    <a href="list.php" class="text-sm text-[#1e1e1e] hover:underline flex items-center">
-                        <i class="fa-regular fa-folder mr-1 text-[#6e6e6e]"></i> Manage Documents
-                    </a>
-                </div>
-            </div>-->
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
@@ -714,7 +673,6 @@ if (isset($_SESSION['toast'])) {
 
                 <div class="overflow-x-auto">
                     <table class="w-full" id="distributionTable">
-
                         <thead class="bg-[#fafafa]">
                             <tr class="text-left text-xs text-[#4a4a4a]">
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(0)">
@@ -724,18 +682,12 @@ if (isset($_SESSION['toast'])) {
                                     Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(2)">
-                                    Department <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
-                                    Recipient <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(4)">
                                     Copies <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(5)">
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
                                     Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(6)">
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(4)">
                                     Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3">Actions</th>
@@ -748,39 +700,33 @@ if (isset($_SESSION['toast'])) {
                                 while ($row = $result->fetch_assoc()):
                             ?>
                                     <tr class="border-t text-sm hover:bg-[#fafafa] distribution-row" id="row-<?php echo $row['id']; ?>"
-                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['department'] ?? '') . ' ' . ($row['recipient_name'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
                                         <td class="p-3">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
                                                 class="text-[#1e1e1e] hover:underline font-medium">
                                                 <?php echo htmlspecialchars($row['document_name']); ?>
                                             </a>
                                         </td>
-
                                         <td class="p-3">
                                             <?php if (!empty($row['document_type'])): ?>
-                                                <a href="document_types.php?action=view&id=<?php echo $row['type_id']; ?>"
-                                                    class="badge badge-info hover:underline">
+                                                <span class="badge badge-info">
                                                     <i class="fa-solid fa-tag mr-1"></i>
                                                     <?php echo htmlspecialchars($row['document_type']); ?>
-                                                </a>
+                                                </span>
                                             <?php else: ?>
                                                 <span class="text-[#9e9e9e]">—</span>
                                             <?php endif; ?>
                                         </td>
-
-                                        <td class="p-3"><?php echo htmlspecialchars($row['department'] ?? ''); ?></td>
-                                        <td class="p-3"><?php echo htmlspecialchars($row['recipient_name'] ?? ''); ?></td>
                                         <td class="p-3 font-mono"><?php echo $row['number_distributed'] ?? 0; ?></td>
                                         <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                         <td class="p-3 whitespace-nowrap"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
-
                                         <td class="p-3">
                                             <div class="flex gap-2">
                                                 <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)"
                                                     class="action-btn" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
                                                 </button>
-                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', '<?php echo htmlspecialchars(addslashes($row['recipient_name'])); ?>')"
+                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
                                                     class="action-btn delete-btn" title="Delete">
                                                     <i class="fa-regular fa-trash-can"></i>
                                                 </button>
@@ -792,7 +738,7 @@ if (isset($_SESSION['toast'])) {
                             else:
                                 ?>
                                 <tr>
-                                    <td colspan="8" class="p-8 text-center text-sm text-[#6e6e6e]">
+                                    <td colspan="6" class="p-8 text-center text-sm text-[#6e6e6e]">
                                         No distribution records found. Click "New Distribution" to get started.
                                     </td>
                                 </tr>
@@ -820,9 +766,9 @@ if (isset($_SESSION['toast'])) {
         </div>
     </div>
 
-    <!-- Distribution Modal -->
+    <!-- Distribution Modal - Simplified (No department/recipient fields) -->
     <div id="distributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-4xl p-6 modal-content">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6 modal-content">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-medium text-[#1e1e1e]">New Distribution</h2>
                 <button type="button" onclick="closeDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
@@ -836,16 +782,13 @@ if (isset($_SESSION['toast'])) {
             </div>
 
             <form method="POST" action="distribution.php" id="distributionForm" onsubmit="return validateForm()">
-
                 <div class="grid grid-cols-2 gap-4 mb-4">
-
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
                             Document <span class="text-red-400">*</span>
                         </label>
                         <select name="document_id" id="modalDocumentSelect" required onchange="updateAvailableCopies()" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
                             <option value="">-- Select Document --</option>
-
                             <?php
                             // Group documents by type and show available copies
                             $documents->data_seek(0);
@@ -871,7 +814,6 @@ if (isset($_SESSION['toast'])) {
                                 <optgroup label="<?php echo htmlspecialchars($type_name); ?>" class="font-semibold bg-gray-50">
                                     <?php foreach ($docs as $doc):
                                         $available = $doc['available_copies'];
-                                        $stockClass = $available > 10 ? 'text-green-600' : ($available > 5 ? 'text-yellow-600' : ($available > 0 ? 'text-orange-600' : 'text-red-600'));
                                     ?>
                                         <option value="<?php echo $doc['id']; ?>"
                                             data-available="<?php echo $available; ?>"
@@ -884,28 +826,7 @@ if (isset($_SESSION['toast'])) {
                                     <?php endforeach; ?>
                                 </optgroup>
                             <?php endforeach; ?>
-
-                            <!-- Show document types without documents -->
-                            <?php
-                            $document_types->data_seek(0);
-                            while ($type = $document_types->fetch_assoc()) {
-                                $has_documents = false;
-                                foreach ($grouped_documents as $type_name => $docs) {
-                                    if ($type_name == $type['type_name']) {
-                                        $has_documents = true;
-                                        break;
-                                    }
-                                }
-                                if (!$has_documents) {
-                                    echo '<optgroup label="' . htmlspecialchars($type['type_name']) . ' (No documents)" class="font-semibold bg-gray-50 text-gray-400">';
-                                    echo '<option value="" disabled>─ No documents available ─</option>';
-                                    echo '</optgroup>';
-                                }
-                            }
-                            ?>
                         </select>
-
-
                     </div>
 
                     <div>
@@ -915,7 +836,6 @@ if (isset($_SESSION['toast'])) {
                         <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                     </div>
-
                 </div>
 
                 <!-- Distribution Summary -->
@@ -933,26 +853,16 @@ if (isset($_SESSION['toast'])) {
                     </div>
                 </div>
 
-                <!-- MULTIPLE DISTRIBUTION ROWS -->
+                <!-- MULTIPLE DISTRIBUTION ROWS (Only copy count needed) -->
                 <div class="mb-3">
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">
-                        Distribution Details <span class="text-red-400">*</span>
+                        Distribution Entries
                     </label>
+                    <p class="text-xs text-[#6e6e6e] mb-2">Add multiple distribution entries if distributing to multiple recipients</p>
                 </div>
 
                 <div id="modalDistributionRows">
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                        <div>
-                            <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
-                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-input"
-                                autocomplete="off" onchange="updateDistributionSummary()">
-                        </div>
-                        <div>
-                            <input type="text" name="recipient_name[]" placeholder="Recipient Name"
-                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-input"
-                                autocomplete="off" onchange="updateDistributionSummary()">
-                        </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                         <div class="flex gap-2">
                             <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
                                 class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
@@ -961,24 +871,26 @@ if (isset($_SESSION['toast'])) {
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
                         </div>
+                        <div class="text-xs text-[#6e6e6e] flex items-center">
+                            <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+                        </div>
                     </div>
-
                 </div>
 
                 <div class="flex gap-3 mb-4">
                     <button type="button" onclick="addModalRow()"
                         class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Row
+                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Another Entry
                     </button>
 
                     <button type="button" onclick="addModalBulkRows()"
                         class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Rows
+                        <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Entries
                     </button>
 
                     <button type="button" onclick="setMaxDistribution()"
                         class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-solid fa-gauge-high mr-1 text-[#6e6e6e]"></i> Use All Available
+                        <i class="fa-solid fa-gauge-high mr-1 text-[#6e6e6e]"></i> Use All Available Copies
                     </button>
                 </div>
 
@@ -1034,7 +946,7 @@ if (isset($_SESSION['toast'])) {
                 <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this distribution record?</p>
                 <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
                     <p class="text-sm font-medium text-red-800" id="deleteDocumentName"></p>
-                    <p class="text-xs text-red-600 mt-1" id="deleteRecipientName"></p>
+                    <p class="text-xs text-red-600 mt-1" id="deleteCopiesCount"></p>
                 </div>
                 <p class="text-xs text-[#9e9e9e] mt-3">
                     <i class="fa-solid fa-circle-info mr-1"></i>
@@ -1066,18 +978,14 @@ if (isset($_SESSION['toast'])) {
         // Toast notification function
         function showToast(message, type = 'info', duration = 5000) {
             const container = document.getElementById('toastContainer');
-
-            // Create toast element
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
 
-            // Set icon based on type
             let icon = 'fa-circle-check';
             if (type === 'error') icon = 'fa-circle-exclamation';
             if (type === 'warning') icon = 'fa-triangle-exclamation';
             if (type === 'info') icon = 'fa-circle-info';
 
-            // Set color based on type
             let iconColor = '#10b981';
             if (type === 'error') iconColor = '#ef4444';
             if (type === 'warning') iconColor = '#f59e0b';
@@ -1094,7 +1002,6 @@ if (isset($_SESSION['toast'])) {
 
             container.appendChild(toast);
 
-            // Auto remove after duration
             setTimeout(() => {
                 if (toast.parentElement) {
                     toast.style.animation = 'slideOut 0.3s ease';
@@ -1109,7 +1016,6 @@ if (isset($_SESSION['toast'])) {
 
         // ========== MODAL FUNCTIONS ==========
         function openDistributionModal() {
-            // Reset form when opening
             resetModalForm();
             document.getElementById('distributionModal').style.display = 'flex';
             updateAvailableCopies();
@@ -1119,37 +1025,25 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('distributionModal').style.display = 'none';
         }
 
-        // Reset modal form to initial state
         function resetModalForm() {
-            // Clear all rows except first
             const container = document.getElementById('modalDistributionRows');
             const rows = container.querySelectorAll('.grid');
             for (let i = 1; i < rows.length; i++) {
                 rows[i].remove();
             }
 
-            // Reset first row
             const firstRow = rows[0];
             if (firstRow) {
-                firstRow.querySelectorAll('input').forEach(input => {
-                    if (input.name.includes('number')) {
-                        input.value = '1';
-                    } else {
-                        input.value = '';
-                    }
-                });
+                const copiesInput = firstRow.querySelector('input[name="number_distributed[]"]');
+                if (copiesInput) copiesInput.value = '1';
             }
 
-            // Reset selects
             document.getElementById('modalDocumentSelect').value = '';
             document.getElementById('modalDateDistributed').value = '<?php echo date('Y-m-d'); ?>';
-
-            // Hide summary and warning
             document.getElementById('distributionSummary').classList.add('hidden');
             document.getElementById('stockWarning').classList.add('hidden');
         }
 
-        // Update available copies display
         function updateAvailableCopies() {
             const select = document.getElementById('modalDocumentSelect');
             const selectedOption = select.options[select.selectedIndex];
@@ -1164,7 +1058,6 @@ if (isset($_SESSION['toast'])) {
             }
         }
 
-        // Update distribution summary and validate
         function updateDistributionSummary() {
             const select = document.getElementById('modalDocumentSelect');
             const selectedOption = select.options[select.selectedIndex];
@@ -1195,7 +1088,6 @@ if (isset($_SESSION['toast'])) {
                 balanceWarning.innerHTML = `<span class="text-red-600"><i class="fa-regular fa-circle-exclamation mr-1"></i>Exceeds available by ${total - available} copies</span>`;
                 submitBtn.disabled = true;
                 submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
                 stockWarning.classList.remove('hidden');
                 warningMessage.textContent = `Warning: You are trying to distribute ${total} copies but only ${available} are available.`;
             } else {
@@ -1206,7 +1098,6 @@ if (isset($_SESSION['toast'])) {
             }
         }
 
-        // Set all rows to use maximum available copies
         function setMaxDistribution() {
             const select = document.getElementById('modalDocumentSelect');
             const selectedOption = select.options[select.selectedIndex];
@@ -1221,7 +1112,6 @@ if (isset($_SESSION['toast'])) {
 
             if (rows.length === 0) return;
 
-            // Distribute available copies evenly across rows
             const perRow = Math.floor(available / rows.length);
             const remainder = available % rows.length;
 
@@ -1237,57 +1127,46 @@ if (isset($_SESSION['toast'])) {
             showToast(`Set to distribute all ${available} available copies`, 'info', 2000);
         }
 
-        // Add a new row to the distribution form in modal
         function addModalRow() {
-            let row = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                    <div>
-                        <input type="text" name="department[]" placeholder="Department (e.g., IT, HR, Finance)"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-input"
-                            autocomplete="off" onchange="updateDistributionSummary()">
-                    </div>
-                    <div>
-                        <input type="text" name="recipient_name[]" placeholder="Recipient Name"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-input"
-                            autocomplete="off" onchange="updateDistributionSummary()">
-                    </div>
+            const container = document.getElementById('modalDistributionRows');
+            const row = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                     <div class="flex gap-2">
                         <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
                             class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
-                            onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()">
+                            onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
                         <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
                             <i class="fa-regular fa-trash-can"></i>
                         </button>
                     </div>
+                    <div class="text-xs text-[#6e6e6e] flex items-center">
+                        <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+                    </div>
                 </div>
             `;
-
-            document.getElementById("modalDistributionRows").insertAdjacentHTML("beforeend", row);
+            container.insertAdjacentHTML("beforeend", row);
             updateDistributionSummary();
-            showToast('New row added', 'info', 2000);
+            showToast('New distribution entry added', 'info', 2000);
         }
 
-        // Add multiple rows at once in modal
         function addModalBulkRows() {
             for (let i = 0; i < 5; i++) {
                 addModalRow();
             }
-            showToast('5 rows added', 'success', 2000);
+            showToast('5 distribution entries added', 'success', 2000);
         }
 
-        // Remove a specific row in modal
         function removeModalRow(button) {
             const row = button.closest('.grid');
             if (row && document.querySelectorAll('#modalDistributionRows .grid').length > 1) {
                 row.remove();
                 updateDistributionSummary();
-                showToast('Row removed', 'info', 2000);
+                showToast('Entry removed', 'info', 2000);
             } else {
-                showToast('You must keep at least one row', 'warning', 3000);
+                showToast('You must keep at least one distribution entry', 'warning', 3000);
             }
         }
 
-        // Validate form before submission
         function validateForm() {
             const documentId = document.getElementById('modalDocumentSelect').value;
             if (!documentId) {
@@ -1299,23 +1178,20 @@ if (isset($_SESSION['toast'])) {
             const selectedOption = select.options[select.selectedIndex];
             const available = parseInt(selectedOption.dataset.available || 0);
 
-            const rows = document.querySelectorAll('#modalDistributionRows .grid');
-            let hasValidRow = false;
+            const copies = document.querySelectorAll('.distribution-copies');
             let totalCopies = 0;
+            let hasValidEntry = false;
 
-            rows.forEach(row => {
-                const dept = row.querySelector('input[name="department[]"]').value.trim();
-                const recipient = row.querySelector('input[name="recipient_name[]"]').value.trim();
-                const copies = parseInt(row.querySelector('input[name="number_distributed[]"]').value);
-
-                if (dept && recipient && copies > 0) {
-                    hasValidRow = true;
-                    totalCopies += copies;
+            copies.forEach(input => {
+                const val = parseInt(input.value);
+                if (!isNaN(val) && val > 0) {
+                    hasValidEntry = true;
+                    totalCopies += val;
                 }
             });
 
-            if (!hasValidRow) {
-                showToast('Please fill in at least one valid distribution row', 'warning');
+            if (!hasValidEntry) {
+                showToast('Please enter at least one valid number of copies', 'warning');
                 return false;
             }
 
@@ -1330,12 +1206,11 @@ if (isset($_SESSION['toast'])) {
         // ========== DELETE MODAL FUNCTIONS ==========
         let currentDeleteId = null;
 
-        function openDeleteModal(id, documentName, recipientName) {
+        function openDeleteModal(id, documentName, copies) {
             currentDeleteId = id;
             document.getElementById('deleteDocumentName').textContent = documentName;
-            document.getElementById('deleteRecipientName').textContent = 'Recipient: ' + recipientName;
+            document.getElementById('deleteCopiesCount').textContent = `Copies: ${copies}`;
 
-            // Build the delete URL with current query parameters
             const urlParams = new URLSearchParams(window.location.search);
             urlParams.set('delete', id);
             document.getElementById('confirmDeleteBtn').href = '?' + urlParams.toString();
@@ -1362,14 +1237,6 @@ if (isset($_SESSION['toast'])) {
                         <p class="text-sm">${escapeHtml(data.document_type || 'Not specified')}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Department</p>
-                        <p class="text-sm">${escapeHtml(data.department || '')}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Recipient</p>
-                        <p class="text-sm">${escapeHtml(data.recipient_name || '')}</p>
-                    </div>
-                    <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Copies Distributed</p>
                         <p class="text-sm font-mono">${data.number_distributed || 0}</p>
                     </div>
@@ -1378,8 +1245,8 @@ if (isset($_SESSION['toast'])) {
                         <p class="text-sm">${data.date_distributed ? new Date(data.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Created Timestamp</p>
-                        <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'N/A'}</p>
+                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Timestamp</p>
+                        <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString() : 'N/A'}</p>
                     </div>
                     <div class="col-span-2">
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Total Copies of Document</p>
@@ -1420,13 +1287,9 @@ if (isset($_SESSION['toast'])) {
             const pageIndicator = document.getElementById('distributionPaginationPage');
             const controls = document.getElementById('distributionPaginationControls');
 
-            if (!wrapper || !info || !controls) {
-                return;
-            }
+            if (!wrapper || !info || !controls) return;
 
-            if (distributionCurrentPage > totalPages) {
-                distributionCurrentPage = totalPages;
-            }
+            if (distributionCurrentPage > totalPages) distributionCurrentPage = totalPages;
 
             const startIndex = (distributionCurrentPage - 1) * distributionPageSize;
             const endIndex = startIndex + distributionPageSize;
@@ -1440,13 +1303,9 @@ if (isset($_SESSION['toast'])) {
             });
 
             if (totalRows === 0) {
-                if (title) {
-                    title.textContent = '';
-                }
+                if (title) title.textContent = '';
                 info.textContent = 'No matching records';
-                if (pageIndicator) {
-                    pageIndicator.textContent = '';
-                }
+                if (pageIndicator) pageIndicator.textContent = '';
                 controls.innerHTML = '';
                 wrapper.classList.add('hidden');
                 return;
@@ -1455,30 +1314,25 @@ if (isset($_SESSION['toast'])) {
             const from = startIndex + 1;
             const to = Math.min(endIndex, totalRows);
             const visibleCount = Math.max(0, to - startIndex);
-            if (title) {
-                title.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'record' : 'records'} on this page`;
-            }
+            if (title) title.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? 'record' : 'records'} on this page`;
             info.textContent = `Records ${from}-${to} of ${totalRows} total`;
-            if (pageIndicator) {
-                pageIndicator.textContent = `Page ${distributionCurrentPage} of ${totalPages}`;
-            }
+            if (pageIndicator) pageIndicator.textContent = `Page ${distributionCurrentPage} of ${totalPages}`;
             wrapper.classList.toggle('hidden', totalRows <= distributionPageSize);
+
             const startPage = Math.max(1, distributionCurrentPage - 2);
             const endPage = Math.min(totalPages, distributionCurrentPage + 2);
             let controlsHtml = `
-                <button class="pagination-item compact ${distributionCurrentPage === 1 ? 'disabled' : ''}" ${distributionCurrentPage === 1 ? 'disabled' : ''} onclick="changeDistributionPage(1)" aria-label="First page">
+                <button class="pagination-item compact ${distributionCurrentPage === 1 ? 'disabled' : ''}" ${distributionCurrentPage === 1 ? 'disabled' : ''} onclick="changeDistributionPage(1)">
                     <i class="fa-solid fa-chevrons-left"></i>
                 </button>
-                <button class="pagination-item compact ${distributionCurrentPage === 1 ? 'disabled' : ''}" ${distributionCurrentPage === 1 ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage - 1})" aria-label="Previous page">
+                <button class="pagination-item compact ${distributionCurrentPage === 1 ? 'disabled' : ''}" ${distributionCurrentPage === 1 ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage - 1})">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
             `;
 
             if (startPage > 1) {
                 controlsHtml += `<button class="pagination-item" onclick="changeDistributionPage(1)">1</button>`;
-                if (startPage > 2) {
-                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
-                }
+                if (startPage > 2) controlsHtml += `<span class="pagination-ellipsis">...</span>`;
             }
 
             for (let i = startPage; i <= endPage; i++) {
@@ -1486,17 +1340,15 @@ if (isset($_SESSION['toast'])) {
             }
 
             if (endPage < totalPages) {
-                if (endPage < totalPages - 1) {
-                    controlsHtml += `<span class="pagination-ellipsis">...</span>`;
-                }
+                if (endPage < totalPages - 1) controlsHtml += `<span class="pagination-ellipsis">...</span>`;
                 controlsHtml += `<button class="pagination-item" onclick="changeDistributionPage(${totalPages})">${totalPages}</button>`;
             }
 
             controlsHtml += `
-                <button class="pagination-item compact ${distributionCurrentPage === totalPages ? 'disabled' : ''}" ${distributionCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage + 1})" aria-label="Next page">
+                <button class="pagination-item compact ${distributionCurrentPage === totalPages ? 'disabled' : ''}" ${distributionCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDistributionPage(${distributionCurrentPage + 1})">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
-                <button class="pagination-item compact ${distributionCurrentPage === totalPages ? 'disabled' : ''}" ${distributionCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDistributionPage(${totalPages})" aria-label="Last page">
+                <button class="pagination-item compact ${distributionCurrentPage === totalPages ? 'disabled' : ''}" ${distributionCurrentPage === totalPages ? 'disabled' : ''} onclick="changeDistributionPage(${totalPages})">
                     <i class="fa-solid fa-chevrons-right"></i>
                 </button>
             `;
@@ -1529,9 +1381,7 @@ if (isset($_SESSION['toast'])) {
             distributionCurrentPage = 1;
             renderDistributionPagination();
 
-            if (showFeedback && visibleCount === 0) {
-                showToast('No matching records found', 'info', 2000);
-            }
+            if (showFeedback && visibleCount === 0) showToast('No matching records found', 'info', 2000);
         }
 
         document.getElementById('tableSearch')?.addEventListener('input', function() {
@@ -1547,7 +1397,6 @@ if (isset($_SESSION['toast'])) {
             const tbody = document.getElementById('tableBody');
             const rows = Array.from(tbody.querySelectorAll('tr'));
 
-            // Toggle sort direction if same column
             if (lastSortedColumn === columnIndex) {
                 sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
             } else {
@@ -1555,28 +1404,21 @@ if (isset($_SESSION['toast'])) {
                 lastSortedColumn = columnIndex;
             }
 
-            // Sort rows
             rows.sort((a, b) => {
                 const aCol = a.querySelectorAll('td')[columnIndex]?.textContent.trim() || '';
                 const bCol = b.querySelectorAll('td')[columnIndex]?.textContent.trim() || '';
 
-                // Check if numeric
                 if (!isNaN(aCol) && !isNaN(bCol)) {
-                    return sortDirection === 'asc' ?
-                        parseFloat(aCol) - parseFloat(bCol) :
-                        parseFloat(bCol) - parseFloat(aCol);
+                    return sortDirection === 'asc' ? parseFloat(aCol) - parseFloat(bCol) : parseFloat(bCol) - parseFloat(aCol);
                 }
 
-                // String comparison
                 const comparison = aCol.localeCompare(bCol);
                 return sortDirection === 'asc' ? comparison : -comparison;
             });
 
-            // Reorder table
             tbody.innerHTML = '';
             rows.forEach(row => tbody.appendChild(row));
             renderDistributionPagination();
-
             showToast(`Sorted by column ${columnIndex + 1} (${sortDirection})`, 'info', 1500);
         }
 
@@ -1593,15 +1435,9 @@ if (isset($_SESSION['toast'])) {
             const viewModal = document.getElementById('viewModal');
             const deleteModal = document.getElementById('deleteModal');
 
-            if (event.target == distributionModal) {
-                closeDistributionModal();
-            }
-            if (event.target == viewModal) {
-                closeViewModal();
-            }
-            if (event.target == deleteModal) {
-                closeDeleteModal();
-            }
+            if (event.target == distributionModal) closeDistributionModal();
+            if (event.target == viewModal) closeViewModal();
+            if (event.target == deleteModal) closeDeleteModal();
         }
 
         // ESC key to close modals

@@ -173,7 +173,7 @@ try {
         $stats['month_newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // Recent activities - combine all recent items
+    // Recent activities - combine all recent items (removed department/recipient from distributions)
     $recent_activities = [];
 
     // Get recent documents
@@ -224,12 +224,12 @@ try {
         }
     }
 
-    // Get recent distributions
+    // Get recent distributions (simplified - removed department and recipient)
     $dist_result = $conn->query("
         SELECT 'distribution' as type, 
                d.document_name as title, 
                dd.date_distributed as date,
-               CONCAT('To: ', dd.department, ' - ', dd.recipient_name, ' (', dd.number_distributed, ' copies)') as details
+               CONCAT(dd.number_distributed, ' copies distributed') as details
         FROM document_distribution dd
         JOIN documents d ON dd.document_id = d.id
         ORDER BY dd.date_distributed DESC 
