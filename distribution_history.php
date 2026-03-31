@@ -6,111 +6,146 @@ ini_set('display_errors', 1);
 require_once './config/db.php';
 session_start();
 
-// Handle Edit Distribution
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_distribution_submit'])) {
-    $id = (int)$_POST['edit_id'];
+// ─── Helper: resolve newspapers_list for a distribution row ──────────────────
+function resolveNewspapersList($conn, $row)
+{
+    // Already stored — use it
+    if (!empty($row['newspapers_list'])) {
+        return $row['newspapers_list'];
+    }
+
+    // Comma-separated newspaper_ids column
+    if (!empty($row['newspaper_ids'])) {
+        $ids = array_filter(array_map('intval', explode(',', $row['newspaper_ids'])));
+        if (!empty($ids)) {
+            $ids_sql = implode(',', $ids);
+            $np = $conn->query("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id IN ($ids_sql)");
+            $papers = [];
+            while ($n = $np->fetch_assoc()) {
+                $papers[] = $n['newspaper_name'] . ' - Issue: ' . $n['newspaper_number'];
+            }
+            return implode('|', $papers);
+        }
+    }
+
+    // Legacy single newspaper_id
+    if (!empty($row['newspaper_id'])) {
+        $nid = (int)$row['newspaper_id'];
+        $np = $conn->query("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = $nid");
+        if ($np && $n = $np->fetch_assoc()) {
+            return $n['newspaper_name'] . ' - Issue: ' . $n['newspaper_number'];
+        }
+    }
+
+    return '';
+}
+
+// ─── Handle Edit Distribution ─────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_distribution_submit'])) {
+    $id             = (int)$_POST['edit_id'];
     $individual_name = trim($_POST['edit_individual_name']);
-    $department = trim($_POST['edit_department']);
-    $copies = (int)$_POST['edit_copies'];
+    $department     = trim($_POST['edit_department']);
+    $copies         = (int)$_POST['edit_copies'];
 
     $conn->begin_transaction();
-
     try {
-        // Get current distribution details
-        $current = $conn->query("SELECT newspaper_id, copies FROM distribution WHERE id = $id")->fetch_assoc();
+        $stmt = $conn->prepare("SELECT newspaper_ids, newspaper_id, copies FROM distribution WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $current = $stmt->get_result()->fetch_assoc();
 
         if ($current) {
-            $newspaper_id = $current['newspaper_id'];
-            $old_copies = $current['copies'];
-
-            // Calculate the difference
+            $old_copies      = $current['copies'];
             $copy_difference = $copies - $old_copies;
 
-            if ($copy_difference != 0) {
-                // Update newspaper available copies
-                $conn->query("UPDATE newspapers SET available_copies = available_copies - $copy_difference WHERE id = $newspaper_id");
+            // Determine which newspaper IDs to adjust
+            if (!empty($current['newspaper_ids'])) {
+                $newspaper_ids = array_filter(array_map('intval', explode(',', $current['newspaper_ids'])));
+            } elseif (!empty($current['newspaper_id'])) {
+                $newspaper_ids = [(int)$current['newspaper_id']];
+            } else {
+                $newspaper_ids = [];
+            }
 
-                // Update newspaper status
-                $check = $conn->query("SELECT available_copies FROM newspapers WHERE id = $newspaper_id");
-                $paper = $check->fetch_assoc();
+            if ($copy_difference != 0 && !empty($newspaper_ids)) {
+                $count       = count($newspaper_ids);
+                $per_paper   = (int)floor(abs($copy_difference) / $count);
+                $remainder   = abs($copy_difference) % $count;
 
-                if ($paper['available_copies'] > 0) {
-                    $conn->query("UPDATE newspapers SET status = 'available' WHERE id = $newspaper_id");
-                } else {
-                    $conn->query("UPDATE newspapers SET status = 'distributed' WHERE id = $newspaper_id");
+                foreach (array_values($newspaper_ids) as $index => $nid) {
+                    $adjustment = $per_paper + ($index < $remainder ? 1 : 0);
+                    if ($adjustment === 0) continue;
+
+                    if ($copy_difference > 0) {
+                        $conn->query("UPDATE newspapers SET available_copies = available_copies - $adjustment WHERE id = $nid");
+                    } else {
+                        $conn->query("UPDATE newspapers SET available_copies = available_copies + $adjustment WHERE id = $nid");
+                    }
+
+                    $check = $conn->query("SELECT available_copies FROM newspapers WHERE id = $nid");
+                    $paper = $check->fetch_assoc();
+                    $status = ($paper['available_copies'] > 0) ? 'available' : 'distributed';
+                    $conn->query("UPDATE newspapers SET status = '$status' WHERE id = $nid");
                 }
             }
 
-            // Update distribution record
-            $stmt = $conn->prepare("UPDATE distribution SET distributed_to = ?, department = ?, copies = ? WHERE id = ?");
-            $stmt->bind_param("ssii", $individual_name, $department, $copies, $id);
-            $stmt->execute();
+            $stmt2 = $conn->prepare("UPDATE distribution SET distributed_to = ?, department = ?, copies = ? WHERE id = ?");
+            $stmt2->bind_param("ssii", $individual_name, $department, $copies, $id);
+            $stmt2->execute();
 
             $conn->commit();
-            $_SESSION['toast'] = [
-                'type' => 'success',
-                'message' => "Distribution updated successfully"
-            ];
+            $_SESSION['toast'] = ['type' => 'success', 'message' => 'Distribution updated successfully'];
         }
     } catch (Exception $e) {
         $conn->rollback();
-        $_SESSION['toast'] = [
-            'type' => 'error',
-            'message' => "Error updating distribution: " . $e->getMessage()
-        ];
+        $_SESSION['toast'] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
     }
 
     header('Location: distribution_history.php');
     exit();
 }
 
-// Handle Delete Distribution
+// ─── Handle Delete Distribution ───────────────────────────────────────────────
 if (isset($_GET['delete_distribution'])) {
     $id = (int)$_GET['delete_distribution'];
 
-    // Start transaction
     $conn->begin_transaction();
-
     try {
-        // Get distribution details first
-        $dist_result = $conn->query("SELECT newspaper_id, copies FROM distribution WHERE id = $id");
-        $distribution = $dist_result->fetch_assoc();
+        $stmt = $conn->prepare("SELECT newspaper_ids, newspaper_id, copies FROM distribution WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $distribution = $stmt->get_result()->fetch_assoc();
 
         if ($distribution) {
-            // Delete the distribution record
-            $stmt = $conn->prepare("DELETE FROM distribution WHERE id = ?");
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
+            $del = $conn->prepare("DELETE FROM distribution WHERE id = ?");
+            $del->bind_param("i", $id);
+            $del->execute();
 
-            // Restore the copies back to newspaper
-            $newspaper_id = $distribution['newspaper_id'];
-            $copies = $distribution['copies'];
+            // Determine IDs to restore
+            if (!empty($distribution['newspaper_ids'])) {
+                $newspaper_ids = array_filter(array_map('intval', explode(',', $distribution['newspaper_ids'])));
+            } elseif (!empty($distribution['newspaper_id'])) {
+                $newspaper_ids = [(int)$distribution['newspaper_id']];
+            } else {
+                $newspaper_ids = [];
+            }
 
-            $conn->query("UPDATE newspapers SET available_copies = available_copies + $copies WHERE id = $newspaper_id");
-
-            // Update newspaper status
-            $check = $conn->query("SELECT available_copies FROM newspapers WHERE id = $newspaper_id");
-            $paper = $check->fetch_assoc();
-
-            if ($paper['available_copies'] > 0) {
-                $conn->query("UPDATE newspapers SET status = 'available' WHERE id = $newspaper_id");
+            foreach ($newspaper_ids as $nid) {
+                $conn->query("UPDATE newspapers SET available_copies = available_copies + 1 WHERE id = $nid");
+                $check  = $conn->query("SELECT available_copies FROM newspapers WHERE id = $nid");
+                $paper  = $check->fetch_assoc();
+                $status = ($paper['available_copies'] > 0) ? 'available' : 'distributed';
+                $conn->query("UPDATE newspapers SET status = '$status' WHERE id = $nid");
             }
 
             $conn->commit();
-            $_SESSION['toast'] = [
-                'type' => 'success',
-                'message' => "Distribution record deleted and copies restored successfully"
-            ];
+            $_SESSION['toast'] = ['type' => 'success', 'message' => 'Record deleted successfully'];
         }
     } catch (Exception $e) {
         $conn->rollback();
-        $_SESSION['toast'] = [
-            'type' => 'error',
-            'message' => "Error deleting distribution: " . $e->getMessage()
-        ];
+        $_SESSION['toast'] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
     }
 
-    // Preserve filters and pagination
     $query_params = $_GET;
     unset($query_params['delete_distribution']);
     $redirect_url = 'distribution_history.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
@@ -118,120 +153,130 @@ if (isset($_GET['delete_distribution'])) {
     exit();
 }
 
-// Handle AJAX request for getting distribution data
-if (isset($_GET['ajax']) && $_GET['ajax'] == 'get_distribution' && isset($_GET['id'])) {
+// ─── AJAX: Get single distribution ───────────────────────────────────────────
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_distribution' && isset($_GET['id'])) {
     header('Content-Type: application/json');
     $id = (int)$_GET['id'];
 
-    $result = $conn->query("
-        SELECT d.*, n.newspaper_name, n.newspaper_number, nc.category_name 
-        FROM distribution d 
-        JOIN newspapers n ON d.newspaper_id = n.id 
-        LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-        WHERE d.id = $id
-    ");
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid ID']);
+        exit();
+    }
+
+    $stmt = $conn->prepare("SELECT * FROM distribution WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
     if ($result && $row = $result->fetch_assoc()) {
+        $row['newspapers_list'] = resolveNewspapersList($conn, $row);
         echo json_encode(['success' => true, 'distribution' => $row]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Distribution not found']);
+        echo json_encode(['success' => false, 'message' => 'Record not found']);
     }
     exit();
 }
 
-// Get all categories for filter dropdown
-$categories = $conn->query("SELECT * FROM newspaper_categories ORDER BY category_name");
+// ─── AJAX: Dismiss last distribution notification ─────────────────────────────
+if (isset($_POST['ajax']) && $_POST['ajax'] === 'dismiss_last_distribution') {
+    unset($_SESSION['last_distribution']);
+    echo json_encode(['success' => true]);
+    exit();
+}
+
+// ─── Page setup ───────────────────────────────────────────────────────────────
+$categories     = $conn->query("SELECT * FROM newspaper_categories ORDER BY category_name");
 $all_categories = [];
 while ($cat = $categories->fetch_assoc()) {
     $all_categories[] = $cat;
 }
 
-// Pagination and filter settings for distribution history
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$limit = 10;
+$page   = max(1, (int)($_GET['page'] ?? 1));
+$limit  = 10;
 $offset = ($page - 1) * $limit;
 
-// Filter parameters
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$filter_category = isset($_GET['filter_category']) ? (int)$_GET['filter_category'] : 0;
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
-$sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'date_distributed';
-$sort_order = isset($_GET['sort_order']) ? $_GET['sort_order'] : 'DESC';
+$search          = trim($_GET['search']          ?? '');
+$filter_category = (int)($_GET['filter_category'] ?? 0);
+$date_from       = $_GET['date_from'] ?? '';
+$date_to         = $_GET['date_to']   ?? '';
+$sort_by         = $_GET['sort_by']   ?? 'date_distributed';
+$sort_order      = strtoupper($_GET['sort_order'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
 
-// Build where clause for distribution history
+// Whitelist sort columns to prevent SQL injection
+$allowed_sorts = ['date_distributed', 'distributed_to', 'department', 'distributed_by', 'copies'];
+if (!in_array($sort_by, $allowed_sorts)) {
+    $sort_by = 'date_distributed';
+}
+
 $where_clauses = [];
 
-if (!empty($search)) {
-    $where_clauses[] = "(n.newspaper_name LIKE '%$search%' OR n.newspaper_number LIKE '%$search%' OR d.distributed_to LIKE '%$search%' OR d.department LIKE '%$search%' OR d.distributed_by LIKE '%$search%')";
+if ($search !== '') {
+    $safe_search = $conn->real_escape_string($search);
+    $where_clauses[] = "(d.distributed_to LIKE '%$safe_search%' OR d.department LIKE '%$safe_search%' OR d.distributed_by LIKE '%$safe_search%')";
 }
 
 if ($filter_category > 0) {
-    $where_clauses[] = "n.category_id = $filter_category";
+    $where_clauses[] = "EXISTS (
+        SELECT 1 FROM newspapers n
+        WHERE FIND_IN_SET(n.id, d.newspaper_ids) AND n.category_id = $filter_category
+    )";
 }
 
-if (!empty($date_from)) {
-    $where_clauses[] = "d.date_distributed >= '$date_from'";
+if ($date_from !== '') {
+    $safe_from = $conn->real_escape_string($date_from);
+    $where_clauses[] = "d.date_distributed >= '$safe_from'";
 }
 
-if (!empty($date_to)) {
-    $where_clauses[] = "d.date_distributed <= '$date_to'";
+if ($date_to !== '') {
+    $safe_to = $conn->real_escape_string($date_to);
+    $where_clauses[] = "d.date_distributed <= '$safe_to'";
 }
 
-$where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
+$where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
 
-// Get total count for pagination
-$count_query = "SELECT COUNT(*) as total FROM distribution d 
-                JOIN newspapers n ON d.newspaper_id = n.id 
-                LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-                $where_sql";
-$count_result = $conn->query($count_query);
-$total_distributions = $count_result->fetch_assoc()['total'] ?? 0;
-$total_pages = ceil($total_distributions / $limit);
+$count_result        = $conn->query("SELECT COUNT(*) as total FROM distribution d $where_sql");
+$total_distributions = (int)($count_result->fetch_assoc()['total'] ?? 0);
+$total_pages         = (int)ceil($total_distributions / $limit);
 
-// Get distribution history with filters, sorting and pagination
 $distribution_history = $conn->query("
-    SELECT d.*, n.newspaper_name, n.newspaper_number, nc.category_name, nc.id as category_id
-    FROM distribution d 
-    JOIN newspapers n ON d.newspaper_id = n.id 
-    LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
+    SELECT d.*
+    FROM distribution d
     $where_sql
-    ORDER BY 
-        CASE WHEN '$sort_by' = 'date_distributed' THEN d.date_distributed END $sort_order,
-        CASE WHEN '$sort_by' = 'newspaper_name' THEN n.newspaper_name END $sort_order,
-        CASE WHEN '$sort_by' = 'category_name' THEN nc.category_name END $sort_order,
-        CASE WHEN '$sort_by' = 'distributed_to' THEN d.distributed_to END $sort_order,
-        CASE WHEN '$sort_by' = 'department' THEN d.department END $sort_order,
-        CASE WHEN '$sort_by' = 'distributed_by' THEN d.distributed_by END $sort_order,
-        CASE WHEN '$sort_by' = 'copies' THEN d.copies END $sort_order
+    ORDER BY d.$sort_by $sort_order
     LIMIT $offset, $limit
 ");
 
-// Get toast message from session
+$last_distribution = $_SESSION['last_distribution'] ?? null;
+
 $toast = null;
 if (isset($_SESSION['toast'])) {
     $toast = $_SESSION['toast'];
     unset($_SESSION['toast']);
 }
 
-// Include sidebar
 include './sidebar.php';
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Distribution History - Mailroom</title>
+    <title>Distribution History</title>
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
+            background: #f5f5f4;
+            color: #1c1917;
         }
 
         table {
@@ -241,678 +286,593 @@ include './sidebar.php';
 
         th {
             text-align: left;
-            padding: 0.75rem 1rem;
-            border-bottom: 2px solid #e5e5e5;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e5e5;
             font-weight: 500;
-            color: #4a4a4a;
-            font-size: 0.75rem;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        th:hover {
-            background-color: #f0f0f0;
+            color: #57534e;
+            font-size: 13px;
+            background: #fafaf9;
         }
 
         td {
-            padding: 0.75rem 1rem;
+            padding: 12px 16px;
             border-bottom: 1px solid #e5e5e5;
-            font-size: 0.875rem;
-            color: #1e1e1e;
+            font-size: 14px;
+            color: #1c1917;
         }
 
-        .sort-icon {
-            font-size: 0.7rem;
-            margin-left: 0.25rem;
-            opacity: 0.5;
+        tr:hover td {
+            background: #fafaf9;
         }
 
-        th.active-sort .sort-icon {
-            opacity: 1;
+        .btn-primary {
+            background: #1c1917;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .btn-primary:hover {
+            background: #292524;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #1c1917;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .btn-secondary:hover {
+            background: #fafaf9;
         }
 
         .action-btn {
             color: #9e9e9e;
-            transition: color 0.2s;
-            margin: 0 0.25rem;
             background: none;
             border: none;
             cursor: pointer;
+            padding: 4px 8px;
+            font-size: 14px;
         }
 
         .action-btn:hover {
-            color: #1e1e1e;
+            color: #1c1917;
         }
 
         .delete-btn:hover {
             color: #dc2626;
         }
 
-        .pagination-shell {
-            padding: 1rem 1.25rem;
-            border-top: 1px solid #e5e5e5;
-            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
+        .sort-link {
+            color: #57534e;
+            text-decoration: none;
         }
 
-        .pagination-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .pagination-title {
-            font-size: 0.95rem;
-            font-weight: 600;
+        .sort-link:hover {
             color: #1c1917;
         }
 
-        .pagination-subtitle {
-            font-size: 0.82rem;
-            color: #78716c;
-        }
-
-        .pagination-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.75rem;
-        }
-
-        .pagination-page-indicator {
-            padding: 0.45rem 0.85rem;
-            border-radius: 9999px;
-            background-color: #f5f5f4;
-            color: #44403c;
-            font-size: 0.82rem;
+        .sort-link.active {
+            color: #1c1917;
             font-weight: 600;
-            white-space: nowrap;
         }
 
         .pagination {
             display: flex;
-            gap: 0.4rem;
-            justify-content: flex-end;
+            gap: 8px;
             align-items: center;
-            flex-wrap: wrap;
         }
 
-        .pagination-item {
-            min-width: 2.5rem;
-            height: 2.5rem;
-            padding: 0 0.85rem;
-            border: 1px solid #e7e5e4;
-            border-radius: 0.8rem;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #292524;
-            background-color: white;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
-            transition: all 0.2s ease;
+        .page-link {
+            padding: 8px 12px;
+            border: 1px solid #e5e5e5;
+            background: white;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            color: #1c1917;
         }
 
-        .pagination-item:hover {
-            background-color: #f5f5f4;
-            border-color: #d6d3d1;
-            transform: translateY(-1px);
+        .page-link:hover {
+            background: #fafaf9;
         }
 
-        .pagination-item.active {
-            background-color: #1c1917;
+        .page-link.active {
+            background: #1c1917;
             color: white;
             border-color: #1c1917;
-            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
-        }
-
-        .pagination-item.compact {
-            min-width: auto;
-            padding: 0 0.9rem;
-        }
-
-        .pagination-ellipsis {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 2.5rem;
-            height: 2.5rem;
-            color: #a8a29e;
-            font-size: 0.95rem;
-        }
-
-        @media (max-width: 768px) {
-            .pagination-shell {
-                padding: 1rem;
-            }
-
-            .pagination-controls {
-                width: 100%;
-                justify-content: flex-start;
-            }
-        }
-
-        .filter-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background-color: #f0f0f0;
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.75rem;
         }
 
         .modal {
-            transition: opacity 0.3s ease;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
         }
 
         .modal-content {
+            background: white;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
             max-height: 90vh;
             overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #57534e;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #1c1917;
+        }
+
+        .filter-bar {
+            padding: 16px 20px;
+            background: #fafaf9;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .filter-field {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .filter-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #78716c;
+            margin-bottom: 4px;
+        }
+
+        .filter-select,
+        .filter-input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
         }
 
         .toast-container {
             position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 9999;
+            z-index: 2000;
         }
 
         .toast {
-            min-width: 300px;
-            max-width: 400px;
-            background-color: white;
+            background: white;
             border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            animation: slideIn 0.3s ease-in-out;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 12px;
+            min-width: 260px;
         }
 
         .toast-success {
-            border-left: 4px solid #10b981;
+            border-left: 3px solid #10b981;
         }
 
         .toast-error {
-            border-left: 4px solid #ef4444;
+            border-left: 3px solid #ef4444;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+        .notification {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        @keyframes fadeOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
+        .newspaper-item {
+            display: inline-block;
+            background: #f5f5f4;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin: 4px;
+            border: 1px solid #e5e5e5;
         }
 
-        .toast.fade-out {
-            animation: fadeOut 0.3s ease-in-out forwards;
+        .detail-row {
+            display: flex;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
         }
 
-        .issue-number {
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #6b7280;
+        .detail-label {
+            width: 140px;
+            font-size: 13px;
+            color: #78716c;
+        }
+
+        .detail-value {
+            flex: 1;
+            font-size: 14px;
+            color: #1c1917;
         }
     </style>
 </head>
 
-<body class="bg-[#f5f5f4]">
-    <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
+<body>
+
+    <div class="toast-container" id="toastContainer"></div>
 
     <div class="flex">
+        <?php include './sidebar.php'; ?>
+
         <main class="flex-1 ml-60 min-h-screen">
-            <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
-                <div>
-                    <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Distribution History</h1>
-                        <p class="text-sm text-[#6e6e6e] mt-1">View and manage all newspaper distribution records</p>
-                    </div>
-                </div>
-            </div>
-
             <div class="p-8">
-                <!-- Distribution History with Search and Filters -->
-                <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
-                    <div class="px-5 py-4 bg-[#fafafa] border-b border-[#e5e5e5]">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-sm font-medium text-[#1e1e1e]">Distribution Records</h3>
+
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h1 class="text-2xl font-medium">Distribution History</h1>
+                        <p class="text-sm text-gray-500 mt-1">View and manage distribution records</p>
+                    </div>
+                    <!--<a href="newspaper_distribution.php" class="btn-primary">
+                        <i class="fa-solid fa-plus mr-1"></i> New Distribution
+                    </a>-->
+                </div>
+
+                <?php if ($last_distribution): ?>
+                    <div class="notification" id="lastDistributionNotification">
+                        <div>
+                            <i class="fa-regular fa-circle-check text-green-600 mr-2"></i>
+                            <span class="text-sm">
+                                <?php echo (int)$last_distribution['count']; ?> newspaper(s) distributed to
+                                <?php echo htmlspecialchars($last_distribution['individual']); ?>
+                            </span>
+                            <span class="text-xs text-gray-500 ml-2">
+                                <?php echo date('M j, Y', strtotime($last_distribution['date'])); ?>
+                            </span>
                         </div>
+                        <button onclick="dismissLastDistribution()" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                <?php endif; ?>
 
-                        <!-- Search and Filter Bar -->
-                        <div class="mt-3">
-                            <form method="GET" id="distributionHistoryForm" class="flex flex-wrap gap-2 items-end">
-                                <div class="flex-1 min-w-[200px]">
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
-                                    <div class="relative">
-                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
-                                        <input type="text" name="search" id="distributionLiveSearch"
-                                            placeholder="Newspaper, recipient, department, staff..."
-                                            value="<?php echo htmlspecialchars($search); ?>"
-                                            class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                            autocomplete="off">
-                                    </div>
-                                </div>
+                <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
 
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Category</label>
-                                    <select name="filter_category" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white min-w-[150px]">
-                                        <option value="0">All Categories</option>
-                                        <?php foreach ($all_categories as $cat): ?>
-                                            <option value="<?php echo $cat['id']; ?>" <?php echo $filter_category == $cat['id'] ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($cat['category_name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">From Date</label>
-                                    <input type="date" name="date_from" value="<?php echo $date_from; ?>"
-                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md" autocomplete="off">
-                                </div>
-
-                                <div>
-                                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">To Date</label>
-                                    <input type="date" name="date_to" value="<?php echo $date_to; ?>"
-                                        class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md" autocomplete="off">
-                                </div>
-
-                                <div class="flex gap-2">
-                                    <button type="submit" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                        <i class="fa-solid fa-sliders mr-1"></i>Apply
-                                    </button>
-                                    <a href="distribution_history.php" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                        <i class="fa-solid fa-rotate-right mr-1"></i>Reset
-                                    </a>
-                                </div>
-                            </form>
-                        </div>
-
-                        <!-- Active Filters Display -->
-                        <?php if (!empty($search) || $filter_category > 0 || !empty($date_from) || !empty($date_to)): ?>
-                            <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#e5e5e5]">
-                                <?php if (!empty($search)): ?>
-                                    <span class="filter-badge">
-                                        Search: "<?php echo htmlspecialchars($search); ?>"
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['search' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if ($filter_category > 0):
-                                    $cat_name = '';
-                                    foreach ($all_categories as $cat) {
-                                        if ($cat['id'] == $filter_category) {
-                                            $cat_name = $cat['category_name'];
-                                            break;
-                                        }
-                                    }
-                                ?>
-                                    <span class="filter-badge">
-                                        Category: <?php echo htmlspecialchars($cat_name); ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_category' => 0, 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if (!empty($date_from)): ?>
-                                    <span class="filter-badge">
-                                        From: <?php echo $date_from; ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['date_from' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if (!empty($date_to)): ?>
-                                    <span class="filter-badge">
-                                        To: <?php echo $date_to; ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['date_to' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
+                    <!-- Filter bar -->
+                    <div class="filter-bar">
+                        <form method="GET" class="filter-group">
+                            <div class="filter-field">
+                                <div class="filter-label">Search</div>
+                                <input type="text" name="search" class="filter-input"
+                                    placeholder="Recipient, department..."
+                                    autocomplete="off"
+                                    value="<?php echo htmlspecialchars($search); ?>">
                             </div>
-                        <?php endif; ?>
+                            <div class="filter-field">
+                                <div class="filter-label">Category</div>
+                                <select name="filter_category" class="filter-select">
+                                    <option value="0">All</option>
+                                    <?php foreach ($all_categories as $cat): ?>
+                                        <option value="<?php echo $cat['id']; ?>"
+                                            <?php echo $filter_category == $cat['id'] ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($cat['category_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="filter-field">
+                                <div class="filter-label">From</div>
+                                <input type="date" name="date_from" class="filter-input" value="<?php echo htmlspecialchars($date_from); ?>">
+                            </div>
+                            <div class="filter-field">
+                                <div class="filter-label">To</div>
+                                <input type="date" name="date_to" class="filter-input" value="<?php echo htmlspecialchars($date_to); ?>">
+                            </div>
+                            <div>
+                                <button type="submit" class="btn-primary">Apply</button>
+                                <a href="distribution_history.php" class="btn-secondary ml-2">Reset</a>
+                            </div>
+                        </form>
                     </div>
 
                     <?php if ($distribution_history && $distribution_history->num_rows > 0): ?>
                         <div class="overflow-x-auto">
-                            <table class="w-full">
+                            <table>
                                 <thead>
-                                    <tr class="bg-[#fafafa]">
-                                        <th onclick="sortTable('date_distributed')" class="<?php echo $sort_by == 'date_distributed' ? 'active-sort' : ''; ?>">
-                                            Date
-                                            <?php if ($sort_by == 'date_distributed'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
+                                    <tr>
+                                        <th>
+                                            <a href="<?php echo sortUrl('date_distributed', $sort_by, $sort_order); ?>"
+                                                class="sort-link <?php echo $sort_by === 'date_distributed' ? 'active' : ''; ?>">
+                                                Date
+                                                <?php echo sortIcon('date_distributed', $sort_by, $sort_order); ?>
+                                            </a>
                                         </th>
-                                        <th onclick="sortTable('newspaper_name')" class="<?php echo $sort_by == 'newspaper_name' ? 'active-sort' : ''; ?>">
-                                            Newspaper
-                                            <?php if ($sort_by == 'newspaper_name'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
+                                        <th>
+                                            <a href="<?php echo sortUrl('distributed_to', $sort_by, $sort_order); ?>"
+                                                class="sort-link <?php echo $sort_by === 'distributed_to' ? 'active' : ''; ?>">
+                                                Recipient
+                                                <?php echo sortIcon('distributed_to', $sort_by, $sort_order); ?>
+                                            </a>
                                         </th>
-                                        <th onclick="sortTable('category_name')" class="<?php echo $sort_by == 'category_name' ? 'active-sort' : ''; ?>">
-                                            Category
-                                            <?php if ($sort_by == 'category_name'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
+                                        <th>
+                                            <a href="<?php echo sortUrl('department', $sort_by, $sort_order); ?>"
+                                                class="sort-link <?php echo $sort_by === 'department' ? 'active' : ''; ?>">
+                                                Department
+                                                <?php echo sortIcon('department', $sort_by, $sort_order); ?>
+                                            </a>
                                         </th>
-                                        <th onclick="sortTable('distributed_to')" class="<?php echo $sort_by == 'distributed_to' ? 'active-sort' : ''; ?>">
-                                            Distributed To
-                                            <?php if ($sort_by == 'distributed_to'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
+                                        <th>
+                                            <a href="<?php echo sortUrl('copies', $sort_by, $sort_order); ?>"
+                                                class="sort-link <?php echo $sort_by === 'copies' ? 'active' : ''; ?>">
+                                                Copies
+                                                <?php echo sortIcon('copies', $sort_by, $sort_order); ?>
+                                            </a>
                                         </th>
-                                        <th onclick="sortTable('department')" class="<?php echo $sort_by == 'department' ? 'active-sort' : ''; ?>">
-                                            Department
-                                            <?php if ($sort_by == 'department'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
+                                        <th>
+                                            <a href="<?php echo sortUrl('distributed_by', $sort_by, $sort_order); ?>"
+                                                class="sort-link <?php echo $sort_by === 'distributed_by' ? 'active' : ''; ?>">
+                                                Distributed By
+                                                <?php echo sortIcon('distributed_by', $sort_by, $sort_order); ?>
+                                            </a>
                                         </th>
-                                        <th onclick="sortTable('copies')" class="<?php echo $sort_by == 'copies' ? 'active-sort' : ''; ?>">
-                                            Copies
-                                            <?php if ($sort_by == 'copies'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
-                                        </th>
-                                        <th onclick="sortTable('distributed_by')" class="<?php echo $sort_by == 'distributed_by' ? 'active-sort' : ''; ?>">
-                                            By
-                                            <?php if ($sort_by == 'distributed_by'): ?>
-                                                <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                            <?php endif; ?>
-                                        </th>
-                                        <th>Actions</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php while ($dist = $distribution_history->fetch_assoc()): ?>
-                                        <tr class="hover:bg-[#fafafa] distribution-row" id="distribution-row-<?php echo $dist['id']; ?>"
-                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($dist['newspaper_name'] ?? '') . ' ' . ($dist['newspaper_number'] ?? '') . ' ' . ($dist['category_name'] ?? '') . ' ' . ($dist['distributed_to'] ?? '') . ' ' . ($dist['department'] ?? '') . ' ' . ($dist['distributed_by'] ?? '') . ' ' . ($dist['copies'] ?? 0) . ' ' . date('Y-m-d', strtotime($dist['date_distributed']))))); ?>"
-                                            data-category="<?php echo (int) ($dist['category_id'] ?? 0); ?>"
-                                            data-date="<?php echo htmlspecialchars(date('Y-m-d', strtotime($dist['date_distributed']))); ?>">
-                                            <td class="text-sm"><?php echo date('M j, Y', strtotime($dist['date_distributed'])); ?></td>
-                                            <td class="text-sm font-medium">
-                                                <?php echo htmlspecialchars($dist['newspaper_name']); ?>
-                                                <span class="text-xs font-mono issue-number ml-1"><?php echo htmlspecialchars($dist['newspaper_number']); ?></span>
-                                            </td>
-                                            <td class="text-sm"><?php echo htmlspecialchars($dist['category_name'] ?? 'N/A'); ?></td>
-                                            <td class="text-sm"><?php echo htmlspecialchars($dist['distributed_to']); ?></td>
-                                            <td class="text-sm"><?php echo htmlspecialchars($dist['department'] ?? '-'); ?></td>
-                                            <td class="text-sm"><?php echo $dist['copies']; ?></td>
-                                            <td class="text-sm"><?php echo htmlspecialchars($dist['distributed_by'] ?? 'N/A'); ?></td>
-                                            <td class="text-sm">
-                                                <div class="flex items-center gap-2">
-                                                    <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($dist)); ?>)"
-                                                        class="action-btn" title="View Details">
-                                                        <i class="fa-regular fa-eye"></i>
-                                                    </button>
-                                                    <button onclick="editDistribution(<?php echo $dist['id']; ?>)"
-                                                        class="action-btn" title="Edit">
-                                                        <i class="fa-regular fa-pen-to-square"></i>
-                                                    </button>
-                                                    <button onclick="openDeleteModal(<?php echo $dist['id']; ?>, '<?php echo htmlspecialchars($dist['newspaper_name']); ?>', '<?php echo htmlspecialchars($dist['distributed_to']); ?>')"
-                                                        class="action-btn delete-btn" title="Delete">
-                                                        <i class="fa-regular fa-trash-can"></i>
-                                                    </button>
-                                                </div>
+                                        <tr>
+                                            <td><?php echo date('M j, Y', strtotime($dist['date_distributed'])); ?></td>
+                                            <td class="font-medium"><?php echo htmlspecialchars($dist['distributed_to']); ?></td>
+                                            <td><?php echo htmlspecialchars($dist['department'] ?? '—'); ?></td>
+                                            <td><?php echo (int)$dist['copies']; ?></td>
+                                            <td><?php echo htmlspecialchars($dist['distributed_by'] ?? 'N/A'); ?></td>
+                                            <td class="whitespace-nowrap">
+                                                <button onclick='viewDistribution(<?php echo json_encode($dist); ?>)'
+                                                    class="action-btn" title="View">
+                                                    <i class="fa-regular fa-eye"></i>
+                                                </button>
+                                                <button onclick="editDistribution(<?php echo (int)$dist['id']; ?>)"
+                                                    class="action-btn" title="Edit">
+                                                    <i class="fa-regular fa-pen-to-square"></i>
+                                                </button>
+                                                <button onclick="openDeleteModal(<?php echo (int)$dist['id']; ?>, '<?php echo addslashes(htmlspecialchars($dist['distributed_to'])); ?>', <?php echo (int)$dist['copies']; ?>)"
+                                                    class="action-btn delete-btn" title="Delete">
+                                                    <i class="fa-regular fa-trash-can"></i>
+                                                </button>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
-                                    <tr id="distributionNoResultsRow" class="hidden">
-                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
-                                            No distribution history matches the current live search on this page.
-                                        </td>
-                                    </tr>
                                 </tbody>
                             </table>
                         </div>
 
-                        <!-- Pagination -->
                         <?php if ($total_pages > 1): ?>
                             <?php
-                            $pageStart = $total_distributions > 0 ? $offset + 1 : 0;
-                            $pageEnd = min($offset + ($distribution_history ? $distribution_history->num_rows : 0), $total_distributions);
-                            $start = max(1, $page - 2);
-                            $end = min($total_pages, $page + 2);
+                            $base_params = $_GET;
+                            unset($base_params['page']);
+                            $base_qs = http_build_query($base_params);
+                            $base_qs = $base_qs ? $base_qs . '&' : '';
                             ?>
-                            <div class="pagination-shell">
-                                <div class="pagination-meta">
-                                    <div class="pagination-title">
-                                        Showing <span id="visibleDistributionCount"><?php echo $distribution_history ? $distribution_history->num_rows : 0; ?></span> entr<?php echo ($distribution_history && $distribution_history->num_rows == 1) ? 'y' : 'ies'; ?> on this page
-                                    </div>
-                                    <div class="pagination-subtitle">
-                                        Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_distributions; ?> total
-                                    </div>
+                            <div class="p-4 border-t border-gray-200 flex justify-between items-center">
+                                <div class="text-sm text-gray-500">
+                                    Showing <?php echo $offset + 1; ?>–<?php echo min($offset + $limit, $total_distributions); ?>
+                                    of <?php echo $total_distributions; ?>
                                 </div>
-                                <div class="pagination-controls">
-                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
-                                    <div class="pagination">
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                            <i class="fa-solid fa-chevrons-left"></i>
+                                <div class="pagination">
+                                    <a href="?<?php echo $base_qs; ?>page=1" class="page-link">«</a>
+                                    <a href="?<?php echo $base_qs; ?>page=<?php echo max(1, $page - 1); ?>" class="page-link">‹</a>
+                                    <?php
+                                    $start = max(1, $page - 2);
+                                    $end   = min($total_pages, $page + 2);
+                                    for ($p = $start; $p <= $end; $p++): ?>
+                                        <a href="?<?php echo $base_qs; ?>page=<?php echo $p; ?>"
+                                            class="page-link <?php echo $p === $page ? 'active' : ''; ?>">
+                                            <?php echo $p; ?>
                                         </a>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                            <i class="fa-solid fa-chevron-left"></i>
-                                        </a>
-
-                                        <?php if ($start > 1): ?>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
-                                            <?php if ($start > 2): ?>
-                                                <span class="pagination-ellipsis">...</span>
-                                            <?php endif; ?>
-                                        <?php endif; ?>
-
-                                        <?php for ($i = $start; $i <= $end; $i++): ?>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
-                                                class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
-                                                <?php echo $i; ?>
-                                            </a>
-                                        <?php endfor; ?>
-
-                                        <?php if ($end < $total_pages): ?>
-                                            <?php if ($end < $total_pages - 1): ?>
-                                                <span class="pagination-ellipsis">...</span>
-                                            <?php endif; ?>
-                                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
-                                        <?php endif; ?>
-
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                            <i class="fa-solid fa-chevron-right"></i>
-                                        </a>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                            <i class="fa-solid fa-chevrons-right"></i>
-                                        </a>
-                                    </div>
+                                    <?php endfor; ?>
+                                    <a href="?<?php echo $base_qs; ?>page=<?php echo min($total_pages, $page + 1); ?>" class="page-link">›</a>
+                                    <a href="?<?php echo $base_qs; ?>page=<?php echo $total_pages; ?>" class="page-link">»</a>
                                 </div>
                             </div>
                         <?php endif; ?>
+
                     <?php else: ?>
-                        <div class="text-center py-8 text-[#6e6e6e]">
-                            <i class="fa-regular fa-clock text-3xl mb-2"></i>
+                        <div class="text-center py-12 text-gray-500">
+                            <i class="fa-regular fa-inbox text-3xl mb-2 block"></i>
                             <p>No distribution records found</p>
-                            <a href="newspaper_distribution.php" class="inline-block mt-3 text-sm text-blue-600 hover:underline">Start distributing →</a>
+                            <a href="newspaper_distribution.php" class="text-blue-600 hover:underline text-sm mt-2 inline-block">
+                                Start distributing
+                            </a>
                         </div>
                     <?php endif; ?>
-                </div>
+
+                </div><!-- /card -->
             </div>
         </main>
     </div>
 
-    <!-- View Distribution Modal -->
-    <div id="viewModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Distribution Details</h2>
-                <button type="button" onclick="closeViewModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+    <!-- ── View Modal ─────────────────────────────────────────────────────────── -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Distribution Details</h3>
+                <button onclick="closeModal('viewModal')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-
-            <div id="viewContent" class="space-y-4">
-                <!-- Content will be filled by JavaScript -->
-            </div>
-
-            <div class="flex justify-end mt-4">
-                <button onclick="closeViewModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Close
-                </button>
+            <div class="modal-body" id="viewContent"></div>
+            <div class="modal-footer">
+                <button onclick="closeModal('viewModal')" class="btn-secondary">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Edit Distribution Modal -->
-    <div id="editModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Edit Distribution</h2>
-                <button type="button" onclick="closeEditModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+    <!-- ── Edit Modal ─────────────────────────────────────────────────────────── -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Distribution</h3>
+                <button onclick="closeModal('editModal')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-
-            <div id="editLoading" class="text-center py-4">
-                <i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading distribution data...
+            <div class="modal-body">
+                <div id="editLoading" class="text-center py-8 text-gray-500">
+                    <i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading…
+                </div>
+                <form id="editForm" style="display:none;" method="POST" action="distribution_history.php">
+                    <input type="hidden" name="edit_distribution_submit" value="1">
+                    <input type="hidden" name="edit_id" id="edit_id">
+                    <div class="form-group">
+                        <label class="form-label">Recipient Name</label>
+                        <input type="text" name="edit_individual_name" id="edit_individual_name" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Department</label>
+                        <input type="text" name="edit_department" id="edit_department" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Copies</label>
+                        <input type="number" name="edit_copies" id="edit_copies" class="form-input" min="1" required>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-6">
+                        <button type="button" onclick="closeModal('editModal')" class="btn-secondary">Cancel</button>
+                        <button type="submit" class="btn-primary">Update</button>
+                    </div>
+                </form>
             </div>
-
-            <form method="POST" action="distribution_history.php" id="editForm" style="display: none;">
-                <input type="hidden" name="edit_id" id="edit_id">
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Newspaper</label>
-                        <p id="edit_newspaper_display" class="text-sm font-medium bg-[#f5f5f4] p-2 rounded-md"></p>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Individual's Name *</label>
-                        <input type="text" name="edit_individual_name" id="edit_individual_name" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Department</label>
-                        <input type="text" name="edit_department" id="edit_department"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Copies *</label>
-                        <input type="number" name="edit_copies" id="edit_copies" min="1" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                        <p class="text-xs text-[#6e6e6e] mt-1">Note: Changing copies will update newspaper inventory</p>
-                    </div>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeEditModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit" name="edit_distribution_submit"
-                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                        Update Distribution
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Delete</h2>
-                <button type="button" onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+    <!-- ── Delete Modal ───────────────────────────────────────────────────────── -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirm Delete</h3>
+                <button onclick="closeModal('deleteModal')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-
-            <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this distribution record?</p>
-                <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p class="text-sm font-medium text-red-800" id="deleteNewspaperName"></p>
-                    <p class="text-xs text-red-600 mt-1" id="deleteRecipientName"></p>
+            <div class="modal-body">
+                <p class="text-gray-600 mb-4">Delete this distribution record?</p>
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p class="font-medium text-red-800" id="deleteRecipientName"></p>
+                    <p class="text-sm text-red-600 mt-1" id="deleteCopiesCount"></p>
                 </div>
-                <p class="text-xs text-[#9e9e9e] mt-3">
-                    <i class="fa-solid fa-circle-info mr-1"></i>
-                    This will restore the copies back to the newspaper inventory.
-                </p>
+                <p class="text-xs text-gray-500 mt-3">Copies will be restored to inventory.</p>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="closeDeleteModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <a href="#" id="confirmDeleteBtn"
-                    class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
-                    Delete Permanently
-                </a>
+            <div class="modal-footer">
+                <button onclick="closeModal('deleteModal')" class="btn-secondary">Cancel</button>
+                <a href="#" id="confirmDeleteBtn" class="btn-danger">Delete</a>
             </div>
         </div>
     </div>
 
     <script>
-        // ========== TOAST NOTIFICATION ==========
+        // ── Toast ────────────────────────────────────────────────────────────────────
         function showToast(type, message) {
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-
+            toast.className = 'toast toast-' + type;
             const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
-
             toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-regular ${icon} text-${type === 'success' ? 'green' : 'red'}-500"></i>
-                    <span class="text-sm text-[#1e1e1e]">${message}</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            `;
-
+        <i class="fa-regular ${icon}"></i>
+        <span style="flex:1">${message}</span>
+        <button onclick="this.parentElement.remove()" style="color:#9e9e9e;background:none;border:none;cursor:pointer;font-size:16px;">×</button>
+    `;
             container.appendChild(toast);
-
             setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, 300);
-            }, 5000);
+                if (toast.parentNode) toast.remove();
+            }, 4000);
         }
 
         <?php if ($toast): ?>
@@ -921,199 +881,162 @@ include './sidebar.php';
             });
         <?php endif; ?>
 
-        // ========== VIEW MODAL FUNCTIONS ==========
-        function viewDistribution(dist) {
-            const content = document.getElementById('viewContent');
-            content.innerHTML = `
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Newspaper</p>
-                        <p class="text-sm font-medium">${escapeHtml(dist.newspaper_name)}</p>
-                        <p class="text-xs font-mono text-[#6e6e6e] mt-1">${escapeHtml(dist.newspaper_number)}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Category</p>
-                        <p class="text-sm">${escapeHtml(dist.category_name || 'N/A')}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Copies</p>
-                        <p class="text-sm">${dist.copies}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Distributed</p>
-                        <p class="text-sm">${new Date(dist.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Distributed To</p>
-                        <p class="text-sm">${escapeHtml(dist.distributed_to)}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Department</p>
-                        <p class="text-sm">${escapeHtml(dist.department || '-')}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Distributed By</p>
-                        <p class="text-sm">${escapeHtml(dist.distributed_by || 'N/A')}</p>
-                    </div>
-                </div>
-            `;
-            document.getElementById('viewModal').style.display = 'flex';
-        }
-
-        function closeViewModal() {
-            document.getElementById('viewModal').style.display = 'none';
-        }
-
-        // ========== EDIT MODAL FUNCTIONS ==========
-        function editDistribution(id) {
-            const editModal = document.getElementById('editModal');
-            const loadingEl = document.getElementById('editLoading');
-            const formEl = document.getElementById('editForm');
-
-            editModal.style.display = 'flex';
-            loadingEl.style.display = 'block';
-            formEl.style.display = 'none';
-
-            fetch('distribution_history.php?ajax=get_distribution&id=' + id)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('edit_id').value = data.distribution.id;
-                        document.getElementById('edit_newspaper_display').textContent =
-                            data.distribution.newspaper_name + ' (' + data.distribution.newspaper_number + ')';
-                        document.getElementById('edit_individual_name').value = data.distribution.distributed_to;
-                        document.getElementById('edit_department').value = data.distribution.department || '';
-                        document.getElementById('edit_copies').value = data.distribution.copies;
-
-                        loadingEl.style.display = 'none';
-                        formEl.style.display = 'block';
-                    } else {
-                        showToast('error', 'Failed to load distribution data');
-                        closeEditModal();
-                    }
-                })
-                .catch(error => {
-                    showToast('error', 'Error loading distribution data');
-                    closeEditModal();
-                });
-        }
-
-        function closeEditModal() {
-            document.getElementById('editModal').style.display = 'none';
-            document.getElementById('editLoading').style.display = 'block';
-            document.getElementById('editForm').style.display = 'none';
-        }
-
-        // ========== DELETE MODAL FUNCTIONS ==========
-        function openDeleteModal(id, newspaper, recipient) {
-            document.getElementById('deleteNewspaperName').textContent = newspaper;
-            document.getElementById('deleteRecipientName').textContent = 'Recipient: ' + recipient;
-            document.getElementById('confirmDeleteBtn').href = '?delete_distribution=' + id + '&<?php echo http_build_query($_GET); ?>';
-            document.getElementById('deleteModal').style.display = 'flex';
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-        }
-
-        // ========== SORTING FUNCTION ==========
-        function sortTable(column) {
-            const url = new URL(window.location.href);
-            const currentSort = '<?php echo $sort_by; ?>';
-            const currentOrder = '<?php echo $sort_order; ?>';
-
-            let newOrder = 'ASC';
-            if (column === currentSort) {
-                newOrder = currentOrder === 'ASC' ? 'DESC' : 'ASC';
-            }
-
-            url.searchParams.set('sort_by', column);
-            url.searchParams.set('sort_order', newOrder);
-            url.searchParams.set('page', '1');
-
-            window.location.href = url.toString();
-        }
-
-        // ========== LIVE SEARCH FILTERING ==========
-        function filterDistributionHistoryLive() {
-            const searchTokens = (document.getElementById('distributionLiveSearch')?.value || '')
-                .toLowerCase()
-                .split(/\s+/)
-                .filter(Boolean);
-            const categoryFilter = document.querySelector('#distributionHistoryForm select[name="filter_category"]')?.value || '0';
-            const fromDate = document.querySelector('#distributionHistoryForm input[name="date_from"]')?.value || '';
-            const toDate = document.querySelector('#distributionHistoryForm input[name="date_to"]')?.value || '';
-            const rows = document.querySelectorAll('.distribution-row');
-            const noResultsRow = document.getElementById('distributionNoResultsRow');
-            let visibleCount = 0;
-
-            rows.forEach(row => {
-                const searchText = row.getAttribute('data-search') || '';
-                const category = row.getAttribute('data-category') || '0';
-                const rowDate = row.getAttribute('data-date') || '';
-
-                const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
-                const matchesCategory = categoryFilter === '0' || category === categoryFilter;
-                const matchesFrom = !fromDate || rowDate >= fromDate;
-                const matchesTo = !toDate || rowDate <= toDate;
-                const show = matchesSearch && matchesCategory && matchesFrom && matchesTo;
-
-                row.style.display = show ? '' : 'none';
-                if (show) {
-                    visibleCount++;
-                }
+        // ── Dismiss last distribution notification ───────────────────────────────────
+        function dismissLastDistribution() {
+            const el = document.getElementById('lastDistributionNotification');
+            if (el) el.remove();
+            fetch('distribution_history.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: 'ajax=dismiss_last_distribution'
             });
-
-            if (noResultsRow) {
-                noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
-            }
-
-            const visibleCountEl = document.getElementById('visibleDistributionCount');
-            if (visibleCountEl) {
-                visibleCountEl.textContent = visibleCount;
-            }
         }
 
-        // ========== ESCAPE HTML ==========
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        // ── Modal helpers ────────────────────────────────────────────────────────────
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
         }
 
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            const viewModal = document.getElementById('viewModal');
-            const editModal = document.getElementById('editModal');
-            const deleteModal = document.getElementById('deleteModal');
-
-            if (event.target == viewModal) {
-                closeViewModal();
-            }
-            if (event.target == editModal) {
-                closeEditModal();
-            }
-            if (event.target == deleteModal) {
-                closeDeleteModal();
-            }
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
         }
 
-        // ESC key to close modals
+        window.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal')) e.target.style.display = 'none';
+        });
+
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                closeViewModal();
-                closeEditModal();
-                closeDeleteModal();
+                document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
             }
         });
 
-        // Set up live search event listeners
-        document.getElementById('distributionLiveSearch')?.addEventListener('input', filterDistributionHistoryLive);
-        document.querySelector('#distributionHistoryForm select[name="filter_category"]')?.addEventListener('change', filterDistributionHistoryLive);
-        document.querySelector('#distributionHistoryForm input[name="date_from"]')?.addEventListener('change', filterDistributionHistoryLive);
-        document.querySelector('#distributionHistoryForm input[name="date_to"]')?.addEventListener('change', filterDistributionHistoryLive);
+        // ── Escape HTML ──────────────────────────────────────────────────────────────
+        function escapeHtml(text) {
+            if (text == null) return '—';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        // ── View modal ───────────────────────────────────────────────────────────────
+        function viewDistribution(dist) {
+            // Build newspapers HTML from newspapers_list (pipe-separated) or fallback
+            let newspapersHtml = '';
+            const list = dist.newspapers_list || '';
+            if (list) {
+                list.split('|').forEach(function(paper) {
+                    if (paper.trim()) {
+                        newspapersHtml += `<span class="newspaper-item">${escapeHtml(paper.trim())}</span>`;
+                    }
+                });
+            } else {
+                newspapersHtml = '<span class="text-gray-400">—</span>';
+            }
+
+            const dateStr = dist.date_distributed ?
+                new Date(dist.date_distributed).toLocaleDateString('en-GB', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                }) :
+                '—';
+
+            document.getElementById('viewContent').innerHTML = `
+        <div class="detail-row">
+            <div class="detail-label">Newspapers</div>
+            <div class="detail-value">${newspapersHtml}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Date</div>
+            <div class="detail-value">${dateStr}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Copies</div>
+            <div class="detail-value">${dist.copies}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Recipient</div>
+            <div class="detail-value">${escapeHtml(dist.distributed_to)}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Department</div>
+            <div class="detail-value">${escapeHtml(dist.department)}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Distributed By</div>
+            <div class="detail-value">${escapeHtml(dist.distributed_by)}</div>
+        </div>
+    `;
+            openModal('viewModal');
+        }
+
+        // ── Edit modal ───────────────────────────────────────────────────────────────
+        function editDistribution(id) {
+            openModal('editModal');
+            document.getElementById('editLoading').style.display = 'block';
+            document.getElementById('editForm').style.display = 'none';
+
+            fetch('distribution_history.php?ajax=get_distribution&id=' + encodeURIComponent(id))
+                .then(function(res) {
+                    if (!res.ok) throw new Error('Network error');
+                    return res.json();
+                })
+                .then(function(data) {
+                    if (data.success) {
+                        document.getElementById('edit_id').value = data.distribution.id;
+                        document.getElementById('edit_individual_name').value = data.distribution.distributed_to || '';
+                        document.getElementById('edit_department').value = data.distribution.department || '';
+                        document.getElementById('edit_copies').value = data.distribution.copies || 1;
+                        document.getElementById('editLoading').style.display = 'none';
+                        document.getElementById('editForm').style.display = 'block';
+                    } else {
+                        showToast('error', data.message || 'Failed to load record');
+                        closeModal('editModal');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', 'Could not load distribution data');
+                    closeModal('editModal');
+                });
+        }
+
+        // ── Delete modal ─────────────────────────────────────────────────────────────
+        function openDeleteModal(id, recipient, copies) {
+            document.getElementById('deleteRecipientName').textContent = recipient;
+            document.getElementById('deleteCopiesCount').textContent = copies + ' copy(s) will be returned to stock';
+
+            // Build the delete URL preserving current filters but removing delete param
+            const params = new URLSearchParams(window.location.search);
+            params.delete('delete_distribution');
+            params.set('delete_distribution', id);
+            document.getElementById('confirmDeleteBtn').href = 'distribution_history.php?' + params.toString();
+
+            openModal('deleteModal');
+        }
     </script>
+
+    <?php
+    // ── PHP helpers for sort links ─────────────────────────────────────────────
+    function sortUrl($column, $current_sort, $current_order)
+    {
+        $params = $_GET;
+        $params['sort_by'] = $column;
+        $params['sort_order'] = ($column === $current_sort && $current_order === 'ASC') ? 'DESC' : 'ASC';
+        $params['page'] = 1;
+        return 'distribution_history.php?' . http_build_query($params);
+    }
+
+    function sortIcon($column, $current_sort, $current_order)
+    {
+        if ($column !== $current_sort) return '<i class="fa-solid fa-sort text-gray-300 ml-1 text-xs"></i>';
+        $icon = $current_order === 'ASC' ? 'fa-sort-up' : 'fa-sort-down';
+        return '<i class="fa-solid ' . $icon . ' ml-1 text-xs"></i>';
+    }
+    ?>
+
 </body>
 
 </html>

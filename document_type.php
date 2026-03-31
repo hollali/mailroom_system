@@ -795,50 +795,50 @@ if ($action == 'list') {
                             </div>
 
                             <div class="pagination">
-                            <!-- First Page -->
-                            <button onclick="goToPage(1)" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?> aria-label="First page">
-                                <i class="fa-solid fa-chevrons-left"></i>
-                            </button>
+                                <!-- First Page -->
+                                <button onclick="goToPage(1)" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?> aria-label="First page">
+                                    <i class="fa-solid fa-chevrons-left"></i>
+                                </button>
 
-                            <!-- Previous Page -->
-                            <button onclick="goToPage(<?php echo $page - 1; ?>)" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?> aria-label="Previous page">
-                                <i class="fa-solid fa-chevron-left"></i>
-                            </button>
+                                <!-- Previous Page -->
+                                <button onclick="goToPage(<?php echo $page - 1; ?>)" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" <?php echo $page <= 1 ? 'disabled' : ''; ?> aria-label="Previous page">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
 
-                            <!-- Page Numbers -->
-                            <?php
-                            $startPage = max(1, $page - 2);
-                            $endPage = min($totalPages, $page + 2);
+                                <!-- Page Numbers -->
+                                <?php
+                                $startPage = max(1, $page - 2);
+                                $endPage = min($totalPages, $page + 2);
 
-                            if ($startPage > 1) {
-                                echo '<button onclick="goToPage(1)" class="pagination-item">1</button>';
-                                if ($startPage > 2) {
-                                    echo '<span class="pagination-ellipsis">...</span>';
+                                if ($startPage > 1) {
+                                    echo '<button onclick="goToPage(1)" class="pagination-item">1</button>';
+                                    if ($startPage > 2) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
                                 }
-                            }
 
-                            for ($i = $startPage; $i <= $endPage; $i++) {
-                                $activeClass = $i == $page ? 'active' : '';
-                                echo '<button onclick="goToPage(' . $i . ')" class="pagination-item ' . $activeClass . '">' . $i . '</button>';
-                            }
-
-                            if ($endPage < $totalPages) {
-                                if ($endPage < $totalPages - 1) {
-                                    echo '<span class="pagination-ellipsis">...</span>';
+                                for ($i = $startPage; $i <= $endPage; $i++) {
+                                    $activeClass = $i == $page ? 'active' : '';
+                                    echo '<button onclick="goToPage(' . $i . ')" class="pagination-item ' . $activeClass . '">' . $i . '</button>';
                                 }
-                                echo '<button onclick="goToPage(' . $totalPages . ')" class="pagination-item">' . $totalPages . '</button>';
-                            }
-                            ?>
 
-                            <!-- Next Page -->
-                            <button onclick="goToPage(<?php echo $page + 1; ?>)" class="pagination-item compact <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?> aria-label="Next page">
-                                <i class="fa-solid fa-chevron-right"></i>
-                            </button>
+                                if ($endPage < $totalPages) {
+                                    if ($endPage < $totalPages - 1) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
+                                    echo '<button onclick="goToPage(' . $totalPages . ')" class="pagination-item">' . $totalPages . '</button>';
+                                }
+                                ?>
 
-                            <!-- Last Page -->
-                            <button onclick="goToPage(<?php echo $totalPages; ?>)" class="pagination-item compact <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?> aria-label="Last page">
-                                <i class="fa-solid fa-chevrons-right"></i>
-                            </button>
+                                <!-- Next Page -->
+                                <button onclick="goToPage(<?php echo $page + 1; ?>)" class="pagination-item compact <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?> aria-label="Next page">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+
+                                <!-- Last Page -->
+                                <button onclick="goToPage(<?php echo $totalPages; ?>)" class="pagination-item compact <?php echo $page >= $totalPages ? 'disabled' : ''; ?>" <?php echo $page >= $totalPages ? 'disabled' : ''; ?> aria-label="Last page">
+                                    <i class="fa-solid fa-chevrons-right"></i>
+                                </button>
                             </div>
                         </div>
                     </div>

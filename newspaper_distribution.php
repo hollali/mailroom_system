@@ -48,7 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 
         try {
             $success_count = 0;
-            $distributed_details = [];
+            $distributed_newspapers = [];
+            $newspaper_ids = [];
 
             foreach ($selected_newspapers as $newspaper_id) {
                 // Get newspaper details
@@ -69,22 +70,56 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                         $conn->query("UPDATE newspapers SET status = 'partial' WHERE id = $newspaper_id");
                     }
 
-                    // Insert distribution record
-                    $stmt = $conn->prepare("INSERT INTO distribution (newspaper_id, distributed_to, department, copies, date_distributed, distributed_by) VALUES (?, ?, ?, 1, ?, ?)");
-                    $stmt->bind_param("issss", $newspaper_id, $individual_name, $department, $date_distributed, $distributed_by);
-                    $stmt->execute();
-
+                    $newspaper_ids[] = $newspaper_id;
+                    $distributed_newspapers[] = $paper['newspaper_name'] . " (" . $paper['category_name'] . ") - Issue: " . $paper['newspaper_number'];
                     $success_count++;
-                    $distributed_details[] = $paper['newspaper_name'] . " (" . $paper['category_name'] . ") - Issue: " . $paper['newspaper_number'];
                 }
             }
 
-            $conn->commit();
-
             if ($success_count > 0) {
+                // Check if there's already a distribution for this recipient on the same date
+                $check_stmt = $conn->prepare("SELECT id, newspaper_ids, newspapers_list FROM distribution WHERE distributed_to = ? AND department = ? AND date_distributed = ?");
+                $check_stmt->bind_param("sss", $individual_name, $department, $date_distributed);
+                $check_stmt->execute();
+                $existing = $check_stmt->get_result()->fetch_assoc();
+                $check_stmt->close();
+
+                if ($existing) {
+                    // Update existing record - append new newspapers
+                    $existing_newspaper_ids = explode(',', $existing['newspaper_ids']);
+                    $existing_newspapers_list = explode('|', $existing['newspapers_list']);
+
+                    $all_newspaper_ids = array_merge($existing_newspaper_ids, $newspaper_ids);
+                    $all_newspapers_list = array_merge($existing_newspapers_list, $distributed_newspapers);
+
+                    $updated_newspaper_ids = implode(',', $all_newspaper_ids);
+                    $updated_newspapers_list = implode('|', $all_newspapers_list);
+                    $updated_copies = count($all_newspaper_ids);
+
+                    $update_stmt = $conn->prepare("UPDATE distribution SET newspaper_ids = ?, newspapers_list = ?, copies = ?, distributed_by = ? WHERE id = ?");
+                    $update_stmt->bind_param("ssisi", $updated_newspaper_ids, $updated_newspapers_list, $updated_copies, $distributed_by, $existing['id']);
+                    $update_stmt->execute();
+                    $update_stmt->close();
+
+                    $message = "$success_count additional newspaper(s) distributed to $individual_name";
+                } else {
+                    // Insert new distribution record with all newspapers
+                    $newspaper_ids_str = implode(',', $newspaper_ids);
+                    $newspapers_list_str = implode('|', $distributed_newspapers);
+
+                    $stmt = $conn->prepare("INSERT INTO distribution (newspaper_id, newspaper_ids, newspapers_list, distributed_to, department, copies, date_distributed, distributed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    // Use first newspaper_id as the main reference, but store all in newspaper_ids
+                    $first_newspaper_id = $newspaper_ids[0];
+                    $stmt->bind_param("issssiss", $first_newspaper_id, $newspaper_ids_str, $newspapers_list_str, $individual_name, $department, $success_count, $date_distributed, $distributed_by);
+                    $stmt->execute();
+                    $stmt->close();
+
+                    $message = "$success_count newspaper(s) distributed to $individual_name";
+                }
+
                 $_SESSION['toast'] = [
                     'type' => 'success',
-                    'message' => "$success_count newspaper(s) distributed to $individual_name"
+                    'message' => $message
                 ];
 
                 // Store last distribution info in session
@@ -92,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                     'individual' => $individual_name,
                     'department' => $department,
                     'count' => $success_count,
-                    'newspapers' => $distributed_details,
+                    'newspapers' => $distributed_newspapers,
                     'date' => $date_distributed,
                     'distributed_by' => $distributed_by,
                     'timestamp' => time()
@@ -103,6 +138,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                     'message' => "No newspapers were available for distribution"
                 ];
             }
+
+            $conn->commit();
         } catch (Exception $e) {
             $conn->rollback();
             $_SESSION['toast'] = [
@@ -420,6 +457,50 @@ include './sidebar.php';
             border-radius: 2rem;
             font-size: 0.75rem;
             font-weight: 500;
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background-color: #1e1e1e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 100;
+            border: none;
+        }
+
+        .fab:hover {
+            background-color: #2d2d2d;
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .fab-tooltip {
+            position: absolute;
+            right: 70px;
+            background-color: #1e1e1e;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .fab:hover .fab-tooltip {
+            opacity: 1;
         }
     </style>
 </head>
