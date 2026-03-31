@@ -534,6 +534,7 @@ include './sidebar.php';
                                         name="search"
                                         value="<?php echo htmlspecialchars($search); ?>"
                                         class="filter-input"
+                                        autocomplete="off"
                                         placeholder="Search by recipient name or department">
                                 </div>
                                 <div>
