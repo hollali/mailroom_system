@@ -212,14 +212,14 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
         <div class="p-8">
             <!-- Messages -->
             <?php if ($message): ?>
-                <div class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e]">
+                <div id="successToast" class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e] transition-opacity duration-500">
                     <i class="fa-regular fa-circle-check mr-2 text-[#4a4a4a]"></i>
                     <?php echo htmlspecialchars($message); ?>
                 </div>
             <?php endif; ?>
 
             <?php if ($error): ?>
-                <div class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e]">
+                <div id="errorToast" class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e] transition-opacity duration-500">
                     <i class="fa-regular fa-circle-exclamation mr-2 text-[#4a4a4a]"></i>
                     <?php echo htmlspecialchars($error); ?>
                 </div>
@@ -252,8 +252,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                                         <?php echo $row['created_at'] ? date('M j, Y', strtotime($row['created_at'])) : '-'; ?>
                                     </td>
                                     <td class="text-sm">
-                                        <a href="?delete=<?php echo $row['id']; ?>"
-                                            onclick="return confirm('Delete this category?')"
+                                        <a href="#" onclick="openConfirmModal(<?php echo $row['id']; ?>)"
                                             class="text-[#9e9e9e] hover:text-[#1e1e1e]">
                                             <i class="fa-regular fa-trash-can"></i>
                                         </a>
@@ -332,6 +331,33 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
         </div>
     </div>
 
+    <!-- Confirmation Modal -->
+    <div id="confirmModal"
+        class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50"
+        style="display: none;">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-sm p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Confirm Delete</h3>
+                <button onclick="closeConfirmModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p class="text-sm text-[#6e6e6e] mb-6">Are you sure you want to delete this category? This action cannot be undone.</p>
+
+            <div class="flex justify-end gap-2">
+                <button onclick="closeConfirmModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <button id="confirmDeleteBtn"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openModal() {
             document.getElementById('categoryModal').style.display = 'flex';
@@ -339,6 +365,17 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
 
         function closeModal() {
             document.getElementById('categoryModal').style.display = 'none';
+        }
+
+        function openConfirmModal(id) {
+            document.getElementById('confirmModal').style.display = 'flex';
+            document.getElementById('confirmDeleteBtn').onclick = function() {
+                window.location.href = '?delete=' + id;
+            };
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').style.display = 'none';
         }
 
         const categoriesPageSize = <?php echo $limit; ?>;
@@ -424,18 +461,38 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
 
         document.addEventListener('DOMContentLoaded', function() {
             renderCategoriesPagination();
+
+            // Auto-hide toast notifications after 5 seconds
+            const successToast = document.getElementById('successToast');
+            const errorToast = document.getElementById('errorToast');
+
+            if (successToast) {
+                setTimeout(() => {
+                    successToast.style.opacity = '0';
+                    setTimeout(() => successToast.style.display = 'none', 500);
+                }, 5000);
+            }
+
+            if (errorToast) {
+                setTimeout(() => {
+                    errorToast.style.opacity = '0';
+                    setTimeout(() => errorToast.style.display = 'none', 500);
+                }, 5000);
+            }
         });
 
         function changeCategoriesPage(page) {
             categoriesCurrentPage = Math.max(1, page);
             renderCategoriesPagination();
         }
-
-        // Close modal when clicking outside
         window.onclick = function(event) {
             const modal = document.getElementById('categoryModal');
+            const confirmModal = document.getElementById('confirmModal');
             if (event.target == modal) {
                 closeModal();
+            }
+            if (event.target == confirmModal) {
+                closeConfirmModal();
             }
         }
 
@@ -443,10 +500,9 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeModal();
+                closeConfirmModal();
             }
         });
-
-        document.addEventListener('DOMContentLoaded', renderCategoriesPagination);
     </script>
 </body>
 

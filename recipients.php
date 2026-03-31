@@ -9,10 +9,11 @@ session_start();
 // Handle Add Recipient
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_recipient'])) {
     $name = trim($_POST['name']);
+    $is_active = isset($_POST['is_active']) && (int)$_POST['is_active'] === 0 ? 0 : 1;
 
     if (!empty($name)) {
-        $stmt = $conn->prepare("INSERT INTO recipients (name) VALUES (?)");
-        $stmt->bind_param("s", $name);
+        $stmt = $conn->prepare("INSERT INTO recipients (name, is_active) VALUES (?, ?)");
+        $stmt->bind_param("si", $name, $is_active);
 
         if ($stmt->execute()) {
             $_SESSION['toast'] = [
@@ -40,10 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_recipient'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_recipient'])) {
     $id = (int)$_POST['id'];
     $name = trim($_POST['name']);
+    $is_active = isset($_POST['is_active']) && (int)$_POST['is_active'] === 0 ? 0 : 1;
 
     if (!empty($name)) {
-        $stmt = $conn->prepare("UPDATE recipients SET name = ? WHERE id = ?");
-        $stmt->bind_param("si", $name, $id);
+        $stmt = $conn->prepare("UPDATE recipients SET name = ?, is_active = ? WHERE id = ?");
+        $stmt->bind_param("sii", $name, $is_active, $id);
 
         if ($stmt->execute()) {
             $_SESSION['toast'] = [
@@ -100,7 +102,11 @@ if (isset($_GET['delete'])) {
         ];
     }
 
-    header('Location: recipients.php');
+    $query_params = $_GET;
+    unset($query_params['delete'], $query_params['page']);
+    $redirect_url = 'recipients.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+
+    header('Location: ' . $redirect_url);
     exit();
 }
 
@@ -114,7 +120,11 @@ if (isset($_GET['activate'])) {
         'type' => 'success',
         'message' => "Recipient activated successfully"
     ];
-    header('Location: recipients.php');
+    $query_params = $_GET;
+    unset($query_params['activate'], $query_params['page']);
+    $redirect_url = 'recipients.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+
+    header('Location: ' . $redirect_url);
     exit();
 }
 
@@ -123,13 +133,62 @@ $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
+// Search and filter settings
+$search = trim($_GET['search'] ?? '');
+$filter_status = $_GET['status'] ?? 'all';
+$allowed_statuses = ['all', 'active', 'inactive'];
+
+if (!in_array($filter_status, $allowed_statuses, true)) {
+    $filter_status = 'all';
+}
+
+$where_clauses = [];
+
+if ($search !== '') {
+    $safe_search = $conn->real_escape_string($search);
+    $where_clauses[] = "name LIKE '%$safe_search%'";
+}
+
+if ($filter_status === 'active') {
+    $where_clauses[] = "is_active = 1";
+} elseif ($filter_status === 'inactive') {
+    $where_clauses[] = "is_active = 0";
+}
+
+$where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+
 // Get total count for pagination
-$count_result = $conn->query("SELECT COUNT(*) as total FROM recipients");
-$total_recipients = $count_result->fetch_assoc()['total'];
+$count_result = $conn->query("SELECT COUNT(*) as total FROM recipients $where_sql");
+$total_recipients = (int)($count_result->fetch_assoc()['total'] ?? 0);
 $total_pages = ceil($total_recipients / $limit);
 
 // Get recipients with pagination
-$recipients = $conn->query("SELECT * FROM recipients ORDER BY is_active DESC, name ASC LIMIT $offset, $limit");
+$recipients = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, name ASC LIMIT $offset, $limit");
+
+$active_count = (int)($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 1")->fetch_assoc()['total'] ?? 0);
+$inactive_count = (int)($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 0")->fetch_assoc()['total'] ?? 0);
+
+function buildRecipientsUrl($overrides = [], $remove_keys = [])
+{
+    $params = $_GET;
+
+    foreach ($remove_keys as $key) {
+        unset($params[$key]);
+    }
+
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
+        }
+    }
+
+    return 'recipients.php' . (!empty($params) ? '?' . http_build_query($params) : '');
+}
+
+$delete_base_url = buildRecipientsUrl([], ['delete', 'activate', 'page']);
+$delete_separator = strpos($delete_base_url, '?') !== false ? '&' : '?';
 
 // Get toast message from session
 $toast = null;
@@ -366,6 +425,58 @@ include './sidebar.php';
         .modal {
             transition: opacity 0.3s ease;
         }
+
+        .filter-input,
+        .filter-select {
+            width: 100%;
+            border: 1px solid #e5e5e5;
+            border-radius: 0.5rem;
+            padding: 0.7rem 0.85rem;
+            font-size: 0.875rem;
+            color: #1e1e1e;
+            background-color: white;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .filter-input:focus,
+        .filter-select:focus {
+            outline: none;
+            border-color: #a8a29e;
+            box-shadow: 0 0 0 3px rgba(168, 162, 158, 0.15);
+        }
+
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            border: 1px solid #e7e5e4;
+            border-radius: 9999px;
+            background-color: #fafaf9;
+            padding: 0.45rem 0.85rem;
+            font-size: 0.8rem;
+            color: #57534e;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        .status-active {
+            background-color: #ecfdf5;
+            color: #047857;
+        }
+
+        .status-inactive {
+            background-color: #fff7ed;
+            color: #c2410c;
+        }
     </style>
 </head>
 
@@ -392,8 +503,59 @@ include './sidebar.php';
                 <!-- Recipients Table -->
                 <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
                     <div class="px-5 py-4 bg-[#fafafa] border-b border-[#e5e5e5]">
-                        <h3 class="text-sm font-medium text-[#1e1e1e]">Recipients List</h3>
-                        <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office (e.g., John Doe - HR Department)</p>
+                        <div class="flex flex-col gap-4">
+                            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                <div>
+                                    <h3 class="text-sm font-medium text-[#1e1e1e]">Recipients List</h3>
+                                    <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office (e.g., John Doe - HR Department)</p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span class="filter-chip">
+                                        <i class="fa-regular fa-user"></i>
+                                        Total: <?php echo $active_count + $inactive_count; ?>
+                                    </span>
+                                    <span class="filter-chip">
+                                        <i class="fa-regular fa-circle-check text-green-600"></i>
+                                        Active: <?php echo $active_count; ?>
+                                    </span>
+                                    <span class="filter-chip">
+                                        <i class="fa-regular fa-circle-pause text-amber-600"></i>
+                                        Inactive: <?php echo $inactive_count; ?>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <form method="GET" action="recipients.php" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px_auto] gap-3">
+                                <div>
+                                    <label for="search" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
+                                    <input
+                                        type="text"
+                                        id="search"
+                                        name="search"
+                                        value="<?php echo htmlspecialchars($search); ?>"
+                                        class="filter-input"
+                                        placeholder="Search by recipient name or department">
+                                </div>
+                                <div>
+                                    <label for="status" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
+                                    <select id="status" name="status" class="filter-select">
+                                        <option value="all" <?php echo $filter_status === 'all' ? 'selected' : ''; ?>>All recipients</option>
+                                        <option value="active" <?php echo $filter_status === 'active' ? 'selected' : ''; ?>>Active only</option>
+                                        <option value="inactive" <?php echo $filter_status === 'inactive' ? 'selected' : ''; ?>>Inactive only</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end gap-2">
+                                    <button type="submit" class="px-4 py-3 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                                        <i class="fa-solid fa-magnifying-glass mr-1"></i> Apply
+                                    </button>
+                                    <?php if ($search !== '' || $filter_status !== 'all'): ?>
+                                        <a href="recipients.php" class="px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                            Reset
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </form>
+                        </div>
                     </div>
 
                     <?php if ($recipients && $recipients->num_rows > 0): ?>
@@ -403,6 +565,7 @@ include './sidebar.php';
                                     <tr class="bg-[#fafafa] border-b border-[#e5e5e5]">
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">#</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Recipient Name</th>
+                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Status</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Created</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
@@ -413,12 +576,18 @@ include './sidebar.php';
                                         <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
+                                            <td class="p-3 text-sm">
+                                                <span class="status-badge <?php echo $recipient['is_active'] ? 'status-active' : 'status-inactive'; ?>">
+                                                    <i class="fa-regular <?php echo $recipient['is_active'] ? 'fa-circle-check' : 'fa-circle-pause'; ?>"></i>
+                                                    <?php echo $recipient['is_active'] ? 'Active' : 'Inactive'; ?>
+                                                </span>
+                                            </td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
                                             </td>
                                             <td class="p-3">
                                                 <div class="flex items-center gap-2">
-                                                    <button onclick="editRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
+                                                    <button onclick="editRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>', <?php echo (int)$recipient['is_active']; ?>)"
                                                         class="action-btn edit-btn" title="Edit">
                                                         <i class="fa-regular fa-pen-to-square"></i>
                                                     </button>
@@ -428,7 +597,7 @@ include './sidebar.php';
                                                             <i class="fa-regular fa-trash-can"></i>
                                                         </button>
                                                     <?php else: ?>
-                                                        <a href="?activate=<?php echo $recipient['id']; ?>"
+                                                        <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['activate' => $recipient['id']], ['page'])); ?>"
                                                             class="action-btn activate-btn" title="Activate"
                                                             onclick="return confirm('Activate this recipient?')">
                                                             <i class="fa-regular fa-circle-check"></i>
@@ -457,10 +626,10 @@ include './sidebar.php';
                                     <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                                     <div class="pagination">
                                         <?php if ($page > 1): ?>
-                                            <a href="?page=1" class="pagination-item compact" aria-label="First page">
+                                            <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['page' => 1])); ?>" class="pagination-item compact" aria-label="First page">
                                                 <i class="fa-solid fa-chevrons-left"></i>
                                             </a>
-                                            <a href="?page=<?php echo $page - 1; ?>" class="pagination-item compact" aria-label="Previous page">
+                                            <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['page' => $page - 1])); ?>" class="pagination-item compact" aria-label="Previous page">
                                                 <i class="fa-solid fa-chevron-left"></i>
                                             </a>
                                         <?php endif; ?>
@@ -470,7 +639,7 @@ include './sidebar.php';
                                         $end = min($total_pages, $page + 2);
 
                                         if ($start > 1) {
-                                            echo '<a href="?page=1" class="pagination-item">1</a>';
+                                            echo '<a href="' . htmlspecialchars(buildRecipientsUrl(['page' => 1])) . '" class="pagination-item">1</a>';
                                             if ($start > 2) {
                                                 echo '<span class="pagination-ellipsis">...</span>';
                                             }
@@ -478,22 +647,22 @@ include './sidebar.php';
 
                                         for ($i = $start; $i <= $end; $i++) {
                                             $active_class = ($i == $page) ? 'active' : '';
-                                            echo '<a href="?page=' . $i . '" class="pagination-item ' . $active_class . '">' . $i . '</a>';
+                                            echo '<a href="' . htmlspecialchars(buildRecipientsUrl(['page' => $i])) . '" class="pagination-item ' . $active_class . '">' . $i . '</a>';
                                         }
 
                                         if ($end < $total_pages) {
                                             if ($end < $total_pages - 1) {
                                                 echo '<span class="pagination-ellipsis">...</span>';
                                             }
-                                            echo '<a href="?page=' . $total_pages . '" class="pagination-item">' . $total_pages . '</a>';
+                                            echo '<a href="' . htmlspecialchars(buildRecipientsUrl(['page' => $total_pages])) . '" class="pagination-item">' . $total_pages . '</a>';
                                         }
                                         ?>
 
                                         <?php if ($page < $total_pages): ?>
-                                            <a href="?page=<?php echo $page + 1; ?>" class="pagination-item compact" aria-label="Next page">
+                                            <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['page' => $page + 1])); ?>" class="pagination-item compact" aria-label="Next page">
                                                 <i class="fa-solid fa-chevron-right"></i>
                                             </a>
-                                            <a href="?page=<?php echo $total_pages; ?>" class="pagination-item compact" aria-label="Last page">
+                                            <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['page' => $total_pages])); ?>" class="pagination-item compact" aria-label="Last page">
                                                 <i class="fa-solid fa-chevrons-right"></i>
                                             </a>
                                         <?php endif; ?>
@@ -504,10 +673,17 @@ include './sidebar.php';
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
                             <i class="fa-regular fa-user text-3xl mb-2"></i>
-                            <p>No recipients found</p>
-                            <button onclick="openAddModal()" class="inline-block mt-3 text-sm text-blue-600 hover:underline">
-                                Add your first recipient →
-                            </button>
+                            <?php if ($search !== '' || $filter_status !== 'all'): ?>
+                                <p>No recipients match the current search or filter.</p>
+                                <a href="recipients.php" class="inline-block mt-3 text-sm text-blue-600 hover:underline">
+                                    Clear filters →
+                                </a>
+                            <?php else: ?>
+                                <p>No recipients found</p>
+                                <button onclick="openAddModal()" class="inline-block mt-3 text-sm text-blue-600 hover:underline">
+                                    Add your first recipient →
+                                </button>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -532,6 +708,16 @@ include './sidebar.php';
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                         placeholder="e.g., John Doe - HR Department" autocomplete="off">
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
+                    <select name="is_active"
+                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                        <option value="1" selected>Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                    <p class="text-xs text-[#6e6e6e] mt-1">Inactive recipients will not appear in distribution selection.</p>
                 </div>
 
                 <div class="flex justify-end gap-2 mt-6">
@@ -566,6 +752,16 @@ include './sidebar.php';
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                         placeholder="e.g., John Doe - HR Department" autocomplete="off">
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
+                    <select name="is_active" id="edit_is_active"
+                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                        <option value="1">Active</option>
+                        <option value="0">Inactive</option>
+                    </select>
+                    <p class="text-xs text-[#6e6e6e] mt-1">Set a recipient inactive to hide them from new distributions.</p>
                 </div>
 
                 <div class="flex justify-end gap-2 mt-6">
@@ -663,9 +859,10 @@ include './sidebar.php';
             modal.style.display = 'none';
         }
 
-        function editRecipient(id, name) {
+        function editRecipient(id, name, isActive) {
             document.getElementById('edit_id').value = id;
             document.getElementById('edit_name').value = name;
+            document.getElementById('edit_is_active').value = String(isActive);
             const modal = document.getElementById('editModal');
             modal.classList.remove('hidden');
             modal.style.display = 'flex';
@@ -682,7 +879,7 @@ include './sidebar.php';
         function deleteRecipient(id, name) {
             currentDeleteId = id;
             document.getElementById('deleteMessage').innerHTML = `Are you sure you want to delete "<strong>${escapeHtml(name)}</strong>"?`;
-            document.getElementById('confirmDeleteBtn').href = `?delete=${id}`;
+            document.getElementById('confirmDeleteBtn').href = `<?php echo addslashes($delete_base_url . $delete_separator); ?>delete=${id}`;
             const modal = document.getElementById('deleteModal');
             modal.classList.remove('hidden');
             modal.style.display = 'flex';
