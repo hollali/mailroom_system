@@ -121,8 +121,8 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-user w-4"></i>
                 <span class="sidebar-text">Newspaper Recipients</span>
             </a>
-            <a href="available.php"
-                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'available.php' ? 'active' : ''; ?>">
+            <a href="newspaper_distribution.php"
+                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'newspaper_distribution.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-share-from-square w-4"></i>
                 <span class="sidebar-text">Newspaper Distribution</span>
             </a>

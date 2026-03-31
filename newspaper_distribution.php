@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             'type' => 'error',
             'message' => "Please select a recipient"
         ];
-        header('Location: newspaper_distribution.php');
+        header('Location: distribution_history.php');
         exit();
     }
 
@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             'type' => 'error',
             'message' => "Invalid recipient selected"
         ];
-        header('Location: newspaper_distribution.php');
+        header('Location: distribution_history.php');
         exit();
     }
 
@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
         ];
     }
 
-    header('Location: newspaper_distribution.php');
+    header('Location: distribution_history.php');
     exit();
 }
 
@@ -447,35 +447,8 @@ include './sidebar.php';
             </div>
 
             <div class="p-8">
-                <!-- Last Distribution Notification -->
-                <?php if (isset($_SESSION['last_distribution'])): ?>
-                    <div id="lastDistributionNotification" class="mb-6 notification">
-                        <div class="bg-green-50 border border-green-200 rounded-md text-sm text-green-800 p-4 relative">
-                            <div class="flex items-start gap-3">
-                                <i class="fa-regular fa-circle-check text-green-600 mt-0.5"></i>
-                                <div class="flex-1">
-                                    <p class="font-medium">Last Distribution: <?php echo $_SESSION['last_distribution']['count']; ?> newspaper(s) to <strong><?php echo htmlspecialchars($_SESSION['last_distribution']['individual']); ?></strong></p>
-                                    <p class="text-xs mt-1 text-green-700">
-                                        <?php echo implode(', ', array_slice($_SESSION['last_distribution']['newspapers'], 0, 3)); ?>
-                                        <?php if (count($_SESSION['last_distribution']['newspapers']) > 3): ?>
-                                            and <?php echo count($_SESSION['last_distribution']['newspapers']) - 3; ?> more
-                                        <?php endif; ?>
-                                    </p>
-                                    <p class="text-xs mt-1 text-green-600">
-                                        <?php echo date('M j, Y', strtotime($_SESSION['last_distribution']['date'])); ?> by <?php echo htmlspecialchars($_SESSION['last_distribution']['distributed_by']); ?>
-                                    </p>
-                                </div>
-                                <button onclick="dismissLastDistribution()" class="dismiss-btn text-green-600 hover:text-green-800" title="Dismiss">
-                                    <i class="fa-solid fa-xmark text-lg"></i>
-                                </button>
-                            </div>
-                            <div class="notification-progress"></div>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
                 <!-- Available Newspapers Display (Selectable view) -->
-                <div class="bg-white border border-[#e5e5e5] rounded-lg p-6 mb-8">
+                <div class="bg-white border border-[#e5e5e5] rounded-lg p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-medium text-[#1e1e1e]">Select Newspapers to Distribute</h2>
                         <div class="selected-count-badge">
@@ -538,7 +511,6 @@ include './sidebar.php';
                         <div class="text-center py-8 text-[#6e6e6e]">
                             <i class="fa-regular fa-newspaper text-3xl mb-2"></i>
                             <p>No newspapers available for distribution</p>
-                            <a href="list.php" class="inline-block mt-3 text-sm text-blue-600 hover:underline">Add Newspapers →</a>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -562,6 +534,7 @@ include './sidebar.php';
             </div>
 
             <form method="POST" action="newspaper_distribution.php" id="distributeForm">
+                <input type="hidden" name="distribute_submit" value="1">
                 <input type="hidden" name="selected_newspapers" id="selected_newspapers_hidden" value="">
 
                 <div class="space-y-4">
@@ -682,39 +655,6 @@ include './sidebar.php';
             document.addEventListener('DOMContentLoaded', function() {
                 showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
             });
-        <?php endif; ?>
-
-        // ========== LAST DISTRIBUTION NOTIFICATION ==========
-        function dismissLastDistribution() {
-            const notification = document.getElementById('lastDistributionNotification');
-            if (notification) {
-                notification.classList.add('fade-out');
-
-                fetch('newspaper_distribution.php', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: 'ajax=dismiss_last_distribution'
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log('Notification dismissed');
-                    })
-                    .catch(error => {
-                        console.error('Error dismissing notification:', error);
-                    });
-
-                setTimeout(() => {
-                    notification.remove();
-                }, 300);
-            }
-        }
-
-        <?php if (isset($_SESSION['last_distribution'])): ?>
-            setTimeout(() => {
-                dismissLastDistribution();
-            }, 3000);
         <?php endif; ?>
 
         // ========== NEWSPAPER SELECTION ==========
@@ -843,13 +783,22 @@ include './sidebar.php';
                 formData.append('selected_newspapers[]', id);
             });
 
+            // Show loading state
+            const confirmBtn = document.querySelector('#distributionConfirmModal button[onclick="submitDistributionForm()"]');
+            const originalText = confirmBtn.innerHTML;
+            confirmBtn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Processing...';
+            confirmBtn.disabled = true;
+
             fetch('newspaper_distribution.php', {
                 method: 'POST',
                 body: formData
             }).then(response => {
-                window.location.href = 'newspaper_distribution.php';
+                // Redirect to distribution history page
+                window.location.href = 'distribution_history.php';
             }).catch(error => {
                 showToast('error', 'Error submitting distribution');
+                confirmBtn.innerHTML = originalText;
+                confirmBtn.disabled = false;
             });
 
             closeDistributionConfirmModal();
