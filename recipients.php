@@ -189,6 +189,8 @@ function buildRecipientsUrl($overrides = [], $remove_keys = [])
 
 $delete_base_url = buildRecipientsUrl([], ['delete', 'activate', 'page']);
 $delete_separator = strpos($delete_base_url, '?') !== false ? '&' : '?';
+$activate_base_url = buildRecipientsUrl([], ['activate', 'delete', 'page']);
+$activate_separator = strpos($activate_base_url, '?') !== false ? '&' : '?';
 
 // Get toast message from session
 $toast = null;
@@ -360,70 +362,33 @@ include './sidebar.php';
             font-size: 0.95rem;
         }
 
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            min-width: 300px;
-            max-width: 400px;
-            background-color: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            animation: slideIn 0.3s ease-in-out;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .toast-success {
-            border-left: 4px solid #10b981;
-        }
-
-        .toast-error {
-            border-left: 4px solid #ef4444;
-        }
-
-        .toast-warning {
-            border-left: 4px solid #f59e0b;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        .toast.fade-out {
-            animation: fadeOut 0.3s ease-in-out forwards;
-        }
-
         .modal {
             transition: opacity 0.3s ease;
+        }
+
+        .notification-icon {
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.35rem;
+        }
+
+        .notification-success {
+            background-color: #ecfdf5;
+            color: #059669;
+        }
+
+        .notification-error {
+            background-color: #fef2f2;
+            color: #dc2626;
+        }
+
+        .notification-warning {
+            background-color: #fffbeb;
+            color: #d97706;
         }
 
         .filter-input,
@@ -481,9 +446,6 @@ include './sidebar.php';
 </head>
 
 <body class="bg-[#f5f5f4]">
-    <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
-
     <div class="flex">
         <main class="flex-1 ml-60 min-h-screen">
             <!-- Header -->
@@ -525,7 +487,7 @@ include './sidebar.php';
                                 </div>
                             </div>
 
-                            <form method="GET" action="recipients.php" id="recipientsFilterForm" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px_auto] gap-3">
+                            <form method="GET" action="recipients.php" id="recipientsFilterForm" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px] gap-3">
                                 <input type="hidden" name="page" value="1">
                                 <div>
                                     <label for="search" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
@@ -537,8 +499,7 @@ include './sidebar.php';
                                             value="<?php echo htmlspecialchars($search); ?>"
                                             class="filter-input"
                                             autocomplete="off"
-                                            placeholder="Search by recipient name"
-                                        >
+                                            placeholder="Search by recipient name">
                                         <button type="submit" class="px-4 py-3 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
                                             <i class="fa-solid fa-magnifying-glass mr-1"></i> Search
                                         </button>
@@ -551,13 +512,8 @@ include './sidebar.php';
                                         <option value="active" <?php echo $filter_status === 'active' ? 'selected' : ''; ?>>Active only</option>
                                         <option value="inactive" <?php echo $filter_status === 'inactive' ? 'selected' : ''; ?>>Inactive only</option>
                                     </select>
-                                </div>
-                                <div class="flex items-end gap-2">
-                                    <button type="submit" class="px-4 py-3 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                                        <i class="fa-solid fa-sliders mr-1"></i> Apply Filters
-                                    </button>
                                     <?php if ($search !== '' || $filter_status !== 'all'): ?>
-                                        <a href="recipients.php" class="px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                        <a href="recipients.php" class="inline-flex mt-3 px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] w-fit">
                                             Reset
                                         </a>
                                     <?php endif; ?>
@@ -583,10 +539,10 @@ include './sidebar.php';
                                     while ($recipient = $recipients->fetch_assoc()): ?>
                                         <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row"
                                             data-search="<?php echo strtolower(htmlspecialchars(trim(
-                                                                        ($recipient['name'] ?? '') . ' ' .
-                                                                            ($recipient['is_active'] ? 'active' : 'inactive') . ' ' .
-                                                                            ($recipient['created_at'] ?? '')
-                                                                    ))); ?>"
+                                                                ($recipient['name'] ?? '') . ' ' .
+                                                                    ($recipient['is_active'] ? 'active' : 'inactive') . ' ' .
+                                                                    ($recipient['created_at'] ?? '')
+                                                            ))); ?>"
                                             data-status="<?php echo $recipient['is_active'] ? 'active' : 'inactive'; ?>">
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
@@ -611,11 +567,11 @@ include './sidebar.php';
                                                             <i class="fa-regular fa-trash-can"></i>
                                                         </button>
                                                     <?php else: ?>
-                                                        <a href="<?php echo htmlspecialchars(buildRecipientsUrl(['activate' => $recipient['id']], ['page'])); ?>"
+                                                        <button type="button"
                                                             class="action-btn activate-btn" title="Activate"
-                                                            onclick="return confirm('Activate this recipient?')">
+                                                            onclick="activateRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')">
                                                             <i class="fa-regular fa-circle-check"></i>
-                                                        </a>
+                                                        </button>
                                                     <?php endif; ?>
                                                 </div>
                                             </td>
@@ -826,40 +782,106 @@ include './sidebar.php';
         </div>
     </div>
 
-    <script>
-        // Toast Notification
-        function showToast(type, message) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-
-            const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-circle-exclamation' : 'fa-triangle-exclamation');
-
-            toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-regular ${icon} text-${type === 'success' ? 'green' : (type === 'error' ? 'red' : 'orange')}-500"></i>
-                    <span class="text-sm text-[#1e1e1e]">${message}</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
+    <div id="activateModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">Activate Recipient</h2>
+                <button type="button" onclick="closeActivateModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
-            `;
+            </div>
 
-            container.appendChild(toast);
+            <div class="py-2">
+                <p class="text-sm text-[#6e6e6e]" id="activateMessage">Are you sure you want to activate this recipient?</p>
+                <p class="text-xs text-[#9e9e9e] mt-3">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    Activated recipients will appear in future distribution selections.
+                </p>
+            </div>
 
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, 300);
-            }, 5000);
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="closeActivateModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <a href="#" id="confirmActivateBtn"
+                    class="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700">
+                    Activate
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div id="notificationModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-[60] modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6 mx-4">
+            <div class="flex justify-end">
+                <button type="button" onclick="closeNotificationModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="text-center -mt-2">
+                <div id="notificationIcon" class="notification-icon notification-success mx-auto mb-4">
+                    <i class="fa-regular fa-circle-check"></i>
+                </div>
+                <h2 id="notificationTitle" class="text-lg font-medium text-[#1e1e1e]">Success</h2>
+                <p id="notificationMessage" class="text-sm text-[#6e6e6e] mt-2"></p>
+            </div>
+
+            <div class="flex justify-center mt-6">
+                <button type="button" onclick="closeNotificationModal()"
+                    class="px-5 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showNotificationModal(type, message) {
+            const modal = document.getElementById('notificationModal');
+            const iconWrapper = document.getElementById('notificationIcon');
+            const title = document.getElementById('notificationTitle');
+            const messageNode = document.getElementById('notificationMessage');
+
+            const config = {
+                success: {
+                    icon: 'fa-circle-check',
+                    title: 'Success',
+                    className: 'notification-success'
+                },
+                error: {
+                    icon: 'fa-circle-exclamation',
+                    title: 'Error',
+                    className: 'notification-error'
+                },
+                warning: {
+                    icon: 'fa-triangle-exclamation',
+                    title: 'Notice',
+                    className: 'notification-warning'
+                }
+            };
+
+            const selected = config[type] || config.success;
+
+            iconWrapper.className = `notification-icon ${selected.className} mx-auto mb-4`;
+            iconWrapper.innerHTML = `<i class="fa-regular ${selected.icon}"></i>`;
+            title.textContent = selected.title;
+            messageNode.textContent = message;
+
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+        }
+
+        function closeNotificationModal() {
+            const modal = document.getElementById('notificationModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
         }
 
         <?php if ($toast): ?>
             document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
+                showNotificationModal(<?php echo json_encode($toast['type']); ?>, <?php echo json_encode($toast['message']); ?>);
             });
         <?php endif; ?>
 
@@ -907,6 +929,20 @@ include './sidebar.php';
             modal.classList.add('hidden');
             modal.style.display = 'none';
             currentDeleteId = null;
+        }
+
+        function activateRecipient(id, name) {
+            document.getElementById('activateMessage').innerHTML = `Are you sure you want to activate "<strong>${escapeHtml(name)}</strong>"?`;
+            document.getElementById('confirmActivateBtn').href = `<?php echo addslashes($activate_base_url . $activate_separator); ?>activate=${id}`;
+            const modal = document.getElementById('activateModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+        }
+
+        function closeActivateModal() {
+            const modal = document.getElementById('activateModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
         }
 
         function escapeHtml(text) {
@@ -967,6 +1003,8 @@ include './sidebar.php';
             const addModal = document.getElementById('addModal');
             const editModal = document.getElementById('editModal');
             const deleteModal = document.getElementById('deleteModal');
+            const activateModal = document.getElementById('activateModal');
+            const notificationModal = document.getElementById('notificationModal');
 
             if (event.target == addModal) {
                 closeAddModal();
@@ -976,6 +1014,12 @@ include './sidebar.php';
             }
             if (event.target == deleteModal) {
                 closeDeleteModal();
+            }
+            if (event.target == activateModal) {
+                closeActivateModal();
+            }
+            if (event.target == notificationModal) {
+                closeNotificationModal();
             }
         }
 
