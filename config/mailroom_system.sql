@@ -1,11 +1,11 @@
 -- phpMyAdmin SQL Dump
--- version 5.2.3-1.fc43
+-- version 5.2.1deb3
 -- https://www.phpmyadmin.net/
 --
--- Host: localhost
--- Generation Time: Mar 24, 2026 at 04:10 AM
--- Server version: 10.11.16-MariaDB
--- PHP Version: 8.4.19
+-- Host: localhost:3306
+-- Generation Time: Apr 01, 2026 at 08:39 AM
+-- Server version: 10.11.14-MariaDB-0ubuntu0.24.04.1
+-- PHP Version: 8.3.6
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -34,23 +34,28 @@ CREATE TABLE `distribution` (
   `department` varchar(100) DEFAULT NULL,
   `copies` int(11) DEFAULT 1,
   `date_distributed` date NOT NULL,
-  `distributed_by` varchar(100) DEFAULT NULL
+  `distributed_by` varchar(100) DEFAULT NULL,
+  `newspaper_ids` text DEFAULT NULL,
+  `newspapers_list` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
 -- Dumping data for table `distribution`
 --
 
-INSERT INTO `distribution` (`id`, `newspaper_id`, `distributed_to`, `department`, `copies`, `date_distributed`, `distributed_by`) VALUES
-(1, 1, 'Hollali Kelvin', 'IT Department', 1, '2026-03-07', 'Nadjat'),
-(2, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat'),
-(3, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat'),
-(4, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat'),
-(5, 2, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat'),
-(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat'),
-(7, 7, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat'),
-(8, 4, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat'),
-(9, 3, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat');
+INSERT INTO `distribution` (`id`, `newspaper_id`, `distributed_to`, `department`, `copies`, `date_distributed`, `distributed_by`, `newspaper_ids`, `newspapers_list`) VALUES
+(2, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat', NULL, NULL),
+(5, 2, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL),
+(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL),
+(7, 7, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
+(8, 4, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
+(9, 3, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
+(10, 7, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL),
+(11, 3, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL),
+(12, 3, 'Mr Michael Williams', 'Procurement', 1, '2026-03-24', 'Nadia', NULL, NULL),
+(15, 2, 'Mr Michael Williams', 'Procurement', 2, '2026-03-31', 'Nadjat', '2,4', 'Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923'),
+(16, 7, 'Mrs Sarah Johnson', 'Administration', 4, '2026-03-31', 'Hollali', '7,2,4,3', 'Business & Financial Times (Business & Financial Times) - Issue: BUS-20260318-367|Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923|The Chronicle (The Chronicle) - Issue: THE-20260308-519'),
+(17, 9, 'Mr John', 'HR Department', 1, '2026-04-01', 'Hollali', '9', 'The Chronicle (The Chronicle) - Issue: THE-20260401-381');
 
 -- --------------------------------------------------------
 
@@ -74,7 +79,8 @@ CREATE TABLE `documents` (
 --
 
 INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `copies_received`, `date_received`, `created_at`) VALUES
-(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07', '2026-03-07 09:00:00');
+(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07', '2026-03-07 09:00:00'),
+(2, 'Education Reform Bill 2026', NULL, 1, 'Minsitry of Education', 0, '2026-03-30', '2026-03-30 15:08:00');
 
 -- --------------------------------------------------------
 
@@ -85,8 +91,6 @@ INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `co
 CREATE TABLE `document_distribution` (
   `id` int(11) NOT NULL,
   `document_id` int(11) NOT NULL,
-  `department` varchar(150) NOT NULL,
-  `recipient_name` varchar(150) NOT NULL,
   `number_received` int(11) NOT NULL,
   `number_distributed` int(11) NOT NULL,
   `date_distributed` date NOT NULL,
@@ -97,8 +101,9 @@ CREATE TABLE `document_distribution` (
 -- Dumping data for table `document_distribution`
 --
 
-INSERT INTO `document_distribution` (`id`, `document_id`, `department`, `recipient_name`, `number_received`, `number_distributed`, `date_distributed`, `created_at`) VALUES
-(1, 1, 'Finance', 'Gloria', 1, 1, '2026-03-18', '2026-03-18 11:34:49');
+INSERT INTO `document_distribution` (`id`, `document_id`, `number_received`, `number_distributed`, `date_distributed`, `created_at`) VALUES
+(1, 1, 1, 1, '2026-03-18', '2026-03-18 11:34:49'),
+(2, 2, 275, 275, '2026-03-30', '2026-03-30 15:12:12');
 
 -- --------------------------------------------------------
 
@@ -154,11 +159,11 @@ CREATE TABLE `newspapers` (
 --
 
 INSERT INTO `newspapers` (`id`, `newspaper_name`, `newspaper_number`, `date_received`, `received_by`, `status`, `distributed_to`, `department`, `date_distributed`, `category_id`, `total_copies`, `available_copies`) VALUES
-(1, 'financial', '1234', '2026-03-07', 'Doreenda Abbey', 'distributed', NULL, NULL, NULL, 3, 1, 0),
 (2, 'Daily Guide', 'DAI-20260308-015', '2026-03-08', 'Doreenda Abbey', 'available', NULL, NULL, NULL, 4, 1, 7),
-(3, 'The Chronicle', 'THE-20260308-519', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 5, 1, 18),
-(4, 'Ghanaian Times', 'GHA-20260308-923', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 2, 1, 9),
-(7, 'Business & Financial Times', 'BUS-20260318-367', '2026-03-18', 'Nadjat', 'partial', NULL, NULL, NULL, 3, 1, 8);
+(3, 'The Chronicle', 'THE-20260308-519', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 5, 1, 14),
+(4, 'Ghanaian Times', 'GHA-20260308-923', '2026-03-08', 'Doreenda Abbey', 'partial', NULL, NULL, NULL, 2, 1, 6),
+(7, 'Business & Financial Times', 'BUS-20260318-367', '2026-03-18', 'Nadjat', 'available', NULL, NULL, NULL, 3, 1, 8),
+(9, 'The Chronicle', 'THE-20260401-381', '2026-04-01', 'Nadjat', 'partial', NULL, NULL, NULL, 5, 1, 9);
 
 -- --------------------------------------------------------
 
@@ -232,7 +237,7 @@ CREATE TABLE `parcels_received` (
 INSERT INTO `parcels_received` (`id`, `description`, `sender`, `addressed_to`, `date_received`, `received_by`, `tracking_id`, `received_at`) VALUES
 (1, 'A gift', 'Hollali Kelvin', 'Mr Kelvin Hollali', '2026-03-07', 'Doreenda Abbey', 'PRCL-20260307-9B102A', '2026-03-07 08:30:00'),
 (2, 'An Egonomic Chair', 'Archiver Asare', 'Mr Kelvin Hollali', '2026-03-08', 'Doreenda Abbey', 'PRCL-20260308-7D19FA', '2026-03-08 13:45:00'),
-(3, 'item', 'Ben', 'Mr Kobby', '2026-03-18', 'salma', 'PRCL-20260318-9F3156', '2026-03-18 09:10:00');
+(3, 'item', 'Ben', 'Mr Kobby', '2026-03-18', 'Salma', 'PRCL-20260318-9F3156', '2026-03-18 09:10:00');
 
 -- --------------------------------------------------------
 
@@ -254,7 +259,7 @@ CREATE TABLE `recipients` (
 INSERT INTO `recipients` (`id`, `name`, `is_active`, `created_at`) VALUES
 (1, 'Hollali Kelvin - IT Department', 1, '2026-03-24 03:53:23'),
 (2, 'Mr John - HR Department', 1, '2026-03-24 03:53:23'),
-(3, 'Doreenda Abbey - PVC Office', 1, '2026-03-24 03:53:23'),
+(3, 'Doreenda Abbey - PVC Office', 0, '2026-03-24 03:53:23'),
 (4, 'Mrs Sarah Johnson - Administration', 1, '2026-03-24 03:53:23'),
 (5, 'Mr Michael Williams - Procurement', 1, '2026-03-24 03:53:23');
 
@@ -334,19 +339,19 @@ ALTER TABLE `recipients`
 -- AUTO_INCREMENT for table `distribution`
 --
 ALTER TABLE `distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `documents`
 --
 ALTER TABLE `documents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `document_distribution`
 --
 ALTER TABLE `document_distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `document_types`
@@ -358,13 +363,13 @@ ALTER TABLE `document_types`
 -- AUTO_INCREMENT for table `newspapers`
 --
 ALTER TABLE `newspapers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `newspaper_categories`
 --
 ALTER TABLE `newspaper_categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `parcels_pickup`
@@ -382,7 +387,7 @@ ALTER TABLE `parcels_received`
 -- AUTO_INCREMENT for table `recipients`
 --
 ALTER TABLE `recipients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- Constraints for dumped tables
