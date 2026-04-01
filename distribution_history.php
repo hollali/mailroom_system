@@ -629,13 +629,16 @@ include './sidebar.php';
 
                     <!-- Filter bar -->
                     <div class="filter-bar">
-                        <form method="GET" class="filter-group">
+                        <form method="GET" class="filter-group" id="distributionFilterForm">
                             <div class="filter-field">
                                 <div class="filter-label">Search</div>
-                                <input type="text" name="search" class="filter-input"
-                                    placeholder="Recipient, department..."
-                                    autocomplete="off"
-                                    value="<?php echo htmlspecialchars($search); ?>">
+                                <div class="flex gap-2 items-center">
+                                    <input type="text" id="distributionSearchInput" name="search" class="filter-input"
+                                        placeholder="Recipient, department..."
+                                        autocomplete="off"
+                                        value="<?php echo htmlspecialchars($search); ?>">
+                                    <button type="submit" class="btn-primary whitespace-nowrap">Search</button>
+                                </div>
                             </div>
                             <div class="filter-field">
                                 <div class="filter-label">Category</div>
@@ -658,7 +661,7 @@ include './sidebar.php';
                                 <input type="date" name="date_to" class="filter-input" value="<?php echo htmlspecialchars($date_to); ?>">
                             </div>
                             <div>
-                                <button type="submit" class="btn-primary">Apply</button>
+                                <button type="submit" class="btn-primary">Apply Filters</button>
                                 <a href="distribution_history.php" class="btn-secondary ml-2">Reset</a>
                             </div>
                         </form>
@@ -707,9 +710,15 @@ include './sidebar.php';
                                         <th></th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="distributionHistoryTableBody">
                                     <?php while ($dist = $distribution_history->fetch_assoc()): ?>
-                                        <tr>
+                                        <tr data-search="<?php echo strtolower(htmlspecialchars(trim(
+                                                                    ($dist['date_distributed'] ?? '') . ' ' .
+                                                                        ($dist['distributed_to'] ?? '') . ' ' .
+                                                                        ($dist['department'] ?? '') . ' ' .
+                                                                        ($dist['distributed_by'] ?? '') . ' ' .
+                                                                        ($dist['copies'] ?? 0)
+                                                                ))); ?>">
                                             <td><?php echo date('M j, Y', strtotime($dist['date_distributed'])); ?></td>
                                             <td class="font-medium"><?php echo htmlspecialchars($dist['distributed_to']); ?></td>
                                             <td><?php echo htmlspecialchars($dist['department'] ?? '—'); ?></td>
@@ -733,6 +742,9 @@ include './sidebar.php';
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="distributionSearchEmptyState" class="hidden px-4 py-3 text-sm text-gray-500 border-t border-gray-200">
+                            No records on this page match the current search text.
                         </div>
 
                         <?php if ($total_pages > 1): ?>
@@ -912,6 +924,60 @@ include './sidebar.php';
                 document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
             }
         });
+
+        // ── Live search for current page rows ──────────────────────────────────────
+        function getSearchTokens(value) {
+            return (value || '')
+                .toLowerCase()
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean);
+        }
+
+        function filterDistributionRows() {
+            const searchInput = document.getElementById('distributionSearchInput');
+            const tableBody = document.getElementById('distributionHistoryTableBody');
+            const emptyState = document.getElementById('distributionSearchEmptyState');
+
+            if (!searchInput || !tableBody) return;
+
+            const searchTokens = getSearchTokens(searchInput.value);
+            const rows = tableBody.querySelectorAll('tr');
+            let visibleRows = 0;
+
+            rows.forEach(function(row) {
+                const searchText = (row.getAttribute('data-search') || row.textContent || '').toLowerCase();
+                const matches = searchTokens.length === 0 || searchTokens.every(function(token) {
+                    return searchText.includes(token);
+                });
+
+                row.style.display = matches ? '' : 'none';
+                if (matches) visibleRows++;
+            });
+
+            if (emptyState) {
+                emptyState.classList.toggle('hidden', visibleRows > 0 || rows.length === 0);
+            }
+        }
+
+        document.getElementById('distributionSearchInput')?.addEventListener('input', filterDistributionRows);
+        document.getElementById('distributionSearchInput')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const pageInput = document.querySelector('#distributionFilterForm input[name="page"]');
+                if (pageInput) pageInput.value = '1';
+            }
+        });
+        document.getElementById('distributionFilterForm')?.addEventListener('submit', function() {
+            let pageInput = this.querySelector('input[name="page"]');
+            if (!pageInput) {
+                pageInput = document.createElement('input');
+                pageInput.type = 'hidden';
+                pageInput.name = 'page';
+                this.appendChild(pageInput);
+            }
+            pageInput.value = '1';
+        });
+        filterDistributionRows();
 
         // ── Escape HTML ──────────────────────────────────────────────────────────────
         function escapeHtml(text) {

@@ -52,4 +52,3 @@ Reviewer: GPT-5.3-Codex
 3. Implement CSRF tokens + enforce POST for all mutating endpoints.
 4. Fix route/file naming mismatches across redirects/sidebar/docs.
 5. Normalize all SQL calls to prepared statements.
-

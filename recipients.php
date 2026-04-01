@@ -525,17 +525,24 @@ include './sidebar.php';
                                 </div>
                             </div>
 
-                            <form method="GET" action="recipients.php" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px_auto] gap-3">
+                            <form method="GET" action="recipients.php" id="recipientsFilterForm" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px_auto] gap-3">
+                                <input type="hidden" name="page" value="1">
                                 <div>
                                     <label for="search" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
-                                    <input
-                                        type="text"
-                                        id="search"
-                                        name="search"
-                                        value="<?php echo htmlspecialchars($search); ?>"
-                                        class="filter-input"
-                                        autocomplete="off"
-                                        placeholder="Search by recipient name or department">
+                                    <div class="flex gap-2">
+                                        <input
+                                            type="text"
+                                            id="search"
+                                            name="search"
+                                            value="<?php echo htmlspecialchars($search); ?>"
+                                            class="filter-input"
+                                            autocomplete="off"
+                                            placeholder="Search by recipient name"
+                                        >
+                                        <button type="submit" class="px-4 py-3 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
+                                            <i class="fa-solid fa-magnifying-glass mr-1"></i> Search
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label for="status" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
@@ -547,7 +554,7 @@ include './sidebar.php';
                                 </div>
                                 <div class="flex items-end gap-2">
                                     <button type="submit" class="px-4 py-3 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                                        <i class="fa-solid fa-magnifying-glass mr-1"></i> Apply
+                                        <i class="fa-solid fa-sliders mr-1"></i> Apply Filters
                                     </button>
                                     <?php if ($search !== '' || $filter_status !== 'all'): ?>
                                         <a href="recipients.php" class="px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
@@ -571,10 +578,16 @@ include './sidebar.php';
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="recipientsTableBody">
                                     <?php $counter = ($page - 1) * $limit + 1;
                                     while ($recipient = $recipients->fetch_assoc()): ?>
-                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+                                        <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row"
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(
+                                                                        ($recipient['name'] ?? '') . ' ' .
+                                                                            ($recipient['is_active'] ? 'active' : 'inactive') . ' ' .
+                                                                            ($recipient['created_at'] ?? '')
+                                                                    ))); ?>"
+                                            data-status="<?php echo $recipient['is_active'] ? 'active' : 'inactive'; ?>">
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
                                             <td class="p-3 text-sm">
@@ -610,6 +623,9 @@ include './sidebar.php';
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="recipientsSearchEmptyState" class="hidden px-4 py-3 text-sm text-[#6e6e6e] border-t border-[#e5e5e5]">
+                            No recipients on this page match the current search or status filter.
                         </div>
 
                         <!-- Pagination -->
@@ -899,6 +915,52 @@ include './sidebar.php';
             div.textContent = text;
             return div.innerHTML;
         }
+
+        function getRecipientSearchTokens(value) {
+            return (value || '')
+                .toLowerCase()
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean);
+        }
+
+        function filterRecipientsLive() {
+            const searchInput = document.getElementById('search');
+            const statusFilter = document.getElementById('status');
+            const rows = document.querySelectorAll('.recipient-row');
+            const emptyState = document.getElementById('recipientsSearchEmptyState');
+            let visibleCount = 0;
+
+            if (!searchInput || !statusFilter || rows.length === 0) return;
+
+            const searchTokens = getRecipientSearchTokens(searchInput.value);
+            const statusValue = statusFilter.value;
+
+            rows.forEach(function(row) {
+                const searchText = (row.getAttribute('data-search') || '').toLowerCase();
+                const rowStatus = row.getAttribute('data-status') || 'all';
+                const matchesSearch = searchTokens.length === 0 || searchTokens.every(function(token) {
+                    return searchText.includes(token);
+                });
+                const matchesStatus = statusValue === 'all' || rowStatus === statusValue;
+                const show = matchesSearch && matchesStatus;
+
+                row.style.display = show ? '' : 'none';
+                if (show) visibleCount++;
+            });
+
+            if (emptyState) {
+                emptyState.classList.toggle('hidden', visibleCount > 0);
+            }
+        }
+
+        document.getElementById('search')?.addEventListener('input', filterRecipientsLive);
+        document.getElementById('status')?.addEventListener('change', filterRecipientsLive);
+        document.getElementById('recipientsFilterForm')?.addEventListener('submit', function() {
+            const pageInput = this.querySelector('input[name="page"]');
+            if (pageInput) pageInput.value = '1';
+        });
+        filterRecipientsLive();
 
         // Close modals when clicking outside
         window.onclick = function(event) {

@@ -661,11 +661,14 @@ if (isset($_SESSION['toast'])) {
                 <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
                     <h2 class="text-sm font-medium text-[#1e1e1e]">Distribution History</h2>
                     <div class="flex items-center gap-3">
-                        <div class="relative">
+                        <div class="relative flex items-center gap-2">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
                             <input type="text" id="tableSearch" placeholder="Search records..."
                                 class="pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] w-64"
                                 autocomplete="off">
+                            <button onclick="filterDistributionTable(true)" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
+                                Search
+                            </button>
                         </div>
                         <span class="text-xs text-[#6e6e6e]">Total: <?php echo $total_distributions; ?> records</span>
                     </div>

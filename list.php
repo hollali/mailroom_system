@@ -581,12 +581,15 @@ include './sidebar.php';
                         <form method="GET" id="newspaperFilterForm" class="flex flex-wrap gap-3 items-center">
                             <input type="hidden" name="page" value="1">
 
-                            <div class="flex-1 min-w-[200px]">
+                            <div class="flex-1 min-w-[200px] flex gap-2">
                                 <input type="text" name="search" id="newspaperLiveSearch"
                                     placeholder="Search by name or issue number..."
                                     value="<?php echo htmlspecialchars($search); ?>"
                                     autocomplete="off"
                                     class="w-full px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
+                                <button type="submit" class="px-3 py-1.5 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
+                                    <i class="fa-solid fa-magnifying-glass mr-1"></i>Search
+                                </button>
                             </div>
 
                             <select name="filter_category" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
@@ -611,7 +614,7 @@ include './sidebar.php';
                             </select>
 
                             <button type="submit" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-solid fa-sliders mr-1"></i>Apply
+                                <i class="fa-solid fa-sliders mr-1"></i>Apply Filters
                             </button>
 
                             <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">

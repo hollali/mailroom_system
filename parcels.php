@@ -603,6 +603,9 @@ $recent_parcels = $conn->query("
                                         class="pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] w-full md:w-64"
                                         autocomplete="off">
                                 </div>
+                                <button onclick="filterReceiveTable(true)" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
+                                    Search
+                                </button>
                                 <select id="receiveFilter" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
                                     <option value="all">All</option>
                                     <option value="today">Today</option>
@@ -791,11 +794,14 @@ $recent_parcels = $conn->query("
                     <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                         <div class="flex flex-col md:flex-row gap-3">
                             <div class="flex-1">
-                                <div class="relative">
+                                <div class="relative flex items-center gap-2">
                                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
                                     <input type="text" id="searchPickup" placeholder="Search by tracking ID, sender, or recipient..."
                                         class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                                         autocomplete="off">
+                                    <button onclick="filterPickupTable(true)" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
+                                        Search
+                                    </button>
                                 </div>
                             </div>
                             <select id="statusFilterPickup" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
@@ -1677,7 +1683,7 @@ $recent_parcels = $conn->query("
         document.getElementById('receiveSearch')?.addEventListener('input', filterReceiveTable);
         document.getElementById('receiveFilter')?.addEventListener('change', filterReceiveTable);
 
-        function filterReceiveTable() {
+        function filterReceiveTable(showFeedback = false) {
             const searchTokens = getSearchTokens(document.getElementById('receiveSearch').value);
             const filterValue = document.getElementById('receiveFilter').value;
             const rows = document.getElementsByClassName('receive-row');
@@ -1708,7 +1714,7 @@ $recent_parcels = $conn->query("
                 if (show) visibleCount++;
             }
 
-            if (visibleCount === 0) {
+            if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info');
             }
         }
@@ -1717,7 +1723,7 @@ $recent_parcels = $conn->query("
         document.getElementById('searchPickup')?.addEventListener('input', filterPickupTable);
         document.getElementById('statusFilterPickup')?.addEventListener('change', filterPickupTable);
 
-        function filterPickupTable() {
+        function filterPickupTable(showFeedback = false) {
             const searchTokens = getSearchTokens(document.getElementById('searchPickup').value);
             const statusFilter = document.getElementById('statusFilterPickup').value;
             const rows = document.getElementsByClassName('pickup-row');
@@ -1735,7 +1741,7 @@ $recent_parcels = $conn->query("
                 if (show) visibleCount++;
             }
 
-            if (visibleCount === 0) {
+            if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info');
             }
         }
@@ -1846,6 +1852,18 @@ $recent_parcels = $conn->query("
 
         document.getElementById('quickSearch')?.addEventListener('input', function() {
             applyAdvancedFilters(false);
+        });
+
+        document.getElementById('receiveSearch')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                filterReceiveTable(true);
+            }
+        });
+
+        document.getElementById('searchPickup')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                filterPickupTable(true);
+            }
         });
 
         document.getElementById('filterStatus')?.addEventListener('change', function() {
