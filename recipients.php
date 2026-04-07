@@ -41,7 +41,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_recipient'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_recipient'])) {
     $id = (int)$_POST['id'];
     $name = trim($_POST['name']);
-    $is_active = isset($_POST['is_active']) && (int)$_POST['is_active'] === 0 ? 0 : 1;
+    // When the status field is not submitted (we removed it from the UI),
+    // preserve the existing `is_active` value.
+    if (isset($_POST['is_active'])) {
+        $is_active = (int)$_POST['is_active'] === 0 ? 0 : 1;
+    } else {
+        $current = $conn->query("SELECT is_active FROM recipients WHERE id = $id");
+        $is_active = (int)($current->fetch_assoc()['is_active'] ?? 1);
+    }
 
     if (!empty($name)) {
         $stmt = $conn->prepare("UPDATE recipients SET name = ?, is_active = ? WHERE id = ?");
@@ -135,24 +142,12 @@ $offset = ($page - 1) * $limit;
 
 // Search and filter settings
 $search = trim($_GET['search'] ?? '');
-$filter_status = $_GET['status'] ?? 'all';
-$allowed_statuses = ['all', 'active', 'inactive'];
-
-if (!in_array($filter_status, $allowed_statuses, true)) {
-    $filter_status = 'all';
-}
 
 $where_clauses = [];
 
 if ($search !== '') {
     $safe_search = $conn->real_escape_string($search);
     $where_clauses[] = "name LIKE '%$safe_search%'";
-}
-
-if ($filter_status === 'active') {
-    $where_clauses[] = "is_active = 1";
-} elseif ($filter_status === 'inactive') {
-    $where_clauses[] = "is_active = 0";
 }
 
 $where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
@@ -164,9 +159,6 @@ $total_pages = ceil($total_recipients / $limit);
 
 // Get recipients with pagination
 $recipients = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, name ASC LIMIT $offset, $limit");
-
-$active_count = (int)($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 1")->fetch_assoc()['total'] ?? 0);
-$inactive_count = (int)($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 0")->fetch_assoc()['total'] ?? 0);
 
 function buildRecipientsUrl($overrides = [], $remove_keys = [])
 {
@@ -422,26 +414,6 @@ include './sidebar.php';
             color: #57534e;
         }
 
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.35rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 0.01em;
-        }
-
-        .status-active {
-            background-color: #ecfdf5;
-            color: #047857;
-        }
-
-        .status-inactive {
-            background-color: #fff7ed;
-            color: #c2410c;
-        }
     </style>
 </head>
 
@@ -474,15 +446,7 @@ include './sidebar.php';
                                 <div class="flex flex-wrap gap-2">
                                     <span class="filter-chip">
                                         <i class="fa-regular fa-user"></i>
-                                        Total: <?php echo $active_count + $inactive_count; ?>
-                                    </span>
-                                    <span class="filter-chip">
-                                        <i class="fa-regular fa-circle-check text-green-600"></i>
-                                        Active: <?php echo $active_count; ?>
-                                    </span>
-                                    <span class="filter-chip">
-                                        <i class="fa-regular fa-circle-pause text-amber-600"></i>
-                                        Inactive: <?php echo $inactive_count; ?>
+                                            Total: <?php echo $total_recipients; ?>
                                     </span>
                                 </div>
                             </div>
@@ -506,13 +470,7 @@ include './sidebar.php';
                                     </div>
                                 </div>
                                 <div>
-                                    <label for="status" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
-                                    <select id="status" name="status" class="filter-select">
-                                        <option value="all" <?php echo $filter_status === 'all' ? 'selected' : ''; ?>>All recipients</option>
-                                        <option value="active" <?php echo $filter_status === 'active' ? 'selected' : ''; ?>>Active only</option>
-                                        <option value="inactive" <?php echo $filter_status === 'inactive' ? 'selected' : ''; ?>>Inactive only</option>
-                                    </select>
-                                    <?php if ($search !== '' || $filter_status !== 'all'): ?>
+                                    <?php if ($search !== ''): ?>
                                         <a href="recipients.php" class="inline-flex mt-3 px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] w-fit">
                                             Reset
                                         </a>
@@ -529,7 +487,6 @@ include './sidebar.php';
                                     <tr class="bg-[#fafafa] border-b border-[#e5e5e5]">
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">#</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Recipient Name</th>
-                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Status</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Created</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
@@ -540,24 +497,17 @@ include './sidebar.php';
                                         <tr class="border-b border-[#f0f0f0] hover:bg-[#fafafa] recipient-row"
                                             data-search="<?php echo strtolower(htmlspecialchars(trim(
                                                                 ($recipient['name'] ?? '') . ' ' .
-                                                                    ($recipient['is_active'] ? 'active' : 'inactive') . ' ' .
-                                                                    ($recipient['created_at'] ?? '')
+                                                                ($recipient['created_at'] ?? '')
                                                             ))); ?>"
-                                            data-status="<?php echo $recipient['is_active'] ? 'active' : 'inactive'; ?>">
+                                            >
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
-                                            <td class="p-3 text-sm">
-                                                <span class="status-badge <?php echo $recipient['is_active'] ? 'status-active' : 'status-inactive'; ?>">
-                                                    <i class="fa-regular <?php echo $recipient['is_active'] ? 'fa-circle-check' : 'fa-circle-pause'; ?>"></i>
-                                                    <?php echo $recipient['is_active'] ? 'Active' : 'Inactive'; ?>
-                                                </span>
-                                            </td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
                                             </td>
                                             <td class="p-3">
                                                 <div class="flex items-center gap-2">
-                                                    <button onclick="editRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>', <?php echo (int)$recipient['is_active']; ?>)"
+                                                    <button onclick="editRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
                                                         class="action-btn edit-btn" title="Edit">
                                                         <i class="fa-regular fa-pen-to-square"></i>
                                                     </button>
@@ -581,7 +531,7 @@ include './sidebar.php';
                             </table>
                         </div>
                         <div id="recipientsSearchEmptyState" class="hidden px-4 py-3 text-sm text-[#6e6e6e] border-t border-[#e5e5e5]">
-                            No recipients on this page match the current search or status filter.
+                            No recipients on this page match the current search.
                         </div>
 
                         <!-- Pagination -->
@@ -646,8 +596,8 @@ include './sidebar.php';
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
                             <i class="fa-regular fa-user text-3xl mb-2"></i>
-                            <?php if ($search !== '' || $filter_status !== 'all'): ?>
-                                <p>No recipients match the current search or filter.</p>
+                            <?php if ($search !== ''): ?>
+                                <p>No recipients match the current search.</p>
                                 <a href="recipients.php" class="inline-block mt-3 text-sm text-blue-600 hover:underline">
                                     Clear filters →
                                 </a>
@@ -683,16 +633,6 @@ include './sidebar.php';
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
                 </div>
 
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
-                    <select name="is_active"
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                        <option value="1" selected>Active</option>
-                        <option value="0">Inactive</option>
-                    </select>
-                    <p class="text-xs text-[#6e6e6e] mt-1">Inactive recipients will not appear in distribution selection.</p>
-                </div>
-
                 <div class="flex justify-end gap-2 mt-6">
                     <button type="button" onclick="closeAddModal()"
                         class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
@@ -725,16 +665,6 @@ include './sidebar.php';
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                         placeholder="e.g., John Doe - HR Department" autocomplete="off">
                     <p class="text-xs text-[#6e6e6e] mt-1">Format: Name - Department/Office</p>
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
-                    <select name="is_active" id="edit_is_active"
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                        <option value="1">Active</option>
-                        <option value="0">Inactive</option>
-                    </select>
-                    <p class="text-xs text-[#6e6e6e] mt-1">Set a recipient inactive to hide them from new distributions.</p>
                 </div>
 
                 <div class="flex justify-end gap-2 mt-6">
@@ -898,10 +828,9 @@ include './sidebar.php';
             modal.style.display = 'none';
         }
 
-        function editRecipient(id, name, isActive) {
+        function editRecipient(id, name) {
             document.getElementById('edit_id').value = id;
             document.getElementById('edit_name').value = name;
-            document.getElementById('edit_is_active').value = String(isActive);
             const modal = document.getElementById('editModal');
             modal.classList.remove('hidden');
             modal.style.display = 'flex';
@@ -962,24 +891,20 @@ include './sidebar.php';
 
         function filterRecipientsLive() {
             const searchInput = document.getElementById('search');
-            const statusFilter = document.getElementById('status');
             const rows = document.querySelectorAll('.recipient-row');
             const emptyState = document.getElementById('recipientsSearchEmptyState');
             let visibleCount = 0;
 
-            if (!searchInput || !statusFilter || rows.length === 0) return;
+            if (!searchInput || rows.length === 0) return;
 
             const searchTokens = getRecipientSearchTokens(searchInput.value);
-            const statusValue = statusFilter.value;
 
             rows.forEach(function(row) {
                 const searchText = (row.getAttribute('data-search') || '').toLowerCase();
-                const rowStatus = row.getAttribute('data-status') || 'all';
                 const matchesSearch = searchTokens.length === 0 || searchTokens.every(function(token) {
                     return searchText.includes(token);
                 });
-                const matchesStatus = statusValue === 'all' || rowStatus === statusValue;
-                const show = matchesSearch && matchesStatus;
+                const show = matchesSearch;
 
                 row.style.display = show ? '' : 'none';
                 if (show) visibleCount++;
@@ -991,7 +916,6 @@ include './sidebar.php';
         }
 
         document.getElementById('search')?.addEventListener('input', filterRecipientsLive);
-        document.getElementById('status')?.addEventListener('change', filterRecipientsLive);
         document.getElementById('recipientsFilterForm')?.addEventListener('submit', function() {
             const pageInput = this.querySelector('input[name="page"]');
             if (pageInput) pageInput.value = '1';

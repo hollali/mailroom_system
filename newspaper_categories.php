@@ -7,11 +7,10 @@ $error = '';
 
 if (isset($_POST['save'])) {
     $name = trim($_POST['name']);
-    $desc = trim($_POST['description']);
 
     if (!empty($name)) {
-        $stmt = $conn->prepare("INSERT INTO newspaper_categories (category_name, description) VALUES (?, ?)");
-        $stmt->bind_param("ss", $name, $desc);
+        $stmt = $conn->prepare("INSERT INTO newspaper_categories (category_name) VALUES (?)");
+        $stmt->bind_param("s", $name);
 
         if ($stmt->execute()) {
             $message = "Category added successfully!";
@@ -232,7 +231,6 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                         <tr class="bg-[#fafafa]">
                             <th class="text-xs">ID</th>
                             <th class="text-xs">Category Name</th>
-                            <th class="text-xs">Description</th>
                             <th class="text-xs">Created</th>
                             <th class="text-xs">Actions</th>
                         </tr>
@@ -244,9 +242,6 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                                     <td class="text-sm text-[#6e6e6e]"><?php echo $row['id']; ?></td>
                                     <td class="text-sm font-medium text-[#1e1e1e]">
                                         <?php echo htmlspecialchars($row['category_name']); ?>
-                                    </td>
-                                    <td class="text-sm text-[#1e1e1e]">
-                                        <?php echo $row['description'] ? htmlspecialchars($row['description']) : '-'; ?>
                                     </td>
                                     <td class="text-sm text-[#1e1e1e]">
                                         <?php echo $row['created_at'] ? date('M j, Y', strtotime($row['created_at'])) : '-'; ?>
@@ -261,7 +256,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                             <?php endwhile; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="5" class="text-sm text-[#6e6e6e] text-center py-8">
+                                <td colspan="4" class="text-sm text-[#6e6e6e] text-center py-8">
                                     No categories found. Add one to get started.
                                 </td>
                             </tr>
@@ -304,14 +299,6 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                             placeholder="e.g., Daily News, Sports, Business"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                             autocomplete='off'>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
-                        <textarea name="description"
-                            placeholder="Optional description"
-                            rows="3"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"></textarea>
                     </div>
                 </div>
 

@@ -43,7 +43,7 @@ function getAllDocumentTypes($sort_by = 'type_name', $sort_order = 'ASC', $filte
     }
 
     // Validate sort parameters to prevent SQL injection
-    $allowed_sort = ['id', 'type_name', 'description', 'document_count', 'created_at'];
+    $allowed_sort = ['id', 'type_name', 'description', 'created_at'];
     $sort_by = in_array($sort_by, $allowed_sort) ? $sort_by : 'type_name';
     $sort_order = strtoupper($sort_order) == 'DESC' ? 'DESC' : 'ASC';
 
@@ -60,17 +60,15 @@ function getAllDocumentTypes($sort_by = 'type_name', $sort_order = 'ASC', $filte
     $total = $count_result ? $count_result->fetch_assoc()['total'] : 0;
 
     // Main query with pagination
-    $sql = "SELECT dt.*, COUNT(d.id) as document_count 
-            FROM document_types dt
-            LEFT JOIN documents d ON dt.id = d.type_id";
+    $sql = "SELECT dt.* 
+            FROM document_types dt";
 
     if (!empty($filter)) {
         $filter_escaped = $conn->real_escape_string($filter);
         $sql .= " WHERE dt.type_name LIKE '%$filter_escaped%' OR dt.description LIKE '%$filter_escaped%'";
     }
 
-    $sql .= " GROUP BY dt.id 
-              ORDER BY $sort_by $sort_order 
+    $sql .= " ORDER BY $sort_by $sort_order 
               LIMIT $limit OFFSET $offset";
 
     $result = $conn->query($sql);
@@ -713,12 +711,6 @@ if ($action == 'list') {
                                         <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
                                     <?php endif; ?>
                                 </th>
-                                <th onclick="sortTable('document_count')" class="<?php echo $sort_by == 'document_count' ? 'active-sort' : ''; ?>">
-                                    Documents
-                                    <?php if ($sort_by == 'document_count'): ?>
-                                        <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
-                                    <?php endif; ?>
-                                </th>
                                 <th onclick="sortTable('created_at')" class="<?php echo $sort_by == 'created_at' ? 'active-sort' : ''; ?>">
                                     Created
                                     <?php if ($sort_by == 'created_at'): ?>
@@ -731,7 +723,7 @@ if ($action == 'list') {
                         <tbody id="tableBody">
                             <?php if (empty($types)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-sm text-[#6e6e6e] text-center py-8">
+                                    <td colspan="5" class="text-sm text-[#6e6e6e] text-center py-8">
                                         No document types found.
                                         <button onclick="openCreateModal()" class="text-[#1e1e1e] underline">Create one</button>.
                                     </td>
@@ -739,11 +731,10 @@ if ($action == 'list') {
                             <?php else: ?>
                                 <?php foreach ($types as $type): ?>
                                     <tr class="hover:bg-[#fafafa] type-row" id="row-<?php echo $type['id']; ?>"
-                                        data-search="<?php echo strtolower(htmlspecialchars(trim($type['id'] . ' ' . ($type['type_name'] ?? '') . ' ' . ($type['description'] ?? '') . ' ' . ($type['document_count'] ?? 0) . ' ' . date('M j, Y', strtotime($type['created_at']))))); ?>">
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim($type['id'] . ' ' . ($type['type_name'] ?? '') . ' ' . ($type['description'] ?? '') . ' ' . date('M j, Y', strtotime($type['created_at']))))); ?>">
                                         <td class="text-sm text-[#6e6e6e]"><?php echo $type['id']; ?></td>
                                         <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
                                         <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
-                                        <td class="text-sm text-[#1e1e1e]"><?php echo $type['document_count']; ?></td>
                                         <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($type['created_at'])); ?></td>
                                         <td class="text-sm">
                                             <div class="flex gap-2">
@@ -764,7 +755,7 @@ if ($action == 'list') {
                                     </tr>
                                 <?php endforeach; ?>
                                 <tr id="noResultsRow" class="hidden">
-                                    <td colspan="6" class="text-sm text-[#6e6e6e] text-center py-8">
+                                    <td colspan="5" class="text-sm text-[#6e6e6e] text-center py-8">
                                         No document types match your search on this page.
                                     </td>
                                 </tr>
@@ -848,41 +839,11 @@ if ($action == 'list') {
             // STATISTICS
             elseif ($action == 'stats'):
                 $totalTypes = count($stats_types);
-                $totalDocuments = 0;
-                $usedTypes = 0;
-                $unusedTypes = 0;
-
-                foreach ($stats_types as $type) {
-                    $totalDocuments += $type['document_count'];
-                    if ($type['document_count'] > 0) {
-                        $usedTypes++;
-                    } else {
-                        $unusedTypes++;
-                    }
-                }
-
-                $avgPerType = $totalTypes > 0 ? round($totalDocuments / $totalTypes, 1) : 0;
             ?>
                 <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                     <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
                         <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Types</p>
                         <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $totalTypes; ?></p>
-                    </div>
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Documents</p>
-                        <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $totalDocuments; ?></p>
-                    </div>
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Avg per Type</p>
-                        <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $avgPerType; ?></p>
-                    </div>
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Types in Use</p>
-                        <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $usedTypes; ?></p>
-                    </div>
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4">
-                        <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Unused Types</p>
-                        <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $unusedTypes; ?></p>
                     </div>
                 </div>
 
@@ -891,29 +852,14 @@ if ($action == 'list') {
                         <thead>
                             <tr class="bg-[#fafafa]">
                                 <th class="text-xs">Type Name</th>
-                                <th class="text-xs">Document Count</th>
-                                <th class="text-xs">Percentage</th>
-                                <th class="text-xs">Status</th>
+                                <th class="text-xs">Description</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($stats_types as $type): ?>
                                 <tr class="hover:bg-[#fafafa]">
                                     <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
-                                    <td class="text-sm text-[#1e1e1e]"><?php echo $type['document_count']; ?></td>
-                                    <td class="text-sm text-[#1e1e1e]">
-                                        <?php
-                                        $percentage = $totalDocuments > 0 ? round(($type['document_count'] / $totalDocuments) * 100, 1) : 0;
-                                        echo $percentage . '%';
-                                        ?>
-                                    </td>
-                                    <td class="text-sm">
-                                        <?php if ($type['document_count'] > 0): ?>
-                                            <span class="text-[#1e1e1e]">In Use</span>
-                                        <?php else: ?>
-                                            <span class="text-[#9e9e9e]">Unused</span>
-                                        <?php endif; ?>
-                                    </td>
+                                    <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -1293,7 +1239,7 @@ if ($action == 'list') {
         // Export to CSV
         function exportToCSV() {
             const rows = [];
-            const headers = ['ID', 'Type Name', 'Description', 'Document Count', 'Created At'];
+            const headers = ['ID', 'Type Name', 'Description', 'Created At'];
             rows.push(headers.join(','));
 
             <?php foreach ($types as $type): ?>
@@ -1301,7 +1247,6 @@ if ($action == 'list') {
                     '<?php echo $type['id']; ?>',
                     '"<?php echo htmlspecialchars($type['type_name']); ?>"',
                     '"<?php echo htmlspecialchars($type['description'] ?? ''); ?>"',
-                    '<?php echo $type['document_count']; ?>',
                     '"<?php echo $type['created_at']; ?>"'
                 ].join(','));
             <?php endforeach; ?>
@@ -1346,7 +1291,6 @@ if ($action == 'list') {
                                 <th>ID</th>
                                 <th>Type Name</th>
                                 <th>Description</th>
-                                <th>Documents</th>
                                 <th>Created</th>
                             </tr>
                         </thead>
@@ -1356,7 +1300,6 @@ if ($action == 'list') {
                                 <td><?php echo $type['id']; ?></td>
                                 <td><?php echo htmlspecialchars($type['type_name']); ?></td>
                                 <td><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
-                                <td><?php echo $type['document_count']; ?></td>
                                 <td><?php echo date('M j, Y', strtotime($type['created_at'])); ?></td>
                             </tr>
                             <?php endforeach; ?>

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 01, 2026 at 08:39 AM
+-- Generation Time: Apr 02, 2026 at 12:02 PM
 -- Server version: 10.11.14-MariaDB-0ubuntu0.24.04.1
 -- PHP Version: 8.3.6
 
@@ -29,33 +29,34 @@ SET time_zone = "+00:00";
 
 CREATE TABLE `distribution` (
   `id` int(11) NOT NULL,
-  `newspaper_id` int(11) NOT NULL,
+  `newspaper_id` int(11) DEFAULT NULL,
   `distributed_to` varchar(200) NOT NULL,
   `department` varchar(100) DEFAULT NULL,
   `copies` int(11) DEFAULT 1,
   `date_distributed` date NOT NULL,
   `distributed_by` varchar(100) DEFAULT NULL,
   `newspaper_ids` text DEFAULT NULL,
-  `newspapers_list` text DEFAULT NULL
+  `newspapers_list` text DEFAULT NULL,
+  `categories_list` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --
 -- Dumping data for table `distribution`
 --
 
-INSERT INTO `distribution` (`id`, `newspaper_id`, `distributed_to`, `department`, `copies`, `date_distributed`, `distributed_by`, `newspaper_ids`, `newspapers_list`) VALUES
-(2, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat', NULL, NULL),
-(5, 2, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL),
-(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL),
-(7, 7, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
-(8, 4, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
-(9, 3, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL),
-(10, 7, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL),
-(11, 3, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL),
-(12, 3, 'Mr Michael Williams', 'Procurement', 1, '2026-03-24', 'Nadia', NULL, NULL),
-(15, 2, 'Mr Michael Williams', 'Procurement', 2, '2026-03-31', 'Nadjat', '2,4', 'Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923'),
-(16, 7, 'Mrs Sarah Johnson', 'Administration', 4, '2026-03-31', 'Hollali', '7,2,4,3', 'Business & Financial Times (Business & Financial Times) - Issue: BUS-20260318-367|Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923|The Chronicle (The Chronicle) - Issue: THE-20260308-519'),
-(17, 9, 'Mr John', 'HR Department', 1, '2026-04-01', 'Hollali', '9', 'The Chronicle (The Chronicle) - Issue: THE-20260401-381');
+INSERT INTO `distribution` (`id`, `newspaper_id`, `distributed_to`, `department`, `copies`, `date_distributed`, `distributed_by`, `newspaper_ids`, `newspapers_list`, `categories_list`) VALUES
+(2, 2, 'Hollali Kelvin', 'IT Department', 1, '2026-03-08', 'Nadjat', NULL, NULL, NULL),
+(5, 2, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL, NULL),
+(6, 3, 'Mr John', 'HR', 1, '2026-03-08', 'Nadjat', NULL, NULL, NULL),
+(7, 7, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL, NULL),
+(8, 4, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL, NULL),
+(9, 3, 'Mr Calvin', 'IT Department', 1, '2026-03-18', 'Nadjat', NULL, NULL, NULL),
+(10, 7, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL, NULL),
+(11, 3, 'Hollali Kelvin', 'IT Department', 1, '2026-03-24', 'Nadjat', NULL, NULL, NULL),
+(12, 3, 'Mr Michael Williams', 'Procurement', 1, '2026-03-24', 'Nadia', NULL, NULL, NULL),
+(15, 2, 'Mr Michael Williams', 'Procurement', 2, '2026-03-31', 'Nadjat', '2,4', 'Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923', NULL),
+(16, 7, 'Mrs Sarah Johnson', 'Administration', 4, '2026-03-31', 'Hollali', '7,2,4,3', 'Business & Financial Times (Business & Financial Times) - Issue: BUS-20260318-367|Daily Guide (Daily Guide) - Issue: DAI-20260308-015|Ghanaian Times (Ghanaian Times) - Issue: GHA-20260308-923|The Chronicle (The Chronicle) - Issue: THE-20260308-519', NULL),
+(17, 9, 'Mr John', 'HR Department', 1, '2026-04-01', 'Hollali', '9', 'The Chronicle (The Chronicle) - Issue: THE-20260401-381', NULL);
 
 -- --------------------------------------------------------
 
@@ -79,7 +80,7 @@ CREATE TABLE `documents` (
 --
 
 INSERT INTO `documents` (`id`, `document_name`, `type`, `type_id`, `origin`, `copies_received`, `date_received`, `created_at`) VALUES
-(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 3, '2026-03-07', '2026-03-07 09:00:00'),
+(1, 'Bill', 'Legislative Documents', 1, 'Ministry of Education', 2, '2026-03-07', '2026-03-07 09:00:00'),
 (2, 'Education Reform Bill 2026', NULL, 1, 'Minsitry of Education', 0, '2026-03-30', '2026-03-30 15:08:00');
 
 -- --------------------------------------------------------
@@ -103,7 +104,8 @@ CREATE TABLE `document_distribution` (
 
 INSERT INTO `document_distribution` (`id`, `document_id`, `number_received`, `number_distributed`, `date_distributed`, `created_at`) VALUES
 (1, 1, 1, 1, '2026-03-18', '2026-03-18 11:34:49'),
-(2, 2, 275, 275, '2026-03-30', '2026-03-30 15:12:12');
+(2, 2, 275, 275, '2026-03-30', '2026-03-30 15:12:12'),
+(3, 1, 1, 1, '2026-04-02', '2026-04-02 11:28:02');
 
 -- --------------------------------------------------------
 
@@ -174,6 +176,7 @@ INSERT INTO `newspapers` (`id`, `newspaper_name`, `newspaper_number`, `date_rece
 CREATE TABLE `newspaper_categories` (
   `id` int(11) NOT NULL,
   `category_name` varchar(150) NOT NULL,
+  `newspaper_id` int(11) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
@@ -182,12 +185,12 @@ CREATE TABLE `newspaper_categories` (
 -- Dumping data for table `newspaper_categories`
 --
 
-INSERT INTO `newspaper_categories` (`id`, `category_name`, `description`, `created_at`) VALUES
-(1, 'Daily Graphic', NULL, '2026-03-07 18:32:15'),
-(2, 'Ghanaian Times', NULL, '2026-03-07 18:32:15'),
-(3, 'Business & Financial Times', NULL, '2026-03-07 18:32:15'),
-(4, 'Daily Guide', NULL, '2026-03-07 18:32:15'),
-(5, 'The Chronicle', NULL, '2026-03-07 18:32:15');
+INSERT INTO `newspaper_categories` (`id`, `category_name`, `newspaper_id`, `description`, `created_at`) VALUES
+(1, 'Daily Graphic', NULL, NULL, '2026-03-07 18:32:15'),
+(2, 'Ghanaian Times', NULL, NULL, '2026-03-07 18:32:15'),
+(3, 'Business & Financial Times', NULL, NULL, '2026-03-07 18:32:15'),
+(4, 'Daily Guide', NULL, NULL, '2026-03-07 18:32:15'),
+(5, 'The Chronicle', NULL, NULL, '2026-03-07 18:32:15');
 
 -- --------------------------------------------------------
 
@@ -259,9 +262,86 @@ CREATE TABLE `recipients` (
 INSERT INTO `recipients` (`id`, `name`, `is_active`, `created_at`) VALUES
 (1, 'Hollali Kelvin - IT Department', 1, '2026-03-24 03:53:23'),
 (2, 'Mr John - HR Department', 1, '2026-03-24 03:53:23'),
-(3, 'Doreenda Abbey - PVC Office', 0, '2026-03-24 03:53:23'),
+(3, 'Doreenda Abbey - PVC Office', 1, '2026-03-24 03:53:23'),
 (4, 'Mrs Sarah Johnson - Administration', 1, '2026-03-24 03:53:23'),
-(5, 'Mr Michael Williams - Procurement', 1, '2026-03-24 03:53:23');
+(5, 'Mr Michael Williams - Procurement', 1, '2026-03-24 03:53:23'),
+(7, 'Hollali', 1, '2026-04-02 10:31:27');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `recipient_category_subscriptions`
+--
+
+CREATE TABLE `recipient_category_subscriptions` (
+  `id` int(11) NOT NULL,
+  `recipient_id` int(11) NOT NULL,
+  `category_id` int(11) NOT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+--
+-- Dumping data for table `recipient_category_subscriptions`
+--
+
+INSERT INTO `recipient_category_subscriptions` (`id`, `recipient_id`, `category_id`, `created_at`) VALUES
+(1, 2, 3, '2026-04-02 11:50:46'),
+(2, 1, 3, '2026-04-02 11:51:28'),
+(3, 1, 4, '2026-04-02 11:51:28'),
+(4, 2, 5, '2026-04-02 11:51:28'),
+(5, 4, 4, '2026-04-02 11:51:28'),
+(6, 4, 2, '2026-04-02 11:51:28'),
+(7, 5, 3, '2026-04-02 11:51:28');
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `view_distribution_by_category`
+-- (See below for the actual view)
+--
+CREATE TABLE `view_distribution_by_category` (
+`id` int(11)
+,`distributed_to` varchar(200)
+,`department` varchar(100)
+,`date_distributed` date
+,`distributed_by` varchar(100)
+,`copies` int(11)
+,`categories_list` text
+);
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `view_recipient_subscriptions`
+-- (See below for the actual view)
+--
+CREATE TABLE `view_recipient_subscriptions` (
+`id` int(11)
+,`recipient_id` int(11)
+,`recipient_name` varchar(200)
+,`category_id` int(11)
+,`category_name` varchar(150)
+,`subscribed_on` timestamp
+,`total_newspapers_in_category` bigint(21)
+);
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `view_distribution_by_category`
+--
+DROP TABLE IF EXISTS `view_distribution_by_category`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `view_distribution_by_category`  AS SELECT `d`.`id` AS `id`, `d`.`distributed_to` AS `distributed_to`, `d`.`department` AS `department`, `d`.`date_distributed` AS `date_distributed`, `d`.`distributed_by` AS `distributed_by`, `d`.`copies` AS `copies`, `d`.`categories_list` AS `categories_list` FROM `distribution` AS `d` WHERE `d`.`categories_list` is not null ORDER BY `d`.`date_distributed` DESC ;
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `view_recipient_subscriptions`
+--
+DROP TABLE IF EXISTS `view_recipient_subscriptions`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `view_recipient_subscriptions`  AS SELECT `rcs`.`id` AS `id`, `r`.`id` AS `recipient_id`, `r`.`name` AS `recipient_name`, `nc`.`id` AS `category_id`, `nc`.`category_name` AS `category_name`, `rcs`.`created_at` AS `subscribed_on`, count(distinct `n`.`id`) AS `total_newspapers_in_category` FROM (((`recipient_category_subscriptions` `rcs` join `recipients` `r` on(`rcs`.`recipient_id` = `r`.`id`)) join `newspaper_categories` `nc` on(`rcs`.`category_id` = `nc`.`id`)) left join `newspapers` `n` on(`n`.`category_id` = `nc`.`id`)) WHERE `r`.`is_active` = 1 GROUP BY `rcs`.`id`, `r`.`id`, `r`.`name`, `nc`.`id`, `nc`.`category_name`, `rcs`.`created_at` ORDER BY `r`.`name` ASC, `nc`.`category_name` ASC ;
 
 --
 -- Indexes for dumped tables
@@ -273,7 +353,8 @@ INSERT INTO `recipients` (`id`, `name`, `is_active`, `created_at`) VALUES
 ALTER TABLE `distribution`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_newspaper_id` (`newspaper_id`),
-  ADD KEY `idx_date_distributed` (`date_distributed`);
+  ADD KEY `idx_date_distributed` (`date_distributed`),
+  ADD KEY `idx_categories_list` (`categories_list`(100));
 
 --
 -- Indexes for table `documents`
@@ -308,7 +389,8 @@ ALTER TABLE `newspapers`
 -- Indexes for table `newspaper_categories`
 --
 ALTER TABLE `newspaper_categories`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_newspaper_id` (`newspaper_id`);
 
 --
 -- Indexes for table `parcels_pickup`
@@ -332,6 +414,15 @@ ALTER TABLE `recipients`
   ADD KEY `idx_name` (`name`);
 
 --
+-- Indexes for table `recipient_category_subscriptions`
+--
+ALTER TABLE `recipient_category_subscriptions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_recipient_category` (`recipient_id`,`category_id`),
+  ADD KEY `fk_sub_recipient` (`recipient_id`),
+  ADD KEY `fk_sub_category` (`category_id`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -339,7 +430,7 @@ ALTER TABLE `recipients`
 -- AUTO_INCREMENT for table `distribution`
 --
 ALTER TABLE `distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `documents`
@@ -351,7 +442,7 @@ ALTER TABLE `documents`
 -- AUTO_INCREMENT for table `document_distribution`
 --
 ALTER TABLE `document_distribution`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `document_types`
@@ -387,7 +478,13 @@ ALTER TABLE `parcels_received`
 -- AUTO_INCREMENT for table `recipients`
 --
 ALTER TABLE `recipients`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `recipient_category_subscriptions`
+--
+ALTER TABLE `recipient_category_subscriptions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- Constraints for dumped tables
@@ -410,6 +507,13 @@ ALTER TABLE `documents`
 --
 ALTER TABLE `newspapers`
   ADD CONSTRAINT `fk_newspaper_category` FOREIGN KEY (`category_id`) REFERENCES `newspaper_categories` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `recipient_category_subscriptions`
+--
+ALTER TABLE `recipient_category_subscriptions`
+  ADD CONSTRAINT `fk_sub_category` FOREIGN KEY (`category_id`) REFERENCES `newspaper_categories` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_sub_recipient` FOREIGN KEY (`recipient_id`) REFERENCES `recipients` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

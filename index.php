@@ -173,104 +173,115 @@ try {
         $stats['month_newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // Recent activities - combine all recent items (removed department/recipient from distributions)
-    $recent_activities = [];
+    // Recent activity grouped by tab
+    $recent_document_activities = [];
+    $recent_parcel_activities = [];
+    $recent_newspaper_activities = [];
 
-    // Get recent documents
     $doc_result = $conn->query("
-        SELECT 'document' as type, document_name as title, date_received as date,
+        SELECT 'received' as type, document_name as title, date_received as date,
                CONCAT('Received: ', copies_received, ' copies') as details
-        FROM documents 
-        ORDER BY date_received DESC 
-        LIMIT 5
+        FROM documents
+        ORDER BY date_received DESC, id DESC
+        LIMIT 12
     ");
     if ($doc_result) {
         while ($row = $doc_result->fetch_assoc()) {
-            $recent_activities[] = $row;
+            $recent_document_activities[] = $row;
         }
     }
 
-    // Get recent parcels
-    $parcel_result = $conn->query("
-        SELECT 'parcel' as type, 
-               CONCAT(pr.tracking_id, ' - ', LEFT(pr.description, 30)) as title, 
-               pr.date_received as date,
-               CASE WHEN pp.id IS NULL THEN 'Pending' ELSE 'Picked up' END as status,
-               CONCAT('From: ', pr.sender) as details
-        FROM parcels_received pr 
-        LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id 
-        ORDER BY pr.date_received DESC 
-        LIMIT 5
-    ");
-    if ($parcel_result) {
-        while ($row = $parcel_result->fetch_assoc()) {
-            $recent_activities[] = $row;
-        }
-    }
-
-    // Get recent newspapers
-    $news_result = $conn->query("
-        SELECT 'newspaper' as type, 
-               CONCAT(newspaper_name, ' #', newspaper_number) as title, 
-               date_received as date,
-               CONCAT('Available: ', available_copies, ' copies') as details
-        FROM newspapers 
-        ORDER BY date_received DESC 
-        LIMIT 5
-    ");
-    if ($news_result) {
-        while ($row = $news_result->fetch_assoc()) {
-            $recent_activities[] = $row;
-        }
-    }
-
-    // Get recent distributions (simplified - removed department and recipient)
     $dist_result = $conn->query("
-        SELECT 'distribution' as type, 
-               d.document_name as title, 
+        SELECT 'distributed' as type,
+               d.document_name as title,
                dd.date_distributed as date,
                CONCAT(dd.number_distributed, ' copies distributed') as details
         FROM document_distribution dd
         JOIN documents d ON dd.document_id = d.id
-        ORDER BY dd.date_distributed DESC 
-        LIMIT 5
+        ORDER BY dd.date_distributed DESC, dd.id DESC
+        LIMIT 12
     ");
     if ($dist_result) {
         while ($row = $dist_result->fetch_assoc()) {
-            $recent_activities[] = $row;
+            $recent_document_activities[] = $row;
         }
     }
 
-    // Get recent pickups
+    usort($recent_document_activities, function ($a, $b) {
+        return strtotime($b['date']) - strtotime($a['date']);
+    });
+    $recent_document_activities = array_slice($recent_document_activities, 0, 12);
+
+    $parcel_result = $conn->query("
+        SELECT 'received' as type,
+               CONCAT(pr.tracking_id, ' - ', LEFT(pr.description, 30)) as title,
+               pr.date_received as date,
+               CONCAT('From: ', pr.sender) as details
+        FROM parcels_received pr
+        ORDER BY pr.date_received DESC, pr.id DESC
+        LIMIT 12
+    ");
+    if ($parcel_result) {
+        while ($row = $parcel_result->fetch_assoc()) {
+            $recent_parcel_activities[] = $row;
+        }
+    }
+
     $pickup_result = $conn->query("
-        SELECT 'pickup' as type, 
-               pr.tracking_id as title, 
+        SELECT 'picked up' as type,
+               pr.tracking_id as title,
                pp.date_picked as date,
                CONCAT('Picked by: ', pp.picked_by) as details
         FROM parcels_pickup pp
         JOIN parcels_received pr ON pp.parcel_id = pr.id
-        ORDER BY pp.date_picked DESC 
-        LIMIT 5
+        ORDER BY pp.date_picked DESC, pp.id DESC
+        LIMIT 12
     ");
     if ($pickup_result) {
         while ($row = $pickup_result->fetch_assoc()) {
-            $recent_activities[] = $row;
+            $recent_parcel_activities[] = $row;
         }
     }
 
-    // Sort by date (most recent first)
-    usort($recent_activities, function ($a, $b) {
+    usort($recent_parcel_activities, function ($a, $b) {
         return strtotime($b['date']) - strtotime($a['date']);
     });
+    $recent_parcel_activities = array_slice($recent_parcel_activities, 0, 12);
 
-    // Get recent pickups detailed
-    $recent_pickups = $conn->query("
-        SELECT pp.*, pr.tracking_id, pr.description, pr.sender
-        FROM parcels_pickup pp
-        JOIN parcels_received pr ON pp.parcel_id = pr.id
-        ORDER BY pp.date_picked DESC 
-        LIMIT 5
+    $news_result = $conn->query("
+        SELECT 'received' as type,
+               CONCAT(newspaper_name, ' #', newspaper_number) as title,
+               date_received as date,
+               CONCAT('Available: ', available_copies, ' copies') as details
+        FROM newspapers
+        ORDER BY date_received DESC, id DESC
+        LIMIT 12
     ");
+    if ($news_result) {
+        while ($row = $news_result->fetch_assoc()) {
+            $recent_newspaper_activities[] = $row;
+        }
+    }
+
+    $news_dist_result = $conn->query("
+        SELECT 'distributed' as type,
+               distributed_to as title,
+               date_distributed as date,
+               CONCAT(copies, ' category(s) distributed') as details
+        FROM distribution
+        ORDER BY date_distributed DESC, id DESC
+        LIMIT 12
+    ");
+    if ($news_dist_result) {
+        while ($row = $news_dist_result->fetch_assoc()) {
+            $recent_newspaper_activities[] = $row;
+        }
+    }
+
+    usort($recent_newspaper_activities, function ($a, $b) {
+        return strtotime($b['date']) - strtotime($a['date']);
+    });
+    $recent_newspaper_activities = array_slice($recent_newspaper_activities, 0, 12);
 
     // Dashboard ledger rows
     $dashboard_parcels = $conn->query("
@@ -423,6 +434,12 @@ try {
             gap: 16px;
         }
 
+        .activity-list.spread-layout {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
         .activity-item {
             padding-bottom: 16px;
             border-bottom: 1px solid #f0ece8;
@@ -431,6 +448,32 @@ try {
         .activity-item:last-child {
             border-bottom: 0;
             padding-bottom: 0;
+        }
+
+        .activity-list.spread-layout .activity-item {
+            height: 100%;
+            min-height: 136px;
+            padding: 18px 20px;
+            border: 1px solid #ece7e2;
+            border-radius: 22px;
+            background: #fcfcfb;
+        }
+
+        .activity-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 1px solid #ece7e2;
+        }
+
+        @media (max-width: 767px) {
+            .activity-meta {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
 
         .circular-panel {
@@ -473,6 +516,52 @@ try {
             border-radius: 22px;
             padding: 16px 18px;
             background: #fcfcfb;
+        }
+
+        .activity-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .activity-tab {
+            border: 1px solid #d6d3d1;
+            background: #fafaf9;
+            color: #57534e;
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .activity-tab:hover {
+            background: #f5f5f4;
+            color: #1c1917;
+        }
+
+        .activity-tab.active {
+            background: #1c1917;
+            border-color: #1c1917;
+            color: #ffffff;
+        }
+
+        .activity-pane {
+            display: none;
+        }
+
+        .activity-pane.active {
+            display: block;
+        }
+
+        .activity-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px solid #f0ece8;
         }
     </style>
 </head>
@@ -536,8 +625,8 @@ try {
                     </div>
                 </div>
 
-                <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div class="xl:col-span-2 flex flex-col gap-6">
+                <section class="flex flex-col gap-6">
+                    <div class="flex flex-col gap-6">
                         <div class="panel circular-panel">
                             <div class="panel-header flex items-center justify-between">
                                 <h2 class="text-lg font-semibold text-[#1c1917]">Recent parcels</h2>
@@ -582,82 +671,94 @@ try {
                                 <div class="flex items-center gap-2" id="dashboardParcelsPaginationControls"></div>
                             </div>
                         </div>
-
-                        <div class="panel circular-panel">
-                            <div class="panel-header flex items-center justify-between">
-                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent pickups</h2>
-                                <span class="text-sm muted"><?php echo number_format($stats['total_pickups']); ?> total</span>
-                            </div>
-                            <div class="panel-body circular-body">
-                                <?php if ($recent_pickups && $recent_pickups->num_rows > 0): ?>
-                                    <div class="activity-list circular-list">
-                                        <?php while ($pickup = $recent_pickups->fetch_assoc()): ?>
-                                            <div class="activity-item">
-                                                <div class="flex items-start justify-between gap-4">
-                                                    <div>
-                                                        <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($pickup['tracking_id']); ?></p>
-                                                        <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($pickup['picked_by']); ?></p>
-                                                        <p class="mt-1 text-sm muted"><?php echo date('M j, Y', strtotime($pickup['date_picked'])); ?></p>
-                                                    </div>
-                                                    <span class="status-badge status-picked">Picked up</span>
-                                                </div>
-                                            </div>
-                                        <?php endwhile; ?>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="text-sm muted">No recent pickups available.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
                     </div>
 
-                    <div class="flex flex-col gap-6">
-                        <div class="panel">
-                            <div class="panel-header">
+                    <div class="panel circular-panel">
+                        <div class="panel-header space-y-4">
+                            <div class="flex items-center justify-between">
                                 <h2 class="text-lg font-semibold text-[#1c1917]">Recent activity</h2>
+                                <span class="text-sm muted">Across all records</span>
                             </div>
-                            <div class="panel-body">
-                                <?php if (!empty($recent_activities)): ?>
-                                    <div class="activity-list">
-                                        <?php foreach (array_slice($recent_activities, 0, 6) as $activity): ?>
-                                            <div class="activity-item">
-                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars(substr($activity['title'], 0, 52)); ?></p>
+                            <div class="activity-tabs">
+                                <button type="button" class="activity-tab active" data-tab-target="newspaperActivity">Newspaper</button>
+                                <button type="button" class="activity-tab" data-tab-target="documentActivity">Documents</button>
+                                <button type="button" class="activity-tab" data-tab-target="parcelActivity">Parcels</button>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <div id="newspaperActivity" class="activity-pane active">
+                                <?php if (!empty($recent_newspaper_activities)): ?>
+                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
+                                        <?php foreach ($recent_newspaper_activities as $activity): ?>
+                                            <div class="activity-item" data-activity-item>
+                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
                                                 <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
-                                                <p class="mt-2 text-xs muted"><?php echo ucfirst($activity['type']); ?> • <?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
+                                                <div class="activity-meta">
+                                                    <span class="status-badge <?php echo $activity['type'] === 'distributed' ? 'status-picked' : 'status-pending'; ?>">
+                                                        <?php echo ucfirst($activity['type']); ?>
+                                                    </span>
+                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
+                                                </div>
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
+                                    <div class="activity-pagination" data-activity-pagination>
+                                        <span class="text-xs muted" data-activity-pagination-info></span>
+                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
+                                    </div>
                                 <?php else: ?>
-                                    <p class="text-sm muted">No recent activities found.</p>
+                                    <p class="text-sm muted">No recent newspaper activities found.</p>
                                 <?php endif; ?>
                             </div>
-                        </div>
 
-                        <div class="panel">
-                            <div class="panel-header">
-                                <h2 class="text-lg font-semibold text-[#1c1917]">Overview</h2>
+                            <div id="documentActivity" class="activity-pane">
+                                <?php if (!empty($recent_document_activities)): ?>
+                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
+                                        <?php foreach ($recent_document_activities as $activity): ?>
+                                            <div class="activity-item" data-activity-item>
+                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
+                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
+                                                <div class="activity-meta">
+                                                    <span class="status-badge <?php echo $activity['type'] === 'distributed' ? 'status-picked' : 'status-pending'; ?>">
+                                                        <?php echo ucfirst($activity['type']); ?>
+                                                    </span>
+                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="activity-pagination" data-activity-pagination>
+                                        <span class="text-xs muted" data-activity-pagination-info></span>
+                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
+                                    </div>
+                                <?php else: ?>
+                                    <p class="text-sm muted">No recent document activities found.</p>
+                                <?php endif; ?>
                             </div>
-                            <div class="panel-body space-y-4">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm muted">Documents this month</span>
-                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['month_documents']); ?></span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm muted">Parcels this month</span>
-                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['month_parcels']); ?></span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm muted">Pending parcels</span>
-                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['pending_parcels']); ?></span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm muted">Total copies received</span>
-                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['total_copies_received']); ?></span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm muted">Total copies distributed</span>
-                                    <span class="text-sm font-medium text-[#1c1917]"><?php echo number_format($stats['total_copies_distributed']); ?></span>
-                                </div>
+
+                            <div id="parcelActivity" class="activity-pane">
+                                <?php if (!empty($recent_parcel_activities)): ?>
+                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
+                                        <?php foreach ($recent_parcel_activities as $activity): ?>
+                                            <div class="activity-item" data-activity-item>
+                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
+                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
+                                                <div class="activity-meta">
+                                                    <span class="status-badge <?php echo $activity['type'] === 'picked up' ? 'status-picked' : 'status-pending'; ?>">
+                                                        <?php echo ucfirst($activity['type']); ?>
+                                                    </span>
+                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="activity-pagination" data-activity-pagination>
+                                        <span class="text-xs muted" data-activity-pagination-info></span>
+                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
+                                    </div>
+                                <?php else: ?>
+                                    <p class="text-sm muted">No recent parcel activities found.</p>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -702,6 +803,82 @@ try {
 
             renderClock();
             setInterval(renderClock, 1000);
+        })();
+
+        (function() {
+            const tabs = Array.from(document.querySelectorAll('.activity-tab'));
+            const panes = Array.from(document.querySelectorAll('.activity-pane'));
+
+            if (!tabs.length || !panes.length) {
+                return;
+            }
+
+            tabs.forEach((tab) => {
+                tab.addEventListener('click', function() {
+                    const targetId = tab.dataset.tabTarget;
+
+                    tabs.forEach((item) => item.classList.remove('active'));
+                    panes.forEach((pane) => pane.classList.remove('active'));
+
+                    tab.classList.add('active');
+                    const targetPane = document.getElementById(targetId);
+                    if (targetPane) {
+                        targetPane.classList.add('active');
+                    }
+                });
+            });
+        })();
+
+        (function() {
+            const panes = Array.from(document.querySelectorAll('.activity-pane'));
+
+            panes.forEach((pane) => {
+                const list = pane.querySelector('[data-activity-list]');
+                const items = Array.from(pane.querySelectorAll('[data-activity-item]'));
+                const pagination = pane.querySelector('[data-activity-pagination]');
+                const info = pane.querySelector('[data-activity-pagination-info]');
+                const controls = pane.querySelector('[data-activity-pagination-controls]');
+                const pageSize = Number(list?.dataset.pageSize || 3);
+                let currentPage = 1;
+
+                if (!list || !items.length || !pagination || !info || !controls) {
+                    return;
+                }
+
+                function render() {
+                    const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+                    currentPage = Math.min(currentPage, totalPages);
+
+                    const startIndex = (currentPage - 1) * pageSize;
+                    const endIndex = startIndex + pageSize;
+
+                    items.forEach((item, index) => {
+                        item.style.display = index >= startIndex && index < endIndex ? '' : 'none';
+                    });
+
+                    const from = startIndex + 1;
+                    const to = Math.min(endIndex, items.length);
+                    info.textContent = `Page ${currentPage} of ${totalPages} • Showing ${from}-${to} of ${items.length}`;
+                    pagination.classList.toggle('hidden', items.length <= pageSize);
+
+                    controls.innerHTML = `
+                        <button type="button" class="simple-button" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>
+                        <button type="button" class="simple-button" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+                    `;
+
+                    const [prevButton, nextButton] = controls.querySelectorAll('button');
+                    prevButton.addEventListener('click', function() {
+                        currentPage = Math.max(1, currentPage - 1);
+                        render();
+                    });
+                    nextButton.addEventListener('click', function() {
+                        currentPage = Math.min(totalPages, currentPage + 1);
+                        render();
+                    });
+                }
+
+                render();
+            });
         })();
 
         (function() {

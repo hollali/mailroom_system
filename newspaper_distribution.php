@@ -1,5 +1,5 @@
 <?php
-// newspaper_distribution.php
+// newspaper_distribution.php - Distribute newspapers by category (Once per day per recipient)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -10,7 +10,17 @@ session_start();
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) {
     $recipient_id = isset($_POST['recipient_id']) ? (int)$_POST['recipient_id'] : 0;
     $distributed_by = trim($_POST['distributed_by']);
-    $selected_newspapers = $_POST['selected_newspapers'] ?? [];
+
+    // Handle selected_categories - it might be a string or array
+    $selected_categories = [];
+    if (isset($_POST['selected_categories'])) {
+        if (is_array($_POST['selected_categories'])) {
+            $selected_categories = $_POST['selected_categories'];
+        } elseif (is_string($_POST['selected_categories']) && !empty($_POST['selected_categories'])) {
+            $selected_categories = explode(',', $_POST['selected_categories']);
+        }
+    }
+
     $date_distributed = date('Y-m-d');
 
     if ($recipient_id <= 0) {
@@ -18,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             'type' => 'error',
             'message' => "Please select a recipient"
         ];
-        header('Location: distribution_history.php');
+        header('Location: newspaper_distribution.php');
         exit();
     }
 
@@ -29,12 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             'type' => 'error',
             'message' => "Invalid recipient selected"
         ];
-        header('Location: distribution_history.php');
+        header('Location: newspaper_distribution.php');
         exit();
     }
 
     $full_name = $recipient['name'];
-    // Split name and department if format is "Name - Department"
     $individual_name = $full_name;
     $department = '';
     if (strpos($full_name, ' - ') !== false) {
@@ -43,101 +52,66 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
         $department = $parts[1];
     }
 
-    if (!empty($selected_newspapers)) {
+    // CHECK IF RECIPIENT ALREADY RECEIVED DISTRIBUTION TODAY
+    $check_today_stmt = $conn->prepare("SELECT id, categories_list FROM distribution WHERE distributed_to = ? AND department = ? AND date_distributed = ?");
+    $check_today_stmt->bind_param("sss", $individual_name, $department, $date_distributed);
+    $check_today_stmt->execute();
+    $today_distribution = $check_today_stmt->get_result()->fetch_assoc();
+    $check_today_stmt->close();
+
+    if ($today_distribution) {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Newspaper(s) have been distributed to $individual_name already today."
+        ];
+        header('Location: newspaper_distribution.php');
+        exit();
+    }
+
+    if (!empty($selected_categories)) {
         $conn->begin_transaction();
 
         try {
-            $success_count = 0;
-            $distributed_newspapers = [];
-            $newspaper_ids = [];
+            $category_names = [];
 
-            foreach ($selected_newspapers as $newspaper_id) {
-                // Get newspaper details
-                $result = $conn->query("SELECT n.*, nc.category_name FROM newspapers n 
-                                        LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-                                        WHERE n.id = $newspaper_id AND n.available_copies > 0");
-                $paper = $result->fetch_assoc();
-
-                if ($paper) {
-                    // Update newspaper available copies (distribute 1 copy)
-                    $conn->query("UPDATE newspapers SET available_copies = available_copies - 1 WHERE id = $newspaper_id");
-
-                    // Update status based on new available copies
-                    $new_available = $paper['available_copies'] - 1;
-                    if ($new_available == 0) {
-                        $conn->query("UPDATE newspapers SET status = 'distributed' WHERE id = $newspaper_id");
-                    } else {
-                        $conn->query("UPDATE newspapers SET status = 'partial' WHERE id = $newspaper_id");
-                    }
-
-                    $newspaper_ids[] = $newspaper_id;
-                    $distributed_newspapers[] = $paper['newspaper_name'] . " (" . $paper['category_name'] . ") - Issue: " . $paper['newspaper_number'];
-                    $success_count++;
+            // Get category names for selected categories
+            foreach ($selected_categories as $category_id) {
+                $category_id = (int)$category_id;
+                $cat_result = $conn->query("SELECT category_name FROM newspaper_categories WHERE id = $category_id");
+                $category = $cat_result->fetch_assoc();
+                if ($category) {
+                    $category_names[] = $category['category_name'];
                 }
             }
 
-            if ($success_count > 0) {
-                // Check if there's already a distribution for this recipient on the same date
-                $check_stmt = $conn->prepare("SELECT id, newspaper_ids, newspapers_list FROM distribution WHERE distributed_to = ? AND department = ? AND date_distributed = ?");
-                $check_stmt->bind_param("sss", $individual_name, $department, $date_distributed);
-                $check_stmt->execute();
-                $existing = $check_stmt->get_result()->fetch_assoc();
-                $check_stmt->close();
+            $success_count = count($selected_categories);
+            $categories_str = implode(', ', $category_names);
 
-                if ($existing) {
-                    // Update existing record - append new newspapers
-                    $existing_newspaper_ids = explode(',', $existing['newspaper_ids']);
-                    $existing_newspapers_list = explode('|', $existing['newspapers_list']);
+            // Insert new distribution record
+            $stmt = $conn->prepare("INSERT INTO distribution (distributed_to, department, copies, date_distributed, distributed_by, categories_list) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssisss", $individual_name, $department, $success_count, $date_distributed, $distributed_by, $categories_str);
 
-                    $all_newspaper_ids = array_merge($existing_newspaper_ids, $newspaper_ids);
-                    $all_newspapers_list = array_merge($existing_newspapers_list, $distributed_newspapers);
-
-                    $updated_newspaper_ids = implode(',', $all_newspaper_ids);
-                    $updated_newspapers_list = implode('|', $all_newspapers_list);
-                    $updated_copies = count($all_newspaper_ids);
-
-                    $update_stmt = $conn->prepare("UPDATE distribution SET newspaper_ids = ?, newspapers_list = ?, copies = ?, distributed_by = ? WHERE id = ?");
-                    $update_stmt->bind_param("ssisi", $updated_newspaper_ids, $updated_newspapers_list, $updated_copies, $distributed_by, $existing['id']);
-                    $update_stmt->execute();
-                    $update_stmt->close();
-
-                    $message = "$success_count additional newspaper(s) distributed to $individual_name";
-                } else {
-                    // Insert new distribution record with all newspapers
-                    $newspaper_ids_str = implode(',', $newspaper_ids);
-                    $newspapers_list_str = implode('|', $distributed_newspapers);
-
-                    $stmt = $conn->prepare("INSERT INTO distribution (newspaper_id, newspaper_ids, newspapers_list, distributed_to, department, copies, date_distributed, distributed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                    // Use first newspaper_id as the main reference, but store all in newspaper_ids
-                    $first_newspaper_id = $newspaper_ids[0];
-                    $stmt->bind_param("issssiss", $first_newspaper_id, $newspaper_ids_str, $newspapers_list_str, $individual_name, $department, $success_count, $date_distributed, $distributed_by);
-                    $stmt->execute();
-                    $stmt->close();
-
-                    $message = "$success_count newspaper(s) distributed to $individual_name";
-                }
-
-                $_SESSION['toast'] = [
-                    'type' => 'success',
-                    'message' => $message
-                ];
-
-                // Store last distribution info in session
-                $_SESSION['last_distribution'] = [
-                    'individual' => $individual_name,
-                    'department' => $department,
-                    'count' => $success_count,
-                    'newspapers' => $distributed_newspapers,
-                    'date' => $date_distributed,
-                    'distributed_by' => $distributed_by,
-                    'timestamp' => time()
-                ];
+            if ($stmt->execute()) {
+                $message = "Newspaper has been distributed to $individual_name";
             } else {
-                $_SESSION['toast'] = [
-                    'type' => 'error',
-                    'message' => "No newspapers were available for distribution"
-                ];
+                throw new Exception("Failed to insert distribution");
             }
+            $stmt->close();
+
+            $_SESSION['toast'] = [
+                'type' => 'success',
+                'message' => $message
+            ];
+
+            $_SESSION['last_distribution'] = [
+                'individual' => $individual_name,
+                'department' => $department,
+                'count' => $success_count,
+                'categories' => $category_names,
+                'date' => $date_distributed,
+                'distributed_by' => $distributed_by,
+                'timestamp' => time()
+            ];
 
             $conn->commit();
         } catch (Exception $e) {
@@ -150,60 +124,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
     } else {
         $_SESSION['toast'] = [
             'type' => 'error',
-            'message' => "No newspapers selected for distribution"
+            'message' => "No categories selected for distribution"
         ];
     }
 
-    header('Location: distribution_history.php');
+    header('Location: newspaper_distribution.php');
     exit();
 }
 
-// Handle AJAX request to dismiss last distribution notification
-if (isset($_POST['ajax']) && $_POST['ajax'] == 'dismiss_last_distribution') {
-    if (isset($_SESSION['last_distribution'])) {
-        unset($_SESSION['last_distribution']);
-        echo json_encode(['success' => true]);
-    } else {
-        echo json_encode(['success' => false]);
-    }
-    exit();
-}
-
-// Get all active recipients for dropdown
+// Get all active recipients
 $recipients = $conn->query("SELECT id, name FROM recipients WHERE is_active = 1 ORDER BY name");
 
-// Get all available newspapers with their categories
-$available_newspapers = $conn->query("SELECT n.*, nc.category_name, nc.id as category_id 
-                                     FROM newspapers n 
-                                     LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-                                     WHERE n.available_copies > 0 
-                                     ORDER BY nc.category_name, n.newspaper_name");
+// Get all categories for distribution
+$categories_for_distribution = $conn->query("SELECT id, category_name FROM newspaper_categories ORDER BY category_name");
 
-// Group newspapers by category for display
-$newspapers_by_category = [];
-$category_totals = [];
-
-if ($available_newspapers && $available_newspapers->num_rows > 0) {
-    while ($row = $available_newspapers->fetch_assoc()) {
-        $cat_name = $row['category_name'] ?? 'Uncategorized';
-        $cat_id = $row['category_id'] ?? 0;
-
-        if (!isset($newspapers_by_category[$cat_name])) {
-            $newspapers_by_category[$cat_name] = [
-                'id' => $cat_id,
-                'newspapers' => []
-            ];
-            $category_totals[$cat_name] = 0;
-        }
-        $newspapers_by_category[$cat_name]['newspapers'][] = $row;
-        $category_totals[$cat_name] += $row['available_copies'];
+// Get recipients who already received distribution today
+$already_received_today = [];
+$today_recipients_query = $conn->query("
+    SELECT DISTINCT distributed_to, department 
+    FROM distribution 
+    WHERE date_distributed = CURDATE() 
+    AND categories_list IS NOT NULL
+    ORDER BY distributed_to
+");
+while ($row = $today_recipients_query->fetch_assoc()) {
+    $name = $row['distributed_to'];
+    if ($row['department']) {
+        $name .= ' (' . $row['department'] . ')';
     }
+    $already_received_today[] = $name;
 }
 
-// Get statistics
-$total_available = $conn->query("SELECT SUM(available_copies) as total FROM newspapers")->fetch_assoc()['total'] ?? 0;
-$total_titles = $conn->query("SELECT COUNT(*) as count FROM newspapers WHERE available_copies > 0")->fetch_assoc()['count'] ?? 0;
-$total_categories = count($newspapers_by_category);
+$already_received_lookup = array_fill_keys($already_received_today, true);
 
 // Get toast message from session
 $toast = null;
@@ -212,7 +164,6 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
-// Include sidebar
 include './sidebar.php';
 ?>
 
@@ -234,89 +185,36 @@ include './sidebar.php';
 
         .category-card {
             border: 1px solid #e5e5e5;
-            border-radius: 0.5rem;
-            overflow: hidden;
+            border-radius: 4px;
             background-color: white;
             margin-bottom: 1rem;
-        }
-
-        .category-header {
-            background-color: #fafafa;
-            padding: 1rem;
-            border-bottom: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .newspaper-item {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #f0f0f0;
-            transition: background-color 0.2s;
             cursor: pointer;
         }
 
-        .newspaper-item:hover {
-            background-color: #fafafa;
+        .category-card:hover {
+            background-color: #fafaf9;
         }
 
-        .newspaper-item:last-child {
-            border-bottom: none;
-        }
-
-        .newspaper-item.selected {
-            background-color: #f0f7ff;
-            border-left: 3px solid #1e1e1e;
-        }
-
-        .newspaper-checkbox {
-            width: 1.2rem;
-            height: 1.2rem;
-            cursor: pointer;
-            accent-color: #1e1e1e;
-            margin-right: 0.75rem;
-        }
-
-        .category-checkbox {
-            width: 1.2rem;
-            height: 1.2rem;
-            cursor: pointer;
-            accent-color: #1e1e1e;
-        }
-
-        .issue-number {
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #6b7280;
-        }
-
-        .available-badge {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.75rem;
-            font-weight: 500;
+        .category-card.selected {
+            border: 2px solid #1c1917;
+            background-color: #fafaf9;
         }
 
         .distribute-btn {
-            background-color: #1e1e1e;
+            background-color: #1c1917;
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
+            padding: 6px 12px;
+            border-radius: 4px;
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 6px;
             cursor: pointer;
-            transition: all 0.2s ease;
             border: none;
-            font-size: 0.875rem;
+            font-size: 13px;
         }
 
         .distribute-btn:hover {
-            background-color: #2d2d2d;
+            background-color: #292524;
         }
 
         .distribute-btn:disabled {
@@ -332,266 +230,173 @@ include './sidebar.php';
         }
 
         .toast {
-            min-width: 300px;
-            max-width: 400px;
+            min-width: 260px;
             background-color: white;
             border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            animation: slideIn 0.3s ease-in-out;
+            padding: 10px 16px;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 10px;
         }
 
         .toast-success {
-            border-left: 4px solid #10b981;
+            border-left: 3px solid #10b981;
         }
 
         .toast-error {
-            border-left: 4px solid #ef4444;
+            border-left: 3px solid #ef4444;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        .toast.fade-out {
-            animation: fadeOut 0.3s ease-in-out forwards;
-        }
-
-        .notification {
-            animation: slideDown 0.3s ease-in-out;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .notification.fade-out {
-            animation: fadeOutUp 0.3s ease-in-out forwards;
-        }
-
-        .notification-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 3px;
-            background-color: rgba(16, 185, 129, 0.3);
-            width: 100%;
-            animation: progress 3s linear forwards;
-        }
-
-        @keyframes slideDown {
-            from {
-                transform: translateY(-100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOutUp {
-            from {
-                transform: translateY(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateY(-100%);
-                opacity: 0;
-            }
-        }
-
-        @keyframes progress {
-            from {
-                width: 100%;
-            }
-
-            to {
-                width: 0%;
-            }
-        }
-
-        .dismiss-btn {
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .dismiss-btn:hover {
-            color: #1e1e1e;
-            transform: scale(1.1);
-        }
-
-        .recipient-select {
-            background-color: white;
+        .toast-warning {
+            border-left: 3px solid #f59e0b;
         }
 
         .selected-count-badge {
-            background-color: #1e1e1e;
+            background-color: #1c1917;
             color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.75rem;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
             font-weight: 500;
         }
 
-        .fab {
+        .category-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        .modal {
             position: fixed;
-            bottom: 30px;
-            right: 30px;
-            width: 60px;
-            height: 60px;
-            background-color: #1e1e1e;
-            border-radius: 50%;
-            display: flex;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: none;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-size: 24px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            max-width: 450px;
+            width: 90%;
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .btn-secondary {
+            background: white;
+            border: 1px solid #e5e5e5;
+            padding: 6px 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            z-index: 100;
-            border: none;
+            font-size: 13px;
         }
 
-        .fab:hover {
-            background-color: #2d2d2d;
-            transform: scale(1.1);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-        }
-
-        .fab-tooltip {
-            position: absolute;
-            right: 70px;
-            background-color: #1e1e1e;
+        .btn-primary-small {
+            background: #1c1917;
             color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 14px;
-            white-space: nowrap;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
+            border: none;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
         }
 
-        .fab:hover .fab-tooltip {
-            opacity: 1;
+        .info-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .warning-box {
+            background: #fef3c7;
+            border: 1px solid #fde68a;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
     </style>
 </head>
 
 <body class="bg-[#f5f5f4]">
-    <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="flex">
-        <main class="flex-1 ml-60 min-h-screen">
-            <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
-                <div class="flex justify-between items-center">
+        <main class="flex-1 ml-60">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
                     <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Distribution</h1>
-                        <p class="text-sm text-[#6e6e6e] mt-1">View and select newspapers for distribution</p>
+                        <h1 class="text-xl font-medium">Newspaper Distribution</h1>
+                        <p class="text-sm text-gray-500 mt-1">Select categories to distribute to recipients</p>
                     </div>
-                    <div class="flex gap-2">
-                        <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
-                            <i class="fa-solid fa-hand-holding-hand"></i>
-                            <span>Distribute (<span id="selectedCount">0</span>)</span>
-                        </button>
-                    </div>
+                    <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
+                        <i class="fa-solid fa-hand-holding-hand"></i>
+                        <span>Distribute (<span id="selectedCount">0</span> categories)</span>
+                    </button>
                 </div>
-            </div>
 
-            <div class="p-8">
-                <!-- Available Newspapers Display (Selectable view) -->
-                <div class="bg-white border border-[#e5e5e5] rounded-lg p-6">
+                <div class="bg-white border border-gray-200 p-6">
                     <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-lg font-medium text-[#1e1e1e]">Select Newspapers to Distribute</h2>
+                        <h2 class="text-base font-medium">Select Categories</h2>
                         <div class="selected-count-badge">
-                            <i class="fa-regular fa-circle-check mr-1"></i>
-                            <span id="selectedCount">0</span> selected
+                            <span id="selectedCountBadge">0</span> selected
                         </div>
                     </div>
 
-                    <?php if (!empty($newspapers_by_category)): ?>
-                        <div class="space-y-4">
-                            <?php foreach ($newspapers_by_category as $category_name => $category_data): ?>
-                                <?php $newspapers = $category_data['newspapers']; ?>
-                                <div class="category-card">
-                                    <div class="category-header">
-                                        <div class="flex items-center justify-between w-full">
-                                            <div class="flex items-center gap-3">
-                                                <input type="checkbox"
-                                                    class="category-checkbox"
-                                                    id="category-<?php echo md5($category_name); ?>"
-                                                    onchange="toggleCategorySelection('<?php echo md5($category_name); ?>', [<?php echo implode(',', array_column($newspapers, 'id')); ?>])">
-                                                <div>
-                                                    <h3 class="font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($category_name); ?></h3>
-                                                    <span class="text-xs text-[#6e6e6e]"><?php echo count($newspapers); ?> titles</span>
-                                                </div>
-                                            </div>
-                                            <span class="available-badge">
-                                                <?php echo $category_totals[$category_name]; ?> copies available
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div class="divide-y divide-[#f0f0f0]">
-                                        <?php foreach ($newspapers as $paper): ?>
-                                            <div class="newspaper-item">
-                                                <input type="checkbox"
-                                                    class="newspaper-checkbox"
-                                                    id="newspaper-<?php echo $paper['id']; ?>"
-                                                    value="<?php echo $paper['id']; ?>"
-                                                    onchange="toggleNewspaperSelection(<?php echo $paper['id']; ?>)">
-                                                <div class="flex-1 flex items-center justify-between">
-                                                    <div>
-                                                        <span class="font-medium"><?php echo htmlspecialchars($paper['newspaper_name']); ?></span>
-                                                        <span class="text-xs text-[#6e6e6e] ml-2 issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></span>
-                                                    </div>
-                                                    <div class="flex items-center gap-4">
-                                                        <span class="text-xs <?php echo $paper['available_copies'] > 0 ? 'text-green-600' : 'text-red-600'; ?> font-medium">
-                                                            <?php echo $paper['available_copies']; ?> copies
-                                                        </span>
-                                                        <span class="text-xs text-[#6e6e6e]">
-                                                            <?php echo date('M j, Y', strtotime($paper['date_received'])); ?>
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
+                    <?php if ($categories_for_distribution && $categories_for_distribution->num_rows > 0): ?>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <?php while ($category = $categories_for_distribution->fetch_assoc()): ?>
+                                <div class="category-card p-3" data-category-id="<?php echo $category['id']; ?>" onclick="toggleCategorySelection(this, <?php echo $category['id']; ?>)">
+                                    <div class="flex items-center gap-2">
+                                        <input type="checkbox"
+                                            class="category-checkbox"
+                                            id="category-<?php echo $category['id']; ?>"
+                                            onclick="event.stopPropagation(); toggleCategorySelectionById(<?php echo $category['id']; ?>)">
+                                        <label for="category-<?php echo $category['id']; ?>" class="text-sm font-medium cursor-pointer" onclick="event.stopPropagation()">
+                                            <?php echo htmlspecialchars($category['category_name']); ?>
+                                        </label>
                                     </div>
                                 </div>
-                            <?php endforeach; ?>
+                            <?php endwhile; ?>
                         </div>
                     <?php else: ?>
-                        <div class="text-center py-8 text-[#6e6e6e]">
-                            <i class="fa-regular fa-newspaper text-3xl mb-2"></i>
-                            <p>No newspapers available for distribution</p>
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
+                            <p>No categories found</p>
+                            <p class="text-sm mt-2"><a href="categories.php" class="text-blue-600 hover:underline">Add categories first</a></p>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -600,136 +405,163 @@ include './sidebar.php';
     </div>
 
     <!-- Distribution Modal -->
-    <div id="distributeModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6 modal-content">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Distribute Newspapers</h2>
-                <button type="button" onclick="closeDistributeModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+    <div id="distributeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirm Distribution</h3>
+                <button type="button" onclick="closeDistributeModal()" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-
-            <div class="mb-4 p-3 bg-[#fafafa] border border-[#e5e5e5] rounded-md">
-                <p class="text-sm text-[#6e6e6e] mb-1">Selected Newspapers:</p>
-                <p class="text-lg font-semibold text-[#1e1e1e]"><span id="modalSelectedCountDisplay">0</span> newspaper(s)</p>
-            </div>
-
-            <form method="POST" action="newspaper_distribution.php" id="distributeForm">
-                <input type="hidden" name="distribute_submit" value="1">
-                <input type="hidden" name="selected_newspapers" id="selected_newspapers_hidden" value="">
-
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Select Recipient *</label>
-                        <select name="recipient_id" id="recipient_select" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white recipient-select">
-                            <option value="">-- Select a recipient --</option>
-                            <?php
-                            $recipients->data_seek(0);
-                            while ($recipient = $recipients->fetch_assoc()):
-                            ?>
-                                <option value="<?php echo $recipient['id']; ?>"><?php echo htmlspecialchars($recipient['name']); ?></option>
-                            <?php endwhile; ?>
-                        </select>
-                        <p class="text-xs text-[#6e6e6e] mt-1">
-                            <i class="fa-regular fa-building mr-1"></i>
-                            <a href="recipients.php" class="text-blue-600 hover:underline">Manage recipients</a>
-                        </p>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Distributed By *</label>
-                        <input type="text" name="distributed_by" id="modal_distributed_by" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="Your name" autocomplete="off">
-                    </div>
+            <div class="modal-body">
+                <div class="mb-4 p-3 bg-gray-50 border border-gray-200">
+                    <p class="text-sm text-gray-600 mb-1">Selected Categories:</p>
+                    <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> category(ies)</p>
                 </div>
 
-                <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-[#e5e5e5]">
-                    <button type="button" onclick="closeDistributeModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="button"
-                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]"
-                        onclick="promptDistributionConfirmation()">
-                        <i class="fa-solid fa-hand-holding-hand mr-1"></i>
-                        Distribute <span id="modalSelectedCount">0</span>
-                    </button>
+                <div class="mb-3">
+                    <label class="block text-xs text-gray-600 mb-1">Recipient</label>
+                    <select id="modal_recipient_select" class="w-full p-2 border border-gray-200 text-sm">
+                        <option value="">-- Select a recipient --</option>
+                        <?php
+                        $recipients->data_seek(0);
+                        while ($recipient = $recipients->fetch_assoc()):
+                        ?>
+                            <option value="<?php echo $recipient['id']; ?>"><?php echo htmlspecialchars($recipient['name']); ?></option>
+                        <?php endwhile; ?>
+                    </select>
                 </div>
-            </form>
-        </div>
-    </div>
 
-    <div id="distributionConfirmModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Distribution</h2>
-                <button type="button" onclick="closeDistributionConfirmModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">Distributed By</label>
+                    <input type="text" id="modal_distributed_by" class="w-full p-2 border border-gray-200 text-sm" placeholder="Your name">
+                </div>
 
-            <div class="space-y-3">
-                <p class="text-sm text-[#6e6e6e]">You are about to distribute the selected newspapers with the details below.</p>
-                <div class="p-4 bg-[#fafafa] border border-[#e5e5e5] rounded-md space-y-2">
-                    <div class="flex justify-between gap-3 text-sm">
-                        <span class="text-[#6e6e6e]">Recipient</span>
-                        <span class="font-medium text-[#1e1e1e]" id="confirmRecipientName">-</span>
-                    </div>
-                    <div class="flex justify-between gap-3 text-sm">
-                        <span class="text-[#6e6e6e]">Distributed by</span>
-                        <span class="font-medium text-[#1e1e1e]" id="confirmDistributedBy">-</span>
-                    </div>
-                    <div class="flex justify-between gap-3 text-sm">
-                        <span class="text-[#6e6e6e]">Selected newspapers</span>
-                        <span class="font-medium text-[#1e1e1e]" id="confirmDistributionCount">0</span>
-                    </div>
+                <div class="mt-3 text-xs text-gray-500">
+                    <i class="fa-regular fa-info-circle"></i> Each recipient can only receive distribution once per day.
                 </div>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button type="button" onclick="closeDistributionConfirmModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <button type="button" onclick="submitDistributionForm()"
-                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                    Confirm Distribution
-                </button>
+            <div class="modal-footer">
+                <button type="button" onclick="closeDistributeModal()" class="btn-secondary">Cancel</button>
+                <button type="button" onclick="submitDistribution()" class="btn-primary-small">Confirm Distribution</button>
             </div>
         </div>
     </div>
 
     <script>
-        // ========== TOAST NOTIFICATION ==========
-        function showToast(type, message) {
+        let selectedCategories = new Set();
+        const alreadyReceivedToday = <?php echo json_encode($already_received_lookup); ?>;
+
+        function toggleCategorySelection(cardElement, categoryId) {
+            const checkbox = document.getElementById(`category-${categoryId}`);
+            checkbox.checked = !checkbox.checked;
+
+            if (checkbox.checked) {
+                selectedCategories.add(categoryId);
+                cardElement.classList.add('selected');
+            } else {
+                selectedCategories.delete(categoryId);
+                cardElement.classList.remove('selected');
+            }
+            updateSelectionCount();
+        }
+
+        function toggleCategorySelectionById(categoryId) {
+            const checkbox = document.getElementById(`category-${categoryId}`);
+            const cardElement = checkbox.closest('.category-card');
+
+            if (checkbox.checked) {
+                selectedCategories.add(categoryId);
+                cardElement.classList.add('selected');
+            } else {
+                selectedCategories.delete(categoryId);
+                cardElement.classList.remove('selected');
+            }
+            updateSelectionCount();
+        }
+
+        function updateSelectionCount() {
+            const count = selectedCategories.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('selectedCountBadge').textContent = count;
+
+            const distributeBtn = document.getElementById('distributeBtn');
+            distributeBtn.disabled = count === 0;
+        }
+
+        function openDistributeModal() {
+            if (selectedCategories.size === 0) {
+                showToast('error', 'Please select at least one category');
+                return;
+            }
+            document.getElementById('modalSelectedCountDisplay').textContent = selectedCategories.size;
+            document.getElementById('distributeModal').style.display = 'flex';
+        }
+
+        function closeDistributeModal() {
+            document.getElementById('distributeModal').style.display = 'none';
+            document.getElementById('modal_recipient_select').value = '';
+            document.getElementById('modal_distributed_by').value = '';
+        }
+
+        function submitDistribution() {
+            const recipientSelect = document.getElementById('modal_recipient_select');
+            const recipientId = recipientSelect.value;
+            const distributedBy = document.getElementById('modal_distributed_by').value.trim();
+
+            if (!recipientId) {
+                showToast('error', 'Please select a recipient');
+                return;
+            }
+            if (!distributedBy) {
+                showToast('error', 'Please enter who is distributing');
+                return;
+            }
+
+            const recipientName = recipientSelect.options[recipientSelect.selectedIndex].text.trim();
+            if (alreadyReceivedToday[recipientName]) {
+                showToast('error', `Newspaper(s) have been distributed to ${recipientName} already.`);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('distribute_submit', '1');
+            formData.append('recipient_id', recipientId);
+            formData.append('distributed_by', distributedBy);
+
+            const selectedArray = Array.from(selectedCategories);
+            formData.append('selected_categories', selectedArray.join(','));
+
+            const confirmBtn = event.target;
+            const originalText = confirmBtn.innerHTML;
+            confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing...';
+            confirmBtn.disabled = true;
+
+            fetch('newspaper_distribution.php', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                window.location.href = 'newspaper_distribution.php';
+            }).catch(error => {
+                showToast('error', 'Error submitting distribution');
+                confirmBtn.innerHTML = originalText;
+                confirmBtn.disabled = false;
+            });
+
+            closeDistributeModal();
+        }
+
+        function showToast(type, message, duration = 5000) {
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
-
-            const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
-
             toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-regular ${icon} text-${type === 'success' ? 'green' : 'red'}-500"></i>
-                    <span class="text-sm text-[#1e1e1e]">${message}</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <i class="fa-regular ${type === 'success' ? 'fa-circle-check' : type === 'warning' ? 'fa-clock' : 'fa-circle-exclamation'}"></i>
+                <span class="flex-1 text-sm">${message}</span>
+                <button onclick="this.parentElement.remove()" class="text-gray-400">×</button>
             `;
-
             container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, 300);
-            }, 5000);
+            setTimeout(() => toast.remove(), duration);
         }
 
         <?php if ($toast): ?>
@@ -738,172 +570,26 @@ include './sidebar.php';
             });
         <?php endif; ?>
 
-        // ========== NEWSPAPER SELECTION ==========
-        let selectedNewspapers = new Set();
-
-        function toggleNewspaperSelection(id) {
-            const checkbox = document.getElementById(`newspaper-${id}`);
-            const item = checkbox.closest('.newspaper-item');
-
-            if (checkbox.checked) {
-                selectedNewspapers.add(id);
-                item.classList.add('selected');
-            } else {
-                selectedNewspapers.delete(id);
-                item.classList.remove('selected');
-            }
-
-            updateSelectionCount();
-            updateCategoryCheckboxes();
-        }
-
-        function toggleCategorySelection(categoryId, newspaperIds) {
-            const categoryCheckbox = document.getElementById(`category-${categoryId}`);
-            const checkboxes = newspaperIds.map(id => document.getElementById(`newspaper-${id}`));
-
-            checkboxes.forEach(cb => {
-                cb.checked = categoryCheckbox.checked;
-                const item = cb.closest('.newspaper-item');
-                if (categoryCheckbox.checked) {
-                    selectedNewspapers.add(parseInt(cb.value));
-                    item.classList.add('selected');
-                } else {
-                    selectedNewspapers.delete(parseInt(cb.value));
-                    item.classList.remove('selected');
-                }
+        <?php if (!empty($already_received_today)): ?>
+            document.addEventListener('DOMContentLoaded', function() {
+                showToast(
+                    'warning',
+                    'Already received today: <?php echo addslashes(implode(", ", $already_received_today)); ?>',
+                    2000
+                );
             });
+        <?php endif; ?>
 
-            updateSelectionCount();
-        }
-
-        function updateCategoryCheckboxes() {
-            const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
-            categoryCheckboxes.forEach(cb => {
-                const categoryId = cb.id.replace('category-', '');
-                const newspaperIds = Array.from(cb.closest('.category-card').querySelectorAll('.newspaper-checkbox')).map(cb => parseInt(cb.value));
-                const checkedCount = newspaperIds.filter(id => selectedNewspapers.has(id)).length;
-
-                if (checkedCount === 0) {
-                    cb.checked = false;
-                    cb.indeterminate = false;
-                } else if (checkedCount === newspaperIds.length) {
-                    cb.checked = true;
-                    cb.indeterminate = false;
-                } else {
-                    cb.checked = false;
-                    cb.indeterminate = true;
-                }
-            });
-        }
-
-        function updateSelectionCount() {
-            const count = selectedNewspapers.size;
-            document.getElementById('selectedCount').textContent = count;
-
-            const distributeBtn = document.getElementById('distributeBtn');
-            if (count > 0) {
-                distributeBtn.disabled = false;
-            } else {
-                distributeBtn.disabled = true;
-            }
-        }
-
-        // ========== MODAL FUNCTIONS ==========
-        function openDistributeModal() {
-            if (selectedNewspapers.size === 0) {
-                showToast('error', 'Please select at least one newspaper to distribute');
-                return;
-            }
-
-            document.getElementById('modalSelectedCount').textContent = selectedNewspapers.size;
-            document.getElementById('modalSelectedCountDisplay').textContent = selectedNewspapers.size;
-
-            const selectedArray = Array.from(selectedNewspapers);
-            document.getElementById('selected_newspapers_hidden').value = selectedArray.join(',');
-
-            document.getElementById('distributeModal').style.display = 'flex';
-        }
-
-        function closeDistributeModal() {
-            document.getElementById('distributeModal').style.display = 'none';
-            document.getElementById('recipient_select').value = '';
-            document.getElementById('modal_distributed_by').value = '';
-        }
-
-        function promptDistributionConfirmation() {
-            let recipientSelect = document.getElementById('recipient_select');
-            let distributedBy = document.getElementById('modal_distributed_by').value.trim();
-            let selectedCount = selectedNewspapers.size;
-
-            if (!recipientSelect.value) {
-                showToast('error', 'Please select a recipient');
-                return;
-            }
-
-            if (distributedBy === '') {
-                showToast('error', 'Please enter who is distributing');
-                return;
-            }
-
-            let recipientName = recipientSelect.options[recipientSelect.selectedIndex].text;
-            document.getElementById('confirmRecipientName').textContent = recipientName;
-            document.getElementById('confirmDistributedBy').textContent = distributedBy;
-            document.getElementById('confirmDistributionCount').textContent = `${selectedCount} newspaper(s)`;
-            document.getElementById('distributionConfirmModal').style.display = 'flex';
-        }
-
-        function closeDistributionConfirmModal() {
-            document.getElementById('distributionConfirmModal').style.display = 'none';
-        }
-
-        function submitDistributionForm() {
-            const form = document.getElementById('distributeForm');
-            const formData = new FormData(form);
-
-            selectedNewspapers.forEach(id => {
-                formData.append('selected_newspapers[]', id);
-            });
-
-            // Show loading state
-            const confirmBtn = document.querySelector('#distributionConfirmModal button[onclick="submitDistributionForm()"]');
-            const originalText = confirmBtn.innerHTML;
-            confirmBtn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Processing...';
-            confirmBtn.disabled = true;
-
-            fetch('newspaper_distribution.php', {
-                method: 'POST',
-                body: formData
-            }).then(response => {
-                // Redirect to distribution history page
-                window.location.href = 'distribution_history.php';
-            }).catch(error => {
-                showToast('error', 'Error submitting distribution');
-                confirmBtn.innerHTML = originalText;
-                confirmBtn.disabled = false;
-            });
-
-            closeDistributionConfirmModal();
-            closeDistributeModal();
-        }
-
-        // Close modals when clicking outside
         window.onclick = function(event) {
-            const distributeModal = document.getElementById('distributeModal');
-            const distributionConfirmModal = document.getElementById('distributionConfirmModal');
-
-            if (event.target == distributeModal) {
+            const modal = document.getElementById('distributeModal');
+            if (event.target == modal) {
                 closeDistributeModal();
             }
-            if (event.target == distributionConfirmModal) {
-                closeDistributionConfirmModal();
-            }
         }
 
-        // ESC key to close modals
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeDistributeModal();
-                closeDistributionConfirmModal();
             }
         });
     </script>
