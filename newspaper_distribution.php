@@ -360,17 +360,17 @@ include './sidebar.php';
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h1 class="text-xl font-medium">Newspaper Distribution</h1>
-                        <p class="text-sm text-gray-500 mt-1">Select categories to distribute to recipients</p>
+                        <p class="text-sm text-gray-500 mt-1">Select subscriptions to distribute to recipients</p>
                     </div>
                     <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
                         <i class="fa-solid fa-hand-holding-hand"></i>
-                        <span>Distribute (<span id="selectedCount">0</span> categories)</span>
+                        <span>Distribute (<span id="selectedCount">0</span> subscriptions)</span>
                     </button>
                 </div>
 
                 <div class="bg-white border border-gray-200 p-6">
                     <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-base font-medium">Select Categories</h2>
+                        <h2 class="text-base font-medium">Select Subscriptions</h2>
                         <div class="selected-count-badge">
                             <span id="selectedCountBadge">0</span> selected
                         </div>
@@ -395,8 +395,8 @@ include './sidebar.php';
                     <?php else: ?>
                         <div class="text-center py-8 text-gray-500">
                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
-                            <p>No categories found</p>
-                            <p class="text-sm mt-2"><a href="categories.php" class="text-blue-600 hover:underline">Add categories first</a></p>
+                            <p>No subscriptions found</p>
+                            <p class="text-sm mt-2"><a href="categories.php" class="text-blue-600 hover:underline">Add subscriptions first</a></p>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -415,8 +415,8 @@ include './sidebar.php';
             </div>
             <div class="modal-body">
                 <div class="mb-4 p-3 bg-gray-50 border border-gray-200">
-                    <p class="text-sm text-gray-600 mb-1">Selected Categories:</p>
-                    <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> category(ies)</p>
+                    <p class="text-sm text-gray-600 mb-1">Selected Subscriptions:</p>
+                    <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> subscription(s)</p>
                 </div>
 
                 <div class="mb-3">
@@ -491,7 +491,7 @@ include './sidebar.php';
 
         function openDistributeModal() {
             if (selectedCategories.size === 0) {
-                showToast('error', 'Please select at least one category');
+                showToast('error', 'Please select at least one subscription');
                 return;
             }
             document.getElementById('modalSelectedCountDisplay').textContent = selectedCategories.size;

@@ -78,6 +78,7 @@ $offset = ($page - 1) * $limit;
 
 // Search and filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$department_filter = isset($_GET['department']) ? trim($_GET['department']) : '';
 $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
 
@@ -94,6 +95,12 @@ if (!empty($search)) {
     $params[] = $search_param;
     $params[] = $search_param;
     $types .= "ssss";
+}
+
+if ($department_filter !== '') {
+    $where_clauses[] = "department = ?";
+    $params[] = $department_filter;
+    $types .= "s";
 }
 
 if (!empty($date_from)) {
@@ -137,6 +144,12 @@ if (!empty($params)) {
 $stmt->execute();
 $distribution_history = $stmt->get_result();
 $stmt->close();
+
+$departments_result = $conn->query("SELECT DISTINCT department FROM distribution WHERE department IS NOT NULL AND department != '' ORDER BY department ASC");
+$departments = [];
+while ($department_row = $departments_result->fetch_assoc()) {
+    $departments[] = $department_row['department'];
+}
 
 // Get last distribution notification
 $last_distribution = $_SESSION['last_distribution'] ?? null;
@@ -401,6 +414,7 @@ include './sidebar.php';
         }
 
         @media print {
+
             #toastContainer,
             #sidebar,
             #mobileMenuBtn,
@@ -436,9 +450,6 @@ include './sidebar.php';
                         <h1 class="text-xl font-medium">Distribution History</h1>
                         <p class="text-sm text-gray-500 mt-1">View and manage distribution records</p>
                     </div>
-                    <button type="button" onclick="printDistributionHistory()" class="btn-primary no-print">
-                        <i class="fa-solid fa-print mr-1"></i> Print
-                    </button>
                 </div>
 
                 <?php if ($last_distribution): ?>
@@ -446,7 +457,7 @@ include './sidebar.php';
                         <div>
                             <i class="fa-regular fa-circle-check text-green-600 mr-2"></i>
                             <span class="text-sm">
-                                <?php echo $last_distribution['count']; ?> category(s) distributed to
+                                <?php echo $last_distribution['count']; ?> subscription(s) distributed to
                                 <?php echo htmlspecialchars($last_distribution['individual']); ?>
                             </span>
                             <span class="text-xs text-gray-500 ml-2">
@@ -461,12 +472,24 @@ include './sidebar.php';
 
                 <div class="bg-white border border-gray-200">
                     <div class="p-4 border-b border-gray-200 bg-gray-50">
-                        <form method="GET" class="flex flex-wrap gap-3 items-end">
+                        <form method="GET" id="filterForm" class="flex flex-wrap gap-3 items-end">
                             <div class="flex-1 min-w-[180px]">
                                 <label class="block text-xs text-gray-600 mb-1">Search</label>
-                                <input type="text" name="search" class="filter-input w-full"
-                                    placeholder="Recipient, department, categories..."
+                                <input type="text" id="searchInput" name="search" class="filter-input w-full"
+                                    autocomplete="off"
+                                    placeholder="Recipient, department, subscriptions..."
                                     value="<?php echo htmlspecialchars($search); ?>">
+                            </div>
+                            <div class="w-[180px]">
+                                <label class="block text-xs text-gray-600 mb-1">Department</label>
+                                <select id="departmentFilter" name="department" class="filter-input w-full">
+                                    <option value="">All Departments</option>
+                                    <?php foreach ($departments as $department): ?>
+                                        <option value="<?php echo htmlspecialchars($department); ?>" <?php echo $department_filter === $department ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($department); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="w-[140px]">
                                 <label class="block text-xs text-gray-600 mb-1">From Date</label>
@@ -480,6 +503,9 @@ include './sidebar.php';
                             </div>
                             <div>
                                 <button type="submit" class="btn-primary">Filter</button>
+                                <button type="button" onclick="printDistributionHistory()" class="btn-secondary ml-2 no-print">
+                                    <i class="fa-solid fa-print mr-1"></i> Print
+                                </button>
                                 <a href="distribution_history.php" class="btn-secondary ml-2">Reset</a>
                             </div>
                         </form>
@@ -493,7 +519,7 @@ include './sidebar.php';
                                     <th>Date</th>
                                     <th>Recipient</th>
                                     <th>Department</th>
-                                    <th>Categories</th>
+                                    <th>Subscriptions</th>
                                     <th>Count</th>
                                     <th>Distributed By</th>
                                     <th></th>
@@ -543,9 +569,9 @@ include './sidebar.php';
                                 Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $limit, $total_distributions); ?> of <?php echo $total_distributions; ?>
                             </div>
                             <div class="pagination">
-                                <a href="?page=1<?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
+                                <a href="?page=1<?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
                                     class="page-link">First</a>
-                                <a href="?page=<?php echo max(1, $page - 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
+                                <a href="?page=<?php echo max(1, $page - 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
                                     class="page-link">Previous</a>
 
                                 <?php
@@ -553,13 +579,13 @@ include './sidebar.php';
                                 $end_page = min($total_pages, $page + 2);
                                 for ($i = $start_page; $i <= $end_page; $i++):
                                 ?>
-                                    <a href="?page=<?php echo $i; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
+                                    <a href="?page=<?php echo $i; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
                                         class="page-link <?php echo $i == $page ? 'active' : ''; ?>"><?php echo $i; ?></a>
                                 <?php endfor; ?>
 
-                                <a href="?page=<?php echo min($total_pages, $page + 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
+                                <a href="?page=<?php echo min($total_pages, $page + 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
                                     class="page-link">Next</a>
-                                <a href="?page=<?php echo $total_pages; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
+                                <a href="?page=<?php echo $total_pages; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
                                     class="page-link">Last</a>
                             </div>
                         </div>
@@ -653,6 +679,27 @@ include './sidebar.php';
                     dismissLastDistribution();
                 }, 3000);
             }
+
+            const filterForm = document.getElementById('filterForm');
+            const searchInput = document.getElementById('searchInput');
+            const departmentFilter = document.getElementById('departmentFilter');
+
+            if (filterForm && searchInput) {
+                let searchDebounceTimer;
+
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(searchDebounceTimer);
+                    searchDebounceTimer = setTimeout(() => {
+                        filterForm.submit();
+                    }, 350);
+                });
+            }
+
+            if (filterForm && departmentFilter) {
+                departmentFilter.addEventListener('change', function() {
+                    filterForm.submit();
+                });
+            }
         });
 
         function openModal(id) {
@@ -705,11 +752,11 @@ include './sidebar.php';
                                 <div class="detail-value">${escapeHtml(dist.department || '—')}</div>
                             </div>
                             <div class="detail-row">
-                                <div class="detail-label">Categories</div>
+                                <div class="detail-label">Subscriptions</div>
                                 <div class="detail-value">${categoriesHtml}</div>
                             </div>
                             <div class="detail-row">
-                                <div class="detail-label">Total Categories</div>
+                                <div class="detail-label">Total Subscriptions</div>
                                 <div class="detail-value">${dist.copies}</div>
                             </div>
                             <div class="detail-row">

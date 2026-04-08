@@ -267,7 +267,7 @@ try {
         SELECT 'distributed' as type,
                distributed_to as title,
                date_distributed as date,
-               CONCAT(copies, ' category(s) distributed') as details
+               CONCAT(copies, ' Subscription(s) distributed') as details
         FROM distribution
         ORDER BY date_distributed DESC, id DESC
         LIMIT 12

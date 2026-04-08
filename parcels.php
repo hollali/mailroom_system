@@ -1029,12 +1029,6 @@ $recent_parcels = $conn->query("
                                                         class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Details">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </button>
-                                                    <?php if ($parcel['status'] != 'Pending'): ?>
-                                                        <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
-                                                            class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Pickup Details">
-                                                            <i class="fa-solid fa-circle-info"></i>
-                                                        </button>
-                                                    <?php endif; ?>
                                                 </div>
                                             </td>
                                         </tr>
