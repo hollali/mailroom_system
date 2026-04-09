@@ -1,191 +1,220 @@
 # Mailroom System Presentation Script
 
-## 1) Opening (30–45 seconds)
+## Opening
+
 Good morning everyone.
 
-Today I’ll walk you through our **Mailroom System**, a lightweight PHP + MySQL application that helps us manage three key operational streams in one place:
-- incoming **documents**,
-- **parcels** from receipt to pickup,
-- and **newspaper intake and distribution**.
+Today I’m presenting our **Mailroom System**, a simple web application built with PHP and MySQL to help us manage three core activities in one place:
+- document intake and distribution,
+- parcel receipt and pickup,
+- and newspaper subscription distribution.
 
-The goal is simple: improve traceability, reduce manual errors, and give management quick visibility through a real-time dashboard.
-
----
-
-## 2) Problem Statement (45–60 seconds)
-Before this system, teams often tracked mailroom activity in separate notebooks, spreadsheets, or disconnected tools. That created challenges:
-- hard-to-verify records,
-- duplicated work,
-- weak accountability for who received or picked items,
-- and slow reporting when leadership asked, “What came in today?”
-
-This system centralizes that workflow and makes those answers instant.
+What makes this system useful is that it replaces scattered manual records with a single dashboard and clear transaction history.
 
 ---
 
-## 3) High-Level Product Overview (60–90 seconds)
-At a high level, the platform has a **dashboard** and three core modules:
+## Why This System Matters
 
-1. **Documents**
-   - Register incoming documents.
-   - Categorize by document type.
-   - Track copies received.
-   - Record downstream distribution events.
+In many offices or libraries, these activities are often tracked manually. That usually leads to missing entries, duplicate work, weak traceability, and delayed reporting.
 
-2. **Parcels**
-   - Register parcels at the point of receipt.
-   - Auto-generate tracking IDs.
-   - Track pending vs. picked-up parcels.
-   - Capture pickup details for accountability.
+With this system, we can answer questions like:
+- What documents came in today?
+- Which parcels are still pending?
+- Who already received newspapers today?
 
-3. **Newspapers**
-   - Manage newspaper categories/subscriptions.
-   - Register issues and available copies.
-   - Distribute to recipients and update inventory.
-   - View distribution history.
-
-The user interface is simple and consistent, built with Tailwind CSS and Font Awesome for clarity and ease of use.
+So the main value is visibility, accountability, and speed.
 
 ---
 
-## 4) Dashboard Walkthrough (90 seconds)
-Now let’s start from the dashboard.
+## How I’ll Demo It
 
-What this gives us immediately:
-- Total counts for documents, parcels, newspapers, categories, and document types.
-- Time-based metrics: **today**, **this week**, and **this month**.
-- Distribution and pickup totals.
-- Copy-level visibility: total received versus total distributed.
-- Recent activity feed combining document receipts, parcel events, and newspaper entries.
+I’ll walk through the system in four parts:
 
-Operationally, this becomes the “single pane of glass” for the mailroom team and supervisors.
+1. the dashboard,
+2. documents,
+3. parcels,
+4. and newspapers.
 
 ---
 
-## 5) Documents Module Demo Script (2 minutes)
-In the Documents section, I’ll demonstrate a standard lifecycle:
+## Part 1: Dashboard
 
-1. **Add a new document** with:
-   - document name,
-   - type,
-   - origin,
-   - copies received,
-   - date/time received.
+I’ll start from the dashboard because it gives the fastest overview of the whole system.
 
-2. The system validates required fields and supports serial numbering when the column exists.
+On this page, we can see:
+- total documents,
+- total parcels received,
+- pending parcels,
+- total newspapers,
+- total document types,
+- total newspaper subscriptions,
+- activity for today, this week, and this month,
+- total document distributions,
+- total parcel pickups,
+- and copy-level document totals.
 
-3. We can immediately see the document in the list with type and receipt timestamp.
+The dashboard also shows:
+- the latest parcel received date,
+- the latest parcel picked date,
+- and recent activity grouped by documents, newspapers, and parcels.
 
-4. Next, in **Document Distribution**, I can distribute copies.
-   - The system checks available quantity before saving.
-   - If requested copies exceed stock, it blocks the action.
-   - On success, it updates available copies accordingly.
-
-5. If a distribution entry is removed, copies are restored automatically.
-
-Key takeaway: this module gives us controlled inventory movement, not just passive logging.
-
----
-
-## 6) Parcel Module Demo Script (2 minutes)
-For parcels, I’ll show the receive-to-pickup workflow.
-
-1. **Receive parcel**:
-   - Enter description, sender, addressed-to, receiver, and timestamp.
-   - System auto-generates a tracking ID in a format like `PRCL-YYYYMMDD-XXXXXX`.
-
-2. Parcel appears as **Pending** in the list.
-
-3. **Edit controls** are limited to pending records, which protects data integrity.
-
-4. **Pickup flow**:
-   - Capture picker name, phone, designation, and pickup date/time.
-   - Status updates to picked up.
-
-5. Deleting received records handles related pickup records transactionally.
-
-Key takeaway: every parcel has traceability from gate-in to handover.
+This means management or staff can understand the current workload at a glance.
 
 ---
 
-## 7) Newspaper Module Demo Script (2 minutes)
-Now for newspapers:
+## Part 2: Documents Module
 
-1. Manage **categories** (subscription/titles).
-2. Add a newspaper issue:
-   - choose category,
-   - date received,
-   - copies received,
-   - receiver.
-3. System generates an issue number using category and date pattern.
-4. In **distribution**, select recipient and one or more available items.
-5. Each distribution decrements available copies and updates status:
-   - available,
-   - partial,
-   - or distributed.
+Next, I’ll open the Documents module.
 
-This keeps both editorial circulation and copy counts accurate in real time.
+Here, I can register a document by entering:
+- the document name,
+- the type,
+- the origin,
+- the number of copies received,
+- and the date received.
 
----
+The system validates the required fields before saving.
 
-## 8) Technical Snapshot (60–90 seconds)
-From an implementation perspective:
-- Stack: **PHP + MySQL/MariaDB**.
-- Data model includes dedicated tables for:
-  - documents,
-  - document distribution,
-  - parcels received,
-  - parcel pickup,
-  - newspapers,
-  - newspaper categories,
-  - newspaper distribution,
-  - recipients.
-- Many write operations use prepared statements.
-- Critical multi-step actions (for example distribution and delete/restore flows) use database transactions.
+If the database supports serial numbers, the application can also generate one automatically. That helps make records easier to reference.
 
-This gives us a practical balance of simplicity and reliability for day-to-day operations.
+After saving, the document appears in the list together with:
+- its type,
+- received timestamp,
+- copy count,
+- and distribution information.
+
+For distribution, the current workflow is controlled very carefully:
+- each document can only be distributed once,
+- and the system records that distribution against the document.
+
+That means the app helps prevent duplicate distribution entries.
+
+There is also a separate document distribution page where history can be reviewed and managed.
 
 ---
 
-## 9) Business Value (60 seconds)
-The system delivers value in four areas:
+## Part 3: Parcel Module
 
-1. **Accountability** – who received what, and when.
-2. **Operational speed** – faster recording and retrieval.
-3. **Reporting readiness** – immediate daily/weekly/monthly visibility.
-4. **Scalability foundation** – we can extend this to notifications, role-based access, and audit exports.
+From there, I move to the Parcel Management module.
+
+This module covers the full parcel lifecycle.
+
+When receiving a parcel, I enter:
+- description,
+- sender,
+- addressed to,
+- received by,
+- and the date or time received.
+
+Once saved, the system generates a tracking ID automatically in this format:
+
+`PRCL-YYYYMMDD-XXXXXX`
+
+The parcel is then listed as **Pending**.
+
+One good control here is that only pending parcels can be edited. That protects record integrity after handover.
+
+When the parcel is collected, I record:
+- the person who picked it up,
+- their phone number,
+- their designation,
+- and the pickup timestamp.
+
+The status immediately changes to **Picked Up**, and the same parcel cannot be picked again.
+
+If a parcel has to be deleted, the system also handles related pickup records carefully using a transaction.
+
+So this module gives us proper traceability from receipt to final handover.
 
 ---
 
-## 10) Roadmap / Next Improvements (45–60 seconds)
-Suggested next enhancements:
-- Role-based authentication and permissions.
-- Stronger server-side validation and security hardening.
-- Environment-based configuration for production deployment.
-- Printable/exportable reports by date range.
-- Email/SMS alerts for parcel arrivals and pending pickups.
+## Part 4: Newspaper Workflow
+
+The newspaper side of the system now focuses more on **subscriptions, recipients, and daily distribution control**.
+
+The first page is **Newspaper Subscription**.
+
+Here, I can add and manage the different newspaper subscriptions or categories.
+
+The next page is **Newspaper Recipients**.
+
+This is where I maintain the list of people or offices that receive newspapers. A useful detail here is that if a recipient already has distribution history, the system deactivates them instead of deleting the record completely.
+
+Then I move to **Newspaper Distribution**.
+
+On this page, I select:
+- the recipient,
+- the staff member distributing,
+- and one or more subscriptions for that day.
+
+Before saving, the system checks whether that recipient has already received newspapers today.
+
+If they already received them, the app blocks the action. If not, the distribution is saved successfully.
+
+Finally, I can open **Newspaper History** to review past distributions. That page supports searching and filtering by department and date, which makes reporting easier.
 
 ---
 
-## 11) Closing (20–30 seconds)
-In summary, the Mailroom System turns manual, fragmented tracking into a unified digital process for documents, parcels, and newspapers.
+## Technical Summary
 
-It improves control, visibility, and confidence in our records.
+Technically, the system is built with:
+- PHP,
+- MySQL or MariaDB,
+- Tailwind CSS,
+- and Font Awesome.
 
-Thank you — I’m happy to take questions.
+It uses dedicated pages for each workflow and relies on common relational tables such as:
+- `documents`,
+- `document_types`,
+- `document_distribution`,
+- `parcels_received`,
+- `parcels_pickup`,
+- `newspapers`,
+- `newspaper_categories`,
+- `recipients`,
+- and `distribution`.
+
+Prepared statements are used in many actions, and transactions are used where data consistency matters most.
+
+Another nice detail is that some pages can adapt when optional timestamp or serial number columns exist in the database.
 
 ---
 
-## Optional Q&A Cheat Sheet
+## Business Value
 
-**Q: Is this only for libraries?**
-A: No. The workflow fits any office or institution with inbound document and parcel handling.
+From a business point of view, the system improves operations in four ways:
 
-**Q: Can we track per-department document distribution?**
-A: Yes. The document distribution data model supports recipient-level records and date tracking.
+1. **Better accountability**
+   Every key action is tied to a record.
 
-**Q: How do we know if stock is exhausted?**
-A: Distribution logic updates available counts and status values, so stock conditions are immediately visible.
+2. **Faster daily work**
+   Staff can capture and retrieve information quickly.
 
-**Q: Is the system ready for production security standards?**
-A: It is a solid baseline, and production hardening steps are identified (environment secrets, stricter validation, and secure deployment settings).
+3. **Better control**
+   The system prevents duplicate actions in important workflows.
+
+4. **Better visibility**
+   Supervisors can monitor activity from one dashboard.
+
+---
+
+## Closing
+
+To conclude, this Mailroom System turns document handling, parcel tracking, and newspaper distribution into one connected digital workflow.
+
+It helps the team work faster, keeps records clearer, and gives management better visibility into daily operations.
+
+Thank you, and I’m ready for your questions.
+
+---
+
+## Short Q&A Prompts
+
+**Q: What is new in the newspaper section?**  
+A: It now focuses on subscription management, recipients, once-per-day distribution control, and searchable history.
+
+**Q: Can the system stop duplicate entries?**  
+A: Yes. For example, it blocks duplicate newspaper distribution for the same recipient on the same day, and documents are controlled so they are distributed once.
+
+**Q: How are parcels tracked?**  
+A: Each parcel gets a tracking ID and moves from pending to picked up with full pickup details recorded.
