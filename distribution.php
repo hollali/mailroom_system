@@ -469,6 +469,41 @@ if (isset($_SESSION['toast'])) {
             border-left: 4px solid #f59e0b;
             color: #b45b0b;
         }
+
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            #toastContainer,
+            #sidebar,
+            .modal,
+            .no-print,
+            #distributionPagination {
+                display: none !important;
+            }
+
+            .ml-60 {
+                margin-left: 0 !important;
+            }
+
+            .shadow,
+            .shadow-sm,
+            .shadow-md,
+            .shadow-lg {
+                box-shadow: none !important;
+            }
+
+            th:last-child,
+            td:last-child {
+                display: none !important;
+            }
+
+            a {
+                color: inherit !important;
+                text-decoration: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -486,6 +521,9 @@ if (isset($_SESSION['toast'])) {
                     <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
                     <p class="text-sm text-[#6e6e6e] mt-1">Review document distributions recorded from the documents page</p>
                 </div>
+                <button type="button" onclick="printDistributionPage()" class="no-print px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    <i class="fa-solid fa-print mr-1"></i> Print
+                </button>
             </div>
         </div>
 
@@ -493,7 +531,7 @@ if (isset($_SESSION['toast'])) {
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
+                <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center no-print">
                     <h2 class="text-sm font-medium text-[#1e1e1e]">Distribution History</h2>
                     <div class="flex items-center gap-3">
                         <div class="relative flex items-center gap-2">
@@ -757,6 +795,10 @@ if (isset($_SESSION['toast'])) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function printDistributionPage() {
+            window.print();
         }
 
         // Table search functionality

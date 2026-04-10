@@ -471,7 +471,7 @@ include './sidebar.php';
                 <?php endif; ?>
 
                 <div class="bg-white border border-gray-200">
-                    <div class="p-4 border-b border-gray-200 bg-gray-50">
+                    <div class="p-4 border-b border-gray-200 bg-gray-50 no-print">
                         <form method="GET" id="filterForm" class="flex flex-wrap gap-3 items-end">
                             <div class="flex-1 min-w-[180px]">
                                 <label class="block text-xs text-gray-600 mb-1">Search</label>

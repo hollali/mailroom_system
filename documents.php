@@ -575,6 +575,43 @@ if (isset($_SESSION['toast'])) {
             color: #1e1e1e;
             border-color: #d6d3d1;
         }
+
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            #sidebar,
+            .modal,
+            .fab,
+            .no-print,
+            #documentsPagination,
+            #toastContainer,
+            .toastify {
+                display: none !important;
+            }
+
+            .ml-60 {
+                margin-left: 0 !important;
+            }
+
+            .shadow,
+            .shadow-sm,
+            .shadow-md,
+            .shadow-lg {
+                box-shadow: none !important;
+            }
+
+            th:last-child,
+            td:last-child {
+                display: none !important;
+            }
+
+            a {
+                color: inherit !important;
+                text-decoration: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -592,12 +629,15 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Document List</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">View and manage documents in the system</p>
                     </div>
+                    <button type="button" onclick="printDocumentsPage()" class="no-print px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-solid fa-print mr-1"></i> Print
+                    </button>
                 </div>
             </div>
 
             <div class="p-8">
                 <!-- Filters -->
-                <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
+                <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6 no-print">
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="text-sm font-medium text-[#1e1e1e]">Filter:</span>
 
@@ -965,6 +1005,10 @@ if (isset($_SESSION['toast'])) {
                 stopOnFocus: true,
                 className: "toastify"
             }).showToast();
+        }
+
+        function printDocumentsPage() {
+            window.print();
         }
 
         // Show toast from PHP session

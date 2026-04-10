@@ -142,6 +142,24 @@ $offset = ($page - 1) * $limit;
 
 // Search and filter settings
 $search = trim($_GET['search'] ?? '');
+$status_filter = $_GET['status'] ?? 'all';
+$sort_filter = $_GET['sort'] ?? 'name_asc';
+
+$allowed_status_filters = ['all', 'active', 'inactive'];
+$allowed_sort_filters = [
+    'name_asc' => 'name ASC',
+    'name_desc' => 'name DESC',
+    'newest' => 'created_at DESC',
+    'oldest' => 'created_at ASC',
+];
+
+if (!in_array($status_filter, $allowed_status_filters, true)) {
+    $status_filter = 'all';
+}
+
+if (!array_key_exists($sort_filter, $allowed_sort_filters)) {
+    $sort_filter = 'name_asc';
+}
 
 $where_clauses = [];
 
@@ -150,7 +168,14 @@ if ($search !== '') {
     $where_clauses[] = "name LIKE '%$safe_search%'";
 }
 
+if ($status_filter === 'active') {
+    $where_clauses[] = "is_active = 1";
+} elseif ($status_filter === 'inactive') {
+    $where_clauses[] = "is_active = 0";
+}
+
 $where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+$order_sql = $allowed_sort_filters[$sort_filter];
 
 // Get total count for pagination
 $count_result = $conn->query("SELECT COUNT(*) as total FROM recipients $where_sql");
@@ -158,7 +183,11 @@ $total_recipients = (int)($count_result->fetch_assoc()['total'] ?? 0);
 $total_pages = ceil($total_recipients / $limit);
 
 // Get recipients with pagination
-$recipients = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, name ASC LIMIT $offset, $limit");
+$recipients = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, $order_sql LIMIT $offset, $limit");
+
+$active_recipients = (int)(($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 1"))->fetch_assoc()['total'] ?? 0);
+$inactive_recipients = (int)(($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 0"))->fetch_assoc()['total'] ?? 0);
+$has_active_filters = $search !== '' || $status_filter !== 'all' || $sort_filter !== 'name_asc';
 
 function buildRecipientsUrl($overrides = [], $remove_keys = [])
 {
@@ -448,10 +477,18 @@ include './sidebar.php';
                                         <i class="fa-regular fa-user"></i>
                                             Total: <?php echo $total_recipients; ?>
                                     </span>
+                                    <span class="filter-chip">
+                                        <i class="fa-regular fa-circle-check text-green-600"></i>
+                                        Active: <?php echo $active_recipients; ?>
+                                    </span>
+                                    <span class="filter-chip">
+                                        <i class="fa-regular fa-circle-xmark text-amber-600"></i>
+                                        Inactive: <?php echo $inactive_recipients; ?>
+                                    </span>
                                 </div>
                             </div>
 
-                            <form method="GET" action="recipients.php" id="recipientsFilterForm" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_220px] gap-3">
+                            <form method="GET" action="recipients.php" id="recipientsFilterForm" class="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_180px_180px_auto] gap-3">
                                 <input type="hidden" name="page" value="1">
                                 <div>
                                     <label for="search" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Search</label>
@@ -470,13 +507,54 @@ include './sidebar.php';
                                     </div>
                                 </div>
                                 <div>
-                                    <?php if ($search !== ''): ?>
+                                    <label for="status" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
+                                    <select id="status" name="status" class="filter-select">
+                                        <option value="all" <?php echo $status_filter === 'all' ? 'selected' : ''; ?>>All Status</option>
+                                        <option value="active" <?php echo $status_filter === 'active' ? 'selected' : ''; ?>>Active</option>
+                                        <option value="inactive" <?php echo $status_filter === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="sort" class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sort</label>
+                                    <select id="sort" name="sort" class="filter-select">
+                                        <option value="name_asc" <?php echo $sort_filter === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
+                                        <option value="name_desc" <?php echo $sort_filter === 'name_desc' ? 'selected' : ''; ?>>Name Z-A</option>
+                                        <option value="newest" <?php echo $sort_filter === 'newest' ? 'selected' : ''; ?>>Newest First</option>
+                                        <option value="oldest" <?php echo $sort_filter === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <?php if ($has_active_filters): ?>
                                         <a href="recipients.php" class="inline-flex mt-3 px-4 py-3 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] w-fit">
                                             Reset
                                         </a>
                                     <?php endif; ?>
                                 </div>
                             </form>
+
+                            <?php if ($has_active_filters): ?>
+                                <div class="flex flex-wrap gap-2">
+                                    <?php if ($search !== ''): ?>
+                                        <span class="filter-chip">
+                                            Search: <?php echo htmlspecialchars($search); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($status_filter !== 'all'): ?>
+                                        <span class="filter-chip">
+                                            Status: <?php echo htmlspecialchars(ucfirst($status_filter)); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($sort_filter !== 'name_asc'): ?>
+                                        <span class="filter-chip">
+                                            Sort: <?php echo htmlspecialchars([
+                                                'name_desc' => 'Name Z-A',
+                                                'newest' => 'Newest First',
+                                                'oldest' => 'Oldest First',
+                                            ][$sort_filter] ?? 'Custom'); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
 
@@ -499,6 +577,7 @@ include './sidebar.php';
                                                                 ($recipient['name'] ?? '') . ' ' .
                                                                 ($recipient['created_at'] ?? '')
                                                             ))); ?>"
+                                            data-status="<?php echo (int)$recipient['is_active'] === 1 ? 'active' : 'inactive'; ?>"
                                             >
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
@@ -596,8 +675,8 @@ include './sidebar.php';
                     <?php else: ?>
                         <div class="text-center py-8 text-[#6e6e6e]">
                             <i class="fa-regular fa-user text-3xl mb-2"></i>
-                            <?php if ($search !== ''): ?>
-                                <p>No recipients match the current search.</p>
+                            <?php if ($has_active_filters): ?>
+                                <p>No recipients match the current filters.</p>
                                 <a href="recipients.php" class="inline-block mt-3 text-sm text-blue-600 hover:underline">
                                     Clear filters →
                                 </a>
@@ -891,6 +970,7 @@ include './sidebar.php';
 
         function filterRecipientsLive() {
             const searchInput = document.getElementById('search');
+            const statusSelect = document.getElementById('status');
             const rows = document.querySelectorAll('.recipient-row');
             const emptyState = document.getElementById('recipientsSearchEmptyState');
             let visibleCount = 0;
@@ -898,13 +978,16 @@ include './sidebar.php';
             if (!searchInput || rows.length === 0) return;
 
             const searchTokens = getRecipientSearchTokens(searchInput.value);
+            const selectedStatus = statusSelect ? statusSelect.value : 'all';
 
             rows.forEach(function(row) {
                 const searchText = (row.getAttribute('data-search') || '').toLowerCase();
+                const rowStatus = row.getAttribute('data-status') || 'active';
                 const matchesSearch = searchTokens.length === 0 || searchTokens.every(function(token) {
                     return searchText.includes(token);
                 });
-                const show = matchesSearch;
+                const matchesStatus = selectedStatus === 'all' || rowStatus === selectedStatus;
+                const show = matchesSearch && matchesStatus;
 
                 row.style.display = show ? '' : 'none';
                 if (show) visibleCount++;
@@ -916,6 +999,13 @@ include './sidebar.php';
         }
 
         document.getElementById('search')?.addEventListener('input', filterRecipientsLive);
+        document.getElementById('status')?.addEventListener('change', function() {
+            filterRecipientsLive();
+            this.form?.requestSubmit();
+        });
+        document.getElementById('sort')?.addEventListener('change', function() {
+            this.form?.requestSubmit();
+        });
         document.getElementById('recipientsFilterForm')?.addEventListener('submit', function() {
             const pageInput = this.querySelector('input[name="page"]');
             if (pageInput) pageInput.value = '1';
