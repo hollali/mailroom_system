@@ -21,6 +21,12 @@ function formatCategoriesList($categories_list)
     return $html;
 }
 
+function generateDistributionReference($id, $date_distributed = null)
+{
+    $date_part = date('Ymd', strtotime($date_distributed ?: 'now'));
+    return 'DIST-' . $date_part . '-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+}
+
 // Handle Delete Distribution
 if (isset($_GET['delete_distribution'])) {
     $id = (int)$_GET['delete_distribution'];
@@ -88,13 +94,14 @@ $params = [];
 $types = "";
 
 if (!empty($search)) {
-    $where_clauses[] = "(distributed_to LIKE ? OR department LIKE ? OR distributed_by LIKE ? OR categories_list LIKE ?)";
+    $where_clauses[] = "(CONCAT('DIST-', DATE_FORMAT(date_distributed, '%Y%m%d'), '-', LPAD(id, 4, '0')) LIKE ? OR distributed_to LIKE ? OR department LIKE ? OR distributed_by LIKE ? OR categories_list LIKE ?)";
     $search_param = "%$search%";
     $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
-    $types .= "ssss";
+    $params[] = $search_param;
+    $types .= "sssss";
 }
 
 if ($department_filter !== '') {
@@ -477,7 +484,7 @@ include './sidebar.php';
                                 <label class="block text-xs text-gray-600 mb-1">Search</label>
                                 <input type="text" id="searchInput" name="search" class="filter-input w-full"
                                     autocomplete="off"
-                                    placeholder="Recipient, department, subscriptions..."
+                                    placeholder="Reference, recipient, department, subscriptions..."
                                     value="<?php echo htmlspecialchars($search); ?>">
                             </div>
                             <div class="w-[180px]">
@@ -515,7 +522,7 @@ include './sidebar.php';
                         <table>
                             <thead>
                                 <tr>
-                                    <th>ID</th>
+                                    <th>Reference No.</th>
                                     <th>Date</th>
                                     <th>Recipient</th>
                                     <th>Department</th>
@@ -528,8 +535,9 @@ include './sidebar.php';
                             <tbody>
                                 <?php if ($distribution_history && $distribution_history->num_rows > 0): ?>
                                     <?php while ($row = $distribution_history->fetch_assoc()): ?>
+                                        <?php $distribution_reference = generateDistributionReference($row['id'], $row['date_distributed']); ?>
                                         <tr>
-                                            <td class="text-gray-500"><?php echo $row['id']; ?></td>
+                                            <td class="text-gray-500 font-mono"><?php echo htmlspecialchars($distribution_reference); ?></td>
                                             <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                             <td class="font-medium"><?php echo htmlspecialchars($row['distributed_to']); ?></td>
                                             <td><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
@@ -723,6 +731,7 @@ include './sidebar.php';
                             month: 'long',
                             day: 'numeric'
                         });
+                        const distributionRef = `DIST-${new Date(dist.date_distributed).toISOString().slice(0, 10).replace(/-/g, '')}-${String(dist.id).padStart(4, '0')}`;
 
                         let categoriesHtml = '';
                         if (dist.categories_list) {
@@ -737,7 +746,7 @@ include './sidebar.php';
                         document.getElementById('viewModalBody').innerHTML = `
                             <div class="detail-row">
                                 <div class="detail-label">ID</div>
-                                <div class="detail-value">#${dist.id}</div>
+                                <div class="detail-value">${distributionRef}</div>
                             </div>
                             <div class="detail-row">
                                 <div class="detail-label">Date</div>
