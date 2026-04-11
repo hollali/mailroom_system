@@ -7,16 +7,17 @@ require_once './config/db.php';
 session_start();
 
 // Helper function to format categories list for display
-function formatCategoriesList($categories_list)
+function formatCategoriesList($categories_list, $newspapers_list = null)
 {
-    if (empty($categories_list)) {
+    $list = $newspapers_list ? $newspapers_list : $categories_list;
+    if (empty($list)) {
         return '—';
     }
 
-    $categories = explode(', ', $categories_list);
+    $items = explode(', ', $list);
     $html = '';
-    foreach ($categories as $category) {
-        $html .= '<span class="category-badge">' . htmlspecialchars(trim($category)) . '</span>';
+    foreach ($items as $item) {
+        $html .= '<span class="category-badge">' . htmlspecialchars(trim($item)) . '</span>';
     }
     return $html;
 }
@@ -94,14 +95,15 @@ $params = [];
 $types = "";
 
 if (!empty($search)) {
-    $where_clauses[] = "(CONCAT('DIST-', DATE_FORMAT(date_distributed, '%Y%m%d'), '-', LPAD(id, 4, '0')) LIKE ? OR distributed_to LIKE ? OR department LIKE ? OR distributed_by LIKE ? OR categories_list LIKE ?)";
+    $where_clauses[] = "(CONCAT('DIST-', DATE_FORMAT(date_distributed, '%Y%m%d'), '-', LPAD(id, 4, '0')) LIKE ? OR distributed_to LIKE ? OR department LIKE ? OR distributed_by LIKE ? OR categories_list LIKE ? OR newspapers_list LIKE ?)";
     $search_param = "%$search%";
     $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
     $params[] = $search_param;
-    $types .= "sssss";
+    $params[] = $search_param;
+    $types .= "ssssss";
 }
 
 if ($department_filter !== '') {
@@ -541,7 +543,7 @@ include './sidebar.php';
                                             <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                             <td class="font-medium"><?php echo htmlspecialchars($row['distributed_to']); ?></td>
                                             <td><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
-                                            <td><?php echo formatCategoriesList($row['categories_list']); ?></td>
+                                            <td><?php echo formatCategoriesList($row['categories_list'] ?? null, $row['newspapers_list'] ?? null); ?></td>
                                             <td><?php echo (int)$row['copies']; ?></td>
                                             <td><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
                                             <td class="whitespace-nowrap">
@@ -734,8 +736,9 @@ include './sidebar.php';
                         const distributionRef = `DIST-${new Date(dist.date_distributed).toISOString().slice(0, 10).replace(/-/g, '')}-${String(dist.id).padStart(4, '0')}`;
 
                         let categoriesHtml = '';
-                        if (dist.categories_list) {
-                            const categories = dist.categories_list.split(', ');
+                        const activeList = dist.newspapers_list || dist.categories_list;
+                        if (activeList) {
+                            const categories = activeList.split(', ');
                             categories.forEach(cat => {
                                 categoriesHtml += `<span class="category-badge">${escapeHtml(cat)}</span>`;
                             });

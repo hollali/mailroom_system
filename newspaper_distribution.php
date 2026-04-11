@@ -8,8 +8,17 @@ session_start();
 
 // Handle Distribution Form Submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) {
-    $recipient_id = isset($_POST['recipient_id']) ? (int)$_POST['recipient_id'] : 0;
     $distributed_by = trim($_POST['distributed_by']);
+
+    // Handle recipient_ids
+    $recipient_ids = [];
+    if (isset($_POST['recipient_ids'])) {
+        if (is_array($_POST['recipient_ids'])) {
+            $recipient_ids = $_POST['recipient_ids'];
+        } elseif (is_string($_POST['recipient_ids']) && !empty($_POST['recipient_ids'])) {
+            $recipient_ids = explode(',', $_POST['recipient_ids']);
+        }
+    }
 
     // Handle selected_categories - it might be a string or array
     $selected_categories = [];
@@ -23,108 +32,121 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 
     $date_distributed = date('Y-m-d');
 
-    if ($recipient_id <= 0) {
+    if (empty($recipient_ids)) {
         $_SESSION['toast'] = [
             'type' => 'error',
-            'message' => "Please select a recipient"
+            'message' => "Please select at least one recipient"
         ];
         header('Location: newspaper_distribution.php');
         exit();
     }
 
-    // Get recipient details
-    $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND is_active = 1");
-    if (!$recipient = $recipient_query->fetch_assoc()) {
+    if (empty($selected_categories)) {
         $_SESSION['toast'] = [
             'type' => 'error',
-            'message' => "Invalid recipient selected"
+            'message' => "No categories selected for distribution"
         ];
         header('Location: newspaper_distribution.php');
         exit();
     }
 
-    $full_name = $recipient['name'];
-    $individual_name = $full_name;
-    $department = '';
-    if (strpos($full_name, ' - ') !== false) {
-        $parts = explode(' - ', $full_name, 2);
-        $individual_name = $parts[0];
-        $department = $parts[1];
-    }
+    $conn->begin_transaction();
 
-    // CHECK IF RECIPIENT ALREADY RECEIVED DISTRIBUTION TODAY
-    $check_today_stmt = $conn->prepare("SELECT id, categories_list FROM distribution WHERE distributed_to = ? AND department = ? AND date_distributed = ?");
-    $check_today_stmt->bind_param("sss", $individual_name, $department, $date_distributed);
-    $check_today_stmt->execute();
-    $today_distribution = $check_today_stmt->get_result()->fetch_assoc();
-    $check_today_stmt->close();
+    try {
+        $paper_names = [];
+        $newspaper_ids_str = implode(',', $selected_categories);
+        foreach ($selected_categories as $paper_id) {
+            $paper_id = (int)$paper_id;
+            $paper_result = $conn->query("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = $paper_id");
+            $paper = $paper_result->fetch_assoc();
+            if ($paper) {
+                $paper_names[] = $paper['newspaper_name'] . ($paper['newspaper_number'] ? ' (Issue: ' . $paper['newspaper_number'] . ')' : '');
+            }
+        }
 
-    if ($today_distribution) {
-        $_SESSION['toast'] = [
-            'type' => 'error',
-            'message' => "Newspaper(s) have been distributed to $individual_name already today."
-        ];
-        header('Location: newspaper_distribution.php');
-        exit();
-    }
+        $success_count = count($selected_categories);
+        $newspapers_str = implode(', ', $paper_names);
 
-    if (!empty($selected_categories)) {
-        $conn->begin_transaction();
+        $success_recipients = [];
+        $failed_recipients = [];
+        $already_received = [];
 
-        try {
-            $category_names = [];
-
-            // Get category names for selected categories
-            foreach ($selected_categories as $category_id) {
-                $category_id = (int)$category_id;
-                $cat_result = $conn->query("SELECT category_name FROM newspaper_categories WHERE id = $category_id");
-                $category = $cat_result->fetch_assoc();
-                if ($category) {
-                    $category_names[] = $category['category_name'];
-                }
+        foreach ($recipient_ids as $recipient_id) {
+            $recipient_id = (int)$recipient_id;
+            
+            // Get recipient details
+            $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND is_active = 1");
+            if (!$recipient = $recipient_query->fetch_assoc()) {
+                continue;
             }
 
-            $success_count = count($selected_categories);
-            $categories_str = implode(', ', $category_names);
+            $full_name = $recipient['name'];
+            $individual_name = $full_name;
+            $department = '';
+            if (strpos($full_name, ' - ') !== false) {
+                $parts = explode(' - ', $full_name, 2);
+                $individual_name = $parts[0];
+                $department = $parts[1];
+            }
+
+            // CHECK IF RECIPIENT ALREADY RECEIVED DISTRIBUTION TODAY
+            $check_today_stmt = $conn->prepare("SELECT id FROM distribution WHERE distributed_to = ? AND department = ? AND date_distributed = ? AND (categories_list IS NOT NULL OR newspapers_list IS NOT NULL)");
+            $check_today_stmt->bind_param("sss", $individual_name, $department, $date_distributed);
+            $check_today_stmt->execute();
+            $today_distribution = $check_today_stmt->get_result()->fetch_assoc();
+            $check_today_stmt->close();
+
+            if ($today_distribution) {
+                $already_received[] = $individual_name;
+                continue;
+            }
 
             // Insert new distribution record
-            $stmt = $conn->prepare("INSERT INTO distribution (distributed_to, department, copies, date_distributed, distributed_by, categories_list) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssisss", $individual_name, $department, $success_count, $date_distributed, $distributed_by, $categories_str);
+            $stmt = $conn->prepare("INSERT INTO distribution (distributed_to, department, copies, date_distributed, distributed_by, newspapers_list, newspaper_ids) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssissss", $individual_name, $department, $success_count, $date_distributed, $distributed_by, $newspapers_str, $newspaper_ids_str);
 
             if ($stmt->execute()) {
-                $message = "Newspaper has been distributed to $individual_name";
+                $success_recipients[] = $individual_name;
+                // Deduct copies for successful distribution
+                foreach ($selected_categories as $paper_id) {
+                    $pid = (int)$paper_id;
+                    $conn->query("UPDATE newspapers SET available_copies = GREATEST(0, available_copies - 1) WHERE id = $pid");
+                }
             } else {
-                throw new Exception("Failed to insert distribution");
+                $failed_recipients[] = $individual_name;
             }
             $stmt->close();
+        }
 
+        $conn->commit();
+
+        $message = "Distributed to " . count($success_recipients) . " recipient(s).";
+        if (!empty($already_received)) {
+            $message .= " (" . count($already_received) . " skipped as already received).";
+            if (count($success_recipients) == 0) {
+                $_SESSION['toast'] = ['type' => 'error', 'message' => "Skipped distributions. All selected recipients already received today."];
+                header('Location: newspaper_distribution.php');
+                exit();
+            }
+        }
+
+        if (count($success_recipients) > 0) {
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => $message
             ];
-
-            $_SESSION['last_distribution'] = [
-                'individual' => $individual_name,
-                'department' => $department,
-                'count' => $success_count,
-                'categories' => $category_names,
-                'date' => $date_distributed,
-                'distributed_by' => $distributed_by,
-                'timestamp' => time()
-            ];
-
-            $conn->commit();
-        } catch (Exception $e) {
-            $conn->rollback();
+        } else {
             $_SESSION['toast'] = [
                 'type' => 'error',
-                'message' => "Distribution failed: " . $e->getMessage()
+                'message' => "No distributions were made."
             ];
         }
-    } else {
+
+    } catch (Exception $e) {
+        $conn->rollback();
         $_SESSION['toast'] = [
             'type' => 'error',
-            'message' => "No categories selected for distribution"
+            'message' => "Distribution failed: " . $e->getMessage()
         ];
     }
 
@@ -135,8 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 // Get all active recipients
 $recipients = $conn->query("SELECT id, name FROM recipients WHERE is_active = 1 ORDER BY name");
 
-// Get all categories for distribution
-$categories_for_distribution = $conn->query("SELECT id, category_name FROM newspaper_categories ORDER BY category_name");
+// Get all available newspapers for distribution
+$categories_for_distribution = $conn->query("SELECT id, newspaper_name, newspaper_number, available_copies FROM newspapers WHERE available_copies > 0 AND status != 'archived' ORDER BY newspaper_name, newspaper_number");
 
 // Get recipients who already received distribution today
 $already_received_today = [];
@@ -144,7 +166,7 @@ $today_recipients_query = $conn->query("
     SELECT DISTINCT distributed_to, department 
     FROM distribution 
     WHERE date_distributed = CURDATE() 
-    AND categories_list IS NOT NULL
+    AND (categories_list IS NOT NULL OR newspapers_list IS NOT NULL)
     ORDER BY distributed_to
 ");
 while ($row = $today_recipients_query->fetch_assoc()) {
@@ -360,45 +382,90 @@ include './sidebar.php';
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h1 class="text-xl font-medium">Newspaper Distribution</h1>
-                        <p class="text-sm text-gray-500 mt-1">Select subscriptions to distribute to recipients</p>
+                        <p class="text-sm text-gray-500 mt-1">Select recipients and subscriptions to distribute</p>
                     </div>
                     <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
                         <i class="fa-solid fa-hand-holding-hand"></i>
-                        <span>Distribute (<span id="selectedCount">0</span> subscriptions)</span>
+                        <span>Distribute</span>
                     </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white border border-gray-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-base font-medium">1. Select Recipients</h2>
+                            <div class="selected-count-badge">
+                                <span id="selectedRecipientCountBadge">0</span> selected
+                            </div>
+                        </div>
+
+                        <div id="recipientListContainer" class="mt-2 relative">
+                        <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('recipientsDropdownOptions').classList.toggle('hidden')">
+                            <span class="block truncate" id="recipientsDropdownText">Select recipients...</span>
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                                <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                            </span>
+                        </button>
+                        <div id="recipientsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
+                            <?php 
+                            if ($recipients && $recipients->num_rows > 0) {
+                                $recipients->data_seek(0);
+                                while ($recipient = $recipients->fetch_assoc()) {
+                                    $rec_name = $recipient['name'];
+                                    $already_got = isset($already_received_lookup[$rec_name]);
+                                    $disabled = $already_got ? 'disabled' : '';
+                                    $label_class = $already_got ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer';
+                                    $label = htmlspecialchars($recipient['name']);
+                                    if ($already_got) $label .= ' (Already received today)';
+                                    echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 {$label_class}'>";
+                                    echo "<input type='checkbox' name='recipient_ids_chk[]' value='{$recipient['id']}' {$disabled} class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
+                                    echo "<span>{$label}</span>";
+                                    echo "</label>";
+                                }
+                            } else {
+                                echo "<div class='px-4 py-2 text-gray-500'>No recipients found</div>";
+                            }
+                            ?>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="bg-white border border-gray-200 p-6">
                     <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-base font-medium">Select Subscriptions</h2>
+                        <h2 class="text-base font-medium">2. Select Subscriptions (Papers)</h2>
                         <div class="selected-count-badge">
                             <span id="selectedCountBadge">0</span> selected
                         </div>
                     </div>
 
-                    <?php if ($categories_for_distribution && $categories_for_distribution->num_rows > 0): ?>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <?php while ($category = $categories_for_distribution->fetch_assoc()): ?>
-                                <div class="category-card p-3" data-category-id="<?php echo $category['id']; ?>" onclick="toggleCategorySelection(this, <?php echo $category['id']; ?>)">
-                                    <div class="flex items-center gap-2">
-                                        <input type="checkbox"
-                                            class="category-checkbox"
-                                            id="category-<?php echo $category['id']; ?>"
-                                            onclick="event.stopPropagation(); toggleCategorySelectionById(<?php echo $category['id']; ?>)">
-                                        <label for="category-<?php echo $category['id']; ?>" class="text-sm font-medium cursor-pointer" onclick="event.stopPropagation()">
-                                            <?php echo htmlspecialchars($category['category_name']); ?>
-                                        </label>
-                                    </div>
-                                </div>
-                            <?php endwhile; ?>
+                    <div class="mt-2 relative">
+                        <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
+                            <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                                <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                            </span>
+                        </button>
+                        <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
+                            <?php 
+                            if ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
+                                $categories_for_distribution->data_seek(0);
+                                while ($paper = $categories_for_distribution->fetch_assoc()) {
+                                    $label = htmlspecialchars($paper['newspaper_name']);
+                                    if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
+                                    $label .= ' - ' . $paper['available_copies'] . ' left';
+                                    
+                                    echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
+                                    echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
+                                    echo "<span>{$label}</span>";
+                                    echo "</label>";
+                                }
+                            } else {
+                                echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
+                            }
+                            ?>
                         </div>
-                    <?php else: ?>
-                        <div class="text-center py-8 text-gray-500">
-                            <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
-                            <p>No subscriptions found</p>
-                            <p class="text-sm mt-2"><a href="categories.php" class="text-blue-600 hover:underline">Add subscriptions first</a></p>
-                        </div>
-                    <?php endif; ?>
+                    </div>
+                </div>
                 </div>
             </div>
         </main>
@@ -414,22 +481,15 @@ include './sidebar.php';
                 </button>
             </div>
             <div class="modal-body">
-                <div class="mb-4 p-3 bg-gray-50 border border-gray-200">
-                    <p class="text-sm text-gray-600 mb-1">Selected Subscriptions:</p>
-                    <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> subscription(s)</p>
-                </div>
-
-                <div class="mb-3">
-                    <label class="block text-xs text-gray-600 mb-1">Recipient</label>
-                    <select id="modal_recipient_select" class="w-full p-2 border border-gray-200 text-sm">
-                        <option value="">-- Select a recipient --</option>
-                        <?php
-                        $recipients->data_seek(0);
-                        while ($recipient = $recipients->fetch_assoc()):
-                        ?>
-                            <option value="<?php echo $recipient['id']; ?>"><?php echo htmlspecialchars($recipient['name']); ?></option>
-                        <?php endwhile; ?>
-                    </select>
+                <div class="mb-4 p-3 bg-gray-50 border border-gray-200 flex justify-between gap-4">
+                    <div>
+                        <p class="text-sm text-gray-600 mb-1">Recipients:</p>
+                        <p class="text-lg font-semibold"><span id="modalSelectedRecipientCountDisplay">0</span> user(s)</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600 mb-1">Subscriptions:</p>
+                        <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> paper(s)</p>
+                    </div>
                 </div>
 
                 <div>
@@ -438,7 +498,7 @@ include './sidebar.php';
                 </div>
 
                 <div class="mt-3 text-xs text-gray-500">
-                    <i class="fa-regular fa-info-circle"></i> Each recipient can only receive distribution once per day.
+                    <i class="fa-regular fa-info-circle"></i> Distributions will skip any recipients who already received their papers today.
                 </div>
             </div>
             <div class="modal-footer">
@@ -449,87 +509,91 @@ include './sidebar.php';
     </div>
 
     <script>
-        let selectedCategories = new Set();
-        const alreadyReceivedToday = <?php echo json_encode($already_received_lookup); ?>;
-
-        function toggleCategorySelection(cardElement, categoryId) {
-            const checkbox = document.getElementById(`category-${categoryId}`);
-            checkbox.checked = !checkbox.checked;
-
-            if (checkbox.checked) {
-                selectedCategories.add(categoryId);
-                cardElement.classList.add('selected');
-            } else {
-                selectedCategories.delete(categoryId);
-                cardElement.classList.remove('selected');
+        // Initialize Choices.js
+        const recipientsSelectEl = document.getElementById('recipientsSelect');
+        const subscriptionsSelectEl = document.getElementById('subscriptionsSelect');
+        
+        // Close dropdowns on outside click
+        document.addEventListener('click', function(event) {
+            const recBtn = document.getElementById('recipientsDropdownText')?.parentElement;
+            const recDropdown = document.getElementById('recipientsDropdownOptions');
+            const subBtn = document.getElementById('subscriptionsDropdownText')?.parentElement;
+            const subDropdown = document.getElementById('subscriptionsDropdownOptions');
+            
+            if (recBtn && recDropdown && !recBtn.contains(event.target) && !recDropdown.contains(event.target)) {
+                recDropdown.classList.add('hidden');
             }
-            updateSelectionCount();
-        }
-
-        function toggleCategorySelectionById(categoryId) {
-            const checkbox = document.getElementById(`category-${categoryId}`);
-            const cardElement = checkbox.closest('.category-card');
-
-            if (checkbox.checked) {
-                selectedCategories.add(categoryId);
-                cardElement.classList.add('selected');
-            } else {
-                selectedCategories.delete(categoryId);
-                cardElement.classList.remove('selected');
+            if (subBtn && subDropdown && !subBtn.contains(event.target) && !subDropdown.contains(event.target)) {
+                subDropdown.classList.add('hidden');
             }
-            updateSelectionCount();
+        });
+
+        function getCheckedValues(name) {
+            const checkboxes = document.querySelectorAll(`input[name="${name}"]:checked`);
+            return Array.from(checkboxes).map(chk => chk.value);
         }
 
         function updateSelectionCount() {
-            const count = selectedCategories.size;
-            document.getElementById('selectedCount').textContent = count;
-            document.getElementById('selectedCountBadge').textContent = count;
+            const recs = getCheckedValues('recipient_ids_chk[]');
+            const subs = getCheckedValues('selected_categories_chk[]');
+            
+            const recCount = recs.length;
+            const catCount = subs.length;
+            
+            document.getElementById('selectedCountBadge').textContent = catCount;
+            document.getElementById('selectedRecipientCountBadge').textContent = recCount;
 
             const distributeBtn = document.getElementById('distributeBtn');
-            distributeBtn.disabled = count === 0;
+            const btnText = `Distribute (${recCount} rec, ${catCount} sub)`;
+            if (distributeBtn) distributeBtn.querySelector('span').textContent = btnText;
+            
+            if (distributeBtn) distributeBtn.disabled = (catCount === 0 || recCount === 0);
+
+            const recText = document.getElementById('recipientsDropdownText');
+            if (recText) recText.textContent = recCount > 0 ? `${recCount} recipients selected` : 'Select recipients...';
+
+            const subText = document.getElementById('subscriptionsDropdownText');
+            if (subText) subText.textContent = catCount > 0 ? `${catCount} subscriptions selected` : 'Select subscriptions...';
         }
 
         function openDistributeModal() {
-            if (selectedCategories.size === 0) {
+            const recCount = getCheckedValues('recipient_ids_chk[]').length;
+            const catCount = getCheckedValues('selected_categories_chk[]').length;
+            
+            if (recCount === 0) {
+                showToast('error', 'Please select at least one recipient');
+                return;
+            }
+            if (catCount === 0) {
                 showToast('error', 'Please select at least one subscription');
                 return;
             }
-            document.getElementById('modalSelectedCountDisplay').textContent = selectedCategories.size;
+            document.getElementById('modalSelectedCountDisplay').textContent = catCount;
+            document.getElementById('modalSelectedRecipientCountDisplay').textContent = recCount;
             document.getElementById('distributeModal').style.display = 'flex';
         }
 
         function closeDistributeModal() {
             document.getElementById('distributeModal').style.display = 'none';
-            document.getElementById('modal_recipient_select').value = '';
             document.getElementById('modal_distributed_by').value = '';
         }
 
         function submitDistribution() {
-            const recipientSelect = document.getElementById('modal_recipient_select');
-            const recipientId = recipientSelect.value;
             const distributedBy = document.getElementById('modal_distributed_by').value.trim();
 
-            if (!recipientId) {
-                showToast('error', 'Please select a recipient');
-                return;
-            }
             if (!distributedBy) {
                 showToast('error', 'Please enter who is distributing');
                 return;
             }
 
-            const recipientName = recipientSelect.options[recipientSelect.selectedIndex].text.trim();
-            if (alreadyReceivedToday[recipientName]) {
-                showToast('error', `Newspaper(s) have been distributed to ${recipientName} already.`);
-                return;
-            }
-
             const formData = new FormData();
             formData.append('distribute_submit', '1');
-            formData.append('recipient_id', recipientId);
             formData.append('distributed_by', distributedBy);
 
-            const selectedArray = Array.from(selectedCategories);
+            const recArray = getCheckedValues('recipient_ids_chk[]');
+            formData.append('recipient_ids', recArray.join(','));
+
+            const selectedArray = getCheckedValues('selected_categories_chk[]');
             formData.append('selected_categories', selectedArray.join(','));
 
             const confirmBtn = event.target;

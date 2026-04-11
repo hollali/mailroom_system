@@ -717,6 +717,7 @@ try {
                                         <?php foreach ($recent_document_activities as $activity): ?>
                                             <div class="activity-item" data-activity-item>
                                                 <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
+                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
                                                 <div class="activity-meta">
                                                     <span class="status-badge <?php echo $activity['type'] === 'distributed' ? 'status-picked' : 'status-pending'; ?>">
                                                         <?php echo ucfirst($activity['type']); ?>

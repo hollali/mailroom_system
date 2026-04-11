@@ -24,6 +24,102 @@ function formatTimestampDisplay($value)
     return date('M j, Y g:i A', $timestamp);
 }
 
+// Handle form submission
+if (isset($_POST['submit'])) {
+    $document_id = $_POST['document_id'];
+    $date_distributed = $_POST['date_distributed'];
+    $numbers = $_POST['number_distributed'] ?? [];
+
+    $success_count = 0;
+    $error_messages = [];
+
+    // Begin transaction
+    $conn->begin_transaction();
+
+    try {
+        // First, check if document has enough copies for all distributions
+        $total_requested = array_sum($numbers);
+
+        $check_stmt = $conn->prepare("SELECT copies_received, document_name FROM documents WHERE id = ?");
+        $check_stmt->bind_param("i", $document_id);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+        $document = $check_result->fetch_assoc();
+        $check_stmt->close();
+
+        if (!$document) {
+            throw new Exception("Document not found");
+        }
+
+        if ($document['copies_received'] < $total_requested) {
+            throw new Exception("Insufficient copies. Available: " . $document['copies_received'] . ", Requested: " . $total_requested);
+        }
+
+        // Process each distribution entry
+        for ($i = 0; $i < count($numbers); $i++) {
+            $number = (int)$numbers[$i];
+
+            if ($number > 0) {
+                // Insert distribution record (without department and recipient name)
+                $sql = "INSERT INTO document_distribution 
+                        (document_id, number_received, number_distributed, date_distributed)
+                        VALUES 
+                        (?, ?, ?, ?)";
+
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) {
+                    throw new Exception("Prepare failed: " . $conn->error);
+                }
+
+                $stmt->bind_param("iiis", $document_id, $number, $number, $date_distributed);
+
+                if (!$stmt->execute()) {
+                    throw new Exception("Error for entry " . ($i + 1) . ": " . $stmt->error);
+                }
+                $stmt->close();
+
+                $success_count++;
+            }
+        }
+
+        // Update document copies after successful distributions
+        if ($success_count > 0) {
+            $new_copies = $document['copies_received'] - $total_requested;
+            $update_stmt = $conn->prepare("UPDATE documents SET copies_received = ? WHERE id = ?");
+            $update_stmt->bind_param("ii", $new_copies, $document_id);
+
+            if (!$update_stmt->execute()) {
+                throw new Exception("Failed to update document copies: " . $update_stmt->error);
+            }
+            $update_stmt->close();
+        }
+
+        // Commit transaction
+        $conn->commit();
+
+        $_SESSION['toast'] = [
+            'type' => 'success',
+            'message' => "$success_count distribution record(s) saved successfully. " . $total_requested . " copies of \"" . $document['document_name'] . "\" distributed."
+        ];
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Error: " . $e->getMessage()
+        ];
+    }
+
+    if ($success_count == 0 && empty($error_messages)) {
+        $_SESSION['toast'] = [
+            'type' => 'warning',
+            'message' => "No valid records to save"
+        ];
+    }
+
+    header('Location: distribution.php');
+    exit();
+}
+
 // Handle Delete Distribution
 if (isset($_GET['delete'])) {
     $id = (int)$_GET['delete'];
@@ -33,7 +129,7 @@ if (isset($_GET['delete'])) {
 
     try {
         // Get distribution details before deleting
-        $get_stmt = $conn->prepare("SELECT document_id FROM document_distribution WHERE id = ?");
+        $get_stmt = $conn->prepare("SELECT document_id, number_distributed FROM document_distribution WHERE id = ?");
         $get_stmt->bind_param("i", $id);
         $get_stmt->execute();
         $result = $get_stmt->get_result();
@@ -50,10 +146,19 @@ if (isset($_GET['delete'])) {
             }
             $delete_stmt->close();
 
+            // Restore copies to document
+            $update_stmt = $conn->prepare("UPDATE documents SET copies_received = copies_received + ? WHERE id = ?");
+            $update_stmt->bind_param("ii", $distribution['number_distributed'], $distribution['document_id']);
+
+            if (!$update_stmt->execute()) {
+                throw new Exception("Error restoring copies: " . $conn->error);
+            }
+            $update_stmt->close();
+
             $conn->commit();
             $_SESSION['toast'] = [
                 'type' => 'success',
-                'message' => "Distribution record deleted successfully!"
+                'message' => "Distribution record deleted and copies restored successfully!"
             ];
         } else {
             throw new Exception("Distribution record not found");
@@ -74,9 +179,38 @@ if (isset($_GET['delete'])) {
     exit();
 }
 
+// Get all documents with their current available copies
+$documents = $conn->query("
+    SELECT d.*, dt.type_name as document_type,
+           (d.copies_received - COALESCE((
+                SELECT SUM(number_distributed) 
+                FROM document_distribution 
+                WHERE document_id = d.id
+           ), 0)) as available_copies
+    FROM documents d 
+    LEFT JOIN document_types dt ON d.type_id = dt.id 
+    ORDER BY 
+        CASE 
+            WHEN (d.copies_received - COALESCE((
+                SELECT SUM(number_distributed) 
+                FROM document_distribution 
+                WHERE document_id = d.id
+            ), 0)) > 0 THEN 0 
+            ELSE 1 
+        END,
+        d.document_name ASC
+");
+
+// Get all document types for option grouping
+$document_types = $conn->query("
+    SELECT * FROM document_types 
+    ORDER BY type_name ASC
+");
+
 // Get distribution records with document information
 $result = $conn->query("
-    SELECT dd.*, d.document_name, d.type_id, dt.type_name as document_type
+    SELECT dd.*, d.document_name, d.type_id, dt.type_name as document_type,
+           d.copies_received as total_copies
     FROM document_distribution dd
     JOIN documents d ON dd.document_id = d.id
     LEFT JOIN document_types dt ON d.type_id = dt.id
@@ -92,12 +226,37 @@ if (!$result) {
 $stats = $conn->query("
     SELECT 
         COUNT(DISTINCT dd.id) as total_distributions,
-        COUNT(DISTINCT d.id) as total_documents
+        COALESCE(SUM(dd.number_distributed), 0) as total_copies_distributed,
+        COUNT(DISTINCT d.id) as total_documents,
+        COALESCE(SUM(d.copies_received), 0) as total_copies_received,
+        COALESCE(SUM(d.copies_received - COALESCE(dd_dist.total_distributed, 0)), 0) as available_copies,
+        COUNT(DISTINCT CASE 
+            WHEN (d.copies_received - COALESCE(dd_dist.total_distributed, 0)) > 0 
+            THEN d.id END) as documents_in_stock,
+        COUNT(DISTINCT CASE 
+            WHEN (d.copies_received - COALESCE(dd_dist.total_distributed, 0)) <= 0 
+            THEN d.id END) as documents_out_of_stock
     FROM documents d
+    LEFT JOIN (
+        SELECT document_id, SUM(number_distributed) as total_distributed
+        FROM document_distribution
+        GROUP BY document_id
+    ) dd_dist ON d.id = dd_dist.document_id
     LEFT JOIN document_distribution dd ON d.id = dd.document_id
 ")->fetch_assoc();
 
 $total_distributions = $stats['total_distributions'] ?? 0;
+$total_copies_distributed = $stats['total_copies_distributed'] ?? 0;
+$available_copies = $stats['available_copies'] ?? 0;
+
+$today = date('Y-m-d');
+$today_distributions = 0;
+$today_result = $conn->query("SELECT COUNT(*) as count, COALESCE(SUM(number_distributed), 0) as total FROM document_distribution WHERE date_distributed = '$today'");
+if ($today_result) {
+    $today_data = $today_result->fetch_assoc();
+    $today_distributions = $today_data['count'];
+    $today_copies = $today_data['total'];
+}
 
 // Get document types count
 $type_count = 0;
@@ -469,41 +628,6 @@ if (isset($_SESSION['toast'])) {
             border-left: 4px solid #f59e0b;
             color: #b45b0b;
         }
-
-        @media print {
-            body {
-                background: white !important;
-            }
-
-            #toastContainer,
-            #sidebar,
-            .modal,
-            .no-print,
-            #distributionPagination {
-                display: none !important;
-            }
-
-            .ml-60 {
-                margin-left: 0 !important;
-            }
-
-            .shadow,
-            .shadow-sm,
-            .shadow-md,
-            .shadow-lg {
-                box-shadow: none !important;
-            }
-
-            th:last-child,
-            td:last-child {
-                display: none !important;
-            }
-
-            a {
-                color: inherit !important;
-                text-decoration: none !important;
-            }
-        }
     </style>
 </head>
 
@@ -518,12 +642,15 @@ if (isset($_SESSION['toast'])) {
         <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
                 <div>
-                    <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
-                    <p class="text-sm text-[#6e6e6e] mt-1">Review document distributions recorded from the documents page</p>
+                    <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution</h1>
+                    <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across the organization</p>
                 </div>
-                <button type="button" onclick="printDistributionPage()" class="no-print px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    <i class="fa-solid fa-print mr-1"></i> Print
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="openDistributionModal()" class="new-distribution-btn">
+                        <i class="fa-regular fa-plus"></i>
+                        <span>New Distribution</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -531,7 +658,7 @@ if (isset($_SESSION['toast'])) {
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center no-print">
+                <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
                     <h2 class="text-sm font-medium text-[#1e1e1e]">Distribution History</h2>
                     <div class="flex items-center gap-3">
                         <div class="relative flex items-center gap-2">
@@ -558,9 +685,12 @@ if (isset($_SESSION['toast'])) {
                                     Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(2)">
-                                    Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
+                                    Copies Distributed <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
+                                    Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
+                                </th>
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(4)">
                                     Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3">Actions</th>
@@ -573,7 +703,7 @@ if (isset($_SESSION['toast'])) {
                                 while ($row = $result->fetch_assoc()):
                             ?>
                                     <tr class="border-t text-sm hover:bg-[#fafafa] distribution-row" id="row-<?php echo $row['id']; ?>"
-                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
+                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
                                         <td class="p-3">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
                                                 class="text-[#1e1e1e] hover:underline font-medium">
@@ -590,6 +720,7 @@ if (isset($_SESSION['toast'])) {
                                                 <span class="text-[#9e9e9e]">—</span>
                                             <?php endif; ?>
                                         </td>
+                                        <td class="p-3 font-mono"><?php echo $row['number_distributed'] ?? 0; ?></td>
                                         <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                         <td class="p-3 whitespace-nowrap"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
                                         <td class="p-3">
@@ -598,7 +729,7 @@ if (isset($_SESSION['toast'])) {
                                                     class="action-btn" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
                                                 </button>
-                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>')"
+                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
                                                     class="action-btn delete-btn" title="Delete">
                                                     <i class="fa-regular fa-trash-can"></i>
                                                 </button>
@@ -610,8 +741,8 @@ if (isset($_SESSION['toast'])) {
                             else:
                                 ?>
                                 <tr>
-                                    <td colspan="5" class="p-8 text-center text-sm text-[#6e6e6e]">
-                                        No distribution records found. Use the distribute action in documents to create one.
+                                    <td colspan="6" class="p-8 text-center text-sm text-[#6e6e6e]">
+                                        No distribution records found. Click "New Distribution" to get started.
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -622,6 +753,7 @@ if (isset($_SESSION['toast'])) {
                 <!-- Table Footer with Record Count -->
                 <div class="px-5 py-3 border-t border-[#e5e5e5] bg-[#fafafa] text-xs text-[#6e6e6e] flex justify-between items-center">
                     <span>Showing <span id="visibleCount"><?php echo $total_distributions; ?></span> records</span>
+                    <span>Total Copies Distributed: <?php echo $total_copies_distributed; ?></span>
                 </div>
             </div>
             <div id="distributionPagination" class="pagination-shell mt-4 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
@@ -634,6 +766,149 @@ if (isset($_SESSION['toast'])) {
                     <div class="pagination" id="distributionPaginationControls"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Distribution Modal - Simplified (No department/recipient fields) -->
+    <div id="distributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6 modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">New Distribution</h2>
+                <button type="button" onclick="closeDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div id="stockWarning" class="hidden mb-4 p-3 warning-message rounded-md text-sm">
+                <i class="fa-regular fa-triangle-exclamation mr-2"></i>
+                <span id="warningMessage"></span>
+            </div>
+
+            <form method="POST" action="distribution.php" id="distributionForm" onsubmit="return validateForm()">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
+                            Document <span class="text-red-400">*</span>
+                        </label>
+                        <select name="document_id" id="modalDocumentSelect" required onchange="updateAvailableCopies()" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                            <option value="">-- Select Document --</option>
+                            <?php
+                            // Group documents by type and show available copies
+                            $documents->data_seek(0);
+                            $grouped_documents = [];
+                            while ($doc = $documents->fetch_assoc()) {
+                                $type_name = $doc['document_type'] ?? 'Uncategorized';
+                                if (!isset($grouped_documents[$type_name])) {
+                                    $grouped_documents[$type_name] = [];
+                                }
+                                $grouped_documents[$type_name][] = $doc;
+                            }
+
+                            // Display documents grouped by type
+                            foreach ($grouped_documents as $type_name => $docs):
+                                $has_available = false;
+                                foreach ($docs as $doc) {
+                                    if ($doc['available_copies'] > 0) {
+                                        $has_available = true;
+                                        break;
+                                    }
+                                }
+                            ?>
+                                <optgroup label="<?php echo htmlspecialchars($type_name); ?>" class="font-semibold bg-gray-50">
+                                    <?php foreach ($docs as $doc):
+                                        $available = $doc['available_copies'];
+                                    ?>
+                                        <option value="<?php echo $doc['id']; ?>"
+                                            data-available="<?php echo $available; ?>"
+                                            data-total="<?php echo $doc['copies_received']; ?>"
+                                            <?php echo $available <= 0 ? 'disabled class="text-gray-400"' : ''; ?>>
+                                            <?php echo htmlspecialchars($doc['document_name']); ?>
+                                            (<?php echo $available; ?> of <?php echo $doc['copies_received']; ?> available)
+                                            <?php echo $available <= 0 ? ' - OUT OF STOCK' : ''; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
+                            Date Distributed <span class="text-red-400">*</span>
+                        </label>
+                        <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
+                    </div>
+                </div>
+
+                <!-- Distribution Summary -->
+                <div id="distributionSummary" class="hidden mb-4 p-3 bg-[#f5f5f4] rounded-md text-sm">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[#6e6e6e]">Total copies to distribute:</span>
+                        <span class="font-medium" id="totalCopiesToDistribute">0</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-1">
+                        <span class="text-[#6e6e6e]">Available copies:</span>
+                        <span class="font-medium" id="availableCopiesDisplay">0</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-1 text-xs" id="balanceWarning">
+                        <!-- Will show warning if exceeding available -->
+                    </div>
+                </div>
+
+                <!-- MULTIPLE DISTRIBUTION ROWS (Only copy count needed) -->
+                <div class="mb-3">
+                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">
+                        Distribution Entries
+                    </label>
+                    <p class="text-xs text-[#6e6e6e] mb-2">Add multiple distribution entries if distributing to multiple recipients</p>
+                </div>
+
+                <div id="modalDistributionRows">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                        <div class="flex gap-2">
+                            <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
+                                class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
+                                onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
+                            <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                        </div>
+                        <div class="text-xs text-[#6e6e6e] flex items-center">
+                            <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mb-4">
+                    <button type="button" onclick="addModalRow()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Another Entry
+                    </button>
+
+                    <button type="button" onclick="addModalBulkRows()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Entries
+                    </button>
+
+                    <button type="button" onclick="setMaxDistribution()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-solid fa-gauge-high mr-1 text-[#6e6e6e]"></i> Use All Available Copies
+                    </button>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-[#e5e5e5]">
+                    <button type="button" onclick="closeDistributionModal()"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="submit" name="submit" id="submitBtn"
+                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                        <i class="fa-regular fa-floppy-disk mr-1"></i>
+                        Save Distribution
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -674,10 +949,11 @@ if (isset($_SESSION['toast'])) {
                 <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this distribution record?</p>
                 <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
                     <p class="text-sm font-medium text-red-800" id="deleteDocumentName"></p>
+                    <p class="text-xs text-red-600 mt-1" id="deleteCopiesCount"></p>
                 </div>
                 <p class="text-xs text-[#9e9e9e] mt-3">
                     <i class="fa-solid fa-circle-info mr-1"></i>
-                    This will remove the history record and make the document available for redistribution again.
+                    This will restore the copies back to the document inventory.
                 </p>
             </div>
 
@@ -688,7 +964,7 @@ if (isset($_SESSION['toast'])) {
                 </button>
                 <a href="#" id="confirmDeleteBtn"
                     class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
-                    Delete Record
+                    Delete & Restore Copies
                 </a>
             </div>
         </div>
@@ -741,12 +1017,202 @@ if (isset($_SESSION['toast'])) {
             }, duration);
         }
 
+        // ========== MODAL FUNCTIONS ==========
+        function openDistributionModal() {
+            resetModalForm();
+            document.getElementById('distributionModal').style.display = 'flex';
+            updateAvailableCopies();
+        }
+
+        function closeDistributionModal() {
+            document.getElementById('distributionModal').style.display = 'none';
+        }
+
+        function resetModalForm() {
+            const container = document.getElementById('modalDistributionRows');
+            const rows = container.querySelectorAll('.grid');
+            for (let i = 1; i < rows.length; i++) {
+                rows[i].remove();
+            }
+
+            const firstRow = rows[0];
+            if (firstRow) {
+                const copiesInput = firstRow.querySelector('input[name="number_distributed[]"]');
+                if (copiesInput) copiesInput.value = '1';
+            }
+
+            document.getElementById('modalDocumentSelect').value = '';
+            document.getElementById('modalDateDistributed').value = '<?php echo date('Y-m-d'); ?>';
+            document.getElementById('distributionSummary').classList.add('hidden');
+            document.getElementById('stockWarning').classList.add('hidden');
+        }
+
+        function updateAvailableCopies() {
+            const select = document.getElementById('modalDocumentSelect');
+            const selectedOption = select.options[select.selectedIndex];
+
+            if (selectedOption && selectedOption.value) {
+                const available = selectedOption.dataset.available || 0;
+                document.getElementById('availableCopiesDisplay').textContent = available;
+                document.getElementById('distributionSummary').classList.remove('hidden');
+                updateDistributionSummary();
+            } else {
+                document.getElementById('distributionSummary').classList.add('hidden');
+            }
+        }
+
+        function updateDistributionSummary() {
+            const select = document.getElementById('modalDocumentSelect');
+            const selectedOption = select.options[select.selectedIndex];
+
+            if (!selectedOption || !selectedOption.value) {
+                return;
+            }
+
+            const available = parseInt(selectedOption.dataset.available || 0);
+            const copies = document.querySelectorAll('.distribution-copies');
+            let total = 0;
+
+            copies.forEach(input => {
+                const val = parseInt(input.value);
+                if (!isNaN(val) && val > 0) {
+                    total += val;
+                }
+            });
+
+            document.getElementById('totalCopiesToDistribute').textContent = total;
+
+            const balanceWarning = document.getElementById('balanceWarning');
+            const submitBtn = document.getElementById('submitBtn');
+            const stockWarning = document.getElementById('stockWarning');
+            const warningMessage = document.getElementById('warningMessage');
+
+            if (total > available) {
+                balanceWarning.innerHTML = `<span class="text-red-600"><i class="fa-regular fa-circle-exclamation mr-1"></i>Exceeds available by ${total - available} copies</span>`;
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                stockWarning.classList.remove('hidden');
+                warningMessage.textContent = `Warning: You are trying to distribute ${total} copies but only ${available} are available.`;
+            } else {
+                balanceWarning.innerHTML = '';
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                stockWarning.classList.add('hidden');
+            }
+        }
+
+        function setMaxDistribution() {
+            const select = document.getElementById('modalDocumentSelect');
+            const selectedOption = select.options[select.selectedIndex];
+
+            if (!selectedOption || !selectedOption.value) {
+                showToast('Please select a document first', 'warning');
+                return;
+            }
+
+            const available = parseInt(selectedOption.dataset.available || 0);
+            const rows = document.querySelectorAll('.distribution-copies');
+
+            if (rows.length === 0) return;
+
+            const perRow = Math.floor(available / rows.length);
+            const remainder = available % rows.length;
+
+            rows.forEach((input, index) => {
+                if (index < remainder) {
+                    input.value = perRow + 1;
+                } else {
+                    input.value = perRow;
+                }
+            });
+
+            updateDistributionSummary();
+            showToast(`Set to distribute all ${available} available copies`, 'info', 2000);
+        }
+
+        function addModalRow() {
+            const container = document.getElementById('modalDistributionRows');
+            const row = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                    <div class="flex gap-2">
+                        <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
+                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
+                            onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
+                        <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
+                    <div class="text-xs text-[#6e6e6e] flex items-center">
+                        <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML("beforeend", row);
+            updateDistributionSummary();
+            showToast('New distribution entry added', 'info', 2000);
+        }
+
+        function addModalBulkRows() {
+            for (let i = 0; i < 5; i++) {
+                addModalRow();
+            }
+            showToast('5 distribution entries added', 'success', 2000);
+        }
+
+        function removeModalRow(button) {
+            const row = button.closest('.grid');
+            if (row && document.querySelectorAll('#modalDistributionRows .grid').length > 1) {
+                row.remove();
+                updateDistributionSummary();
+                showToast('Entry removed', 'info', 2000);
+            } else {
+                showToast('You must keep at least one distribution entry', 'warning', 3000);
+            }
+        }
+
+        function validateForm() {
+            const documentId = document.getElementById('modalDocumentSelect').value;
+            if (!documentId) {
+                showToast('Please select a document', 'warning');
+                return false;
+            }
+
+            const select = document.getElementById('modalDocumentSelect');
+            const selectedOption = select.options[select.selectedIndex];
+            const available = parseInt(selectedOption.dataset.available || 0);
+
+            const copies = document.querySelectorAll('.distribution-copies');
+            let totalCopies = 0;
+            let hasValidEntry = false;
+
+            copies.forEach(input => {
+                const val = parseInt(input.value);
+                if (!isNaN(val) && val > 0) {
+                    hasValidEntry = true;
+                    totalCopies += val;
+                }
+            });
+
+            if (!hasValidEntry) {
+                showToast('Please enter at least one valid number of copies', 'warning');
+                return false;
+            }
+
+            if (totalCopies > available) {
+                showToast(`Cannot distribute ${totalCopies} copies. Only ${available} available.`, 'warning');
+                return false;
+            }
+
+            return confirm(`You are about to distribute ${totalCopies} copy(ies). Continue?`);
+        }
+
         // ========== DELETE MODAL FUNCTIONS ==========
         let currentDeleteId = null;
 
-        function openDeleteModal(id, documentName) {
+        function openDeleteModal(id, documentName, copies) {
             currentDeleteId = id;
             document.getElementById('deleteDocumentName').textContent = documentName;
+            document.getElementById('deleteCopiesCount').textContent = `Copies: ${copies}`;
 
             const urlParams = new URLSearchParams(window.location.search);
             urlParams.set('delete', id);
@@ -774,12 +1240,20 @@ if (isset($_SESSION['toast'])) {
                         <p class="text-sm">${escapeHtml(data.document_type || 'Not specified')}</p>
                     </div>
                     <div>
+                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Copies Distributed</p>
+                        <p class="text-sm font-mono">${data.number_distributed || 0}</p>
+                    </div>
+                    <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Distributed</p>
                         <p class="text-sm">${data.date_distributed ? new Date(data.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
                     </div>
                     <div>
                         <p class="text-xs text-[#6e6e6e] uppercase mb-1">Timestamp</p>
                         <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString() : 'N/A'}</p>
+                    </div>
+                    <div class="col-span-2">
+                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Total Copies of Document</p>
+                        <p class="text-sm">${data.total_copies || 0}</p>
                     </div>
                 </div>
             `;
@@ -795,10 +1269,6 @@ if (isset($_SESSION['toast'])) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        function printDistributionPage() {
-            window.print();
         }
 
         // Table search functionality
@@ -964,9 +1434,11 @@ if (isset($_SESSION['toast'])) {
 
         // Close modals when clicking outside
         window.onclick = function(event) {
+            const distributionModal = document.getElementById('distributionModal');
             const viewModal = document.getElementById('viewModal');
             const deleteModal = document.getElementById('deleteModal');
 
+            if (event.target == distributionModal) closeDistributionModal();
             if (event.target == viewModal) closeViewModal();
             if (event.target == deleteModal) closeDeleteModal();
         }
@@ -974,6 +1446,7 @@ if (isset($_SESSION['toast'])) {
         // ESC key to close modals
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
+                closeDistributionModal();
                 closeViewModal();
                 closeDeleteModal();
             }

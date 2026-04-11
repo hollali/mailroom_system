@@ -1263,7 +1263,7 @@ $recent_parcels = $conn->query("
                     <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Designation <span class="text-red-400">*</span></label>
                     <input type="text" name="designation" required
                         class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="e.g., Staff, Student, etc."
+                        placeholder="e.g., Chamber, HR, etc."
                         autocomplete="off">
                 </div>
 

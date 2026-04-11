@@ -111,15 +111,15 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-tags w-4"></i>
                 <span class="sidebar-text">Newspaper Subscription</span>
             </a>
-            <!--<a href="list.php"
-                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'list.php' ? 'active' : ''; ?>">
-                <i class="fa-solid fa-newspaper w-4"></i>
-                <span class="sidebar-text">Newspaper List</span>
-            </a>-->
             <a href="recipients.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'recipients.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-user w-4"></i>
                 <span class="sidebar-text">Newspaper Recipients</span>
+            </a>
+            <a href="list.php"
+                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'list.php' ? 'active' : ''; ?>">
+                <i class="fa-solid fa-newspaper w-4"></i>
+                <span class="sidebar-text">Newspaper List</span>
             </a>
             <a href="newspaper_distribution.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'newspaper_distribution.php' ? 'active' : ''; ?>">
@@ -148,6 +148,11 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
             <a href="distribution.php"
                 class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'distribution.php' ? 'active' : ''; ?>">
                 <i class="fa-solid fa-share-from-square w-4"></i>
+                <span class="sidebar-text">Document Distribution</span>
+            </a>
+            <a href="documents_distribution_history.php"
+                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'documents_distribution_history.php' ? 'active' : ''; ?>">
+                <i class="fa-solid fa-clock w-4"></i>
                 <span class="sidebar-text">Document History</span>
             </a>
 

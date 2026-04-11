@@ -57,11 +57,6 @@ function getDocumentSerialDisplay(array $document, $hasSerialNumberColumn)
     return 'DOC-' . str_pad((string)($document['id'] ?? 0), 6, '0', STR_PAD_LEFT);
 }
 
-function getPostedInt($key, $default = 0)
-{
-    return isset($_POST[$key]) ? (int)$_POST[$key] : $default;
-}
-
 // Handle add document via AJAX
 if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     header('Content-Type: application/json');
@@ -69,7 +64,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     $document_name = trim($_POST['document_name']);
     $type_id = (int)$_POST['type_id'];
     $origin = trim($_POST['origin']);
-    $copies_received = isset($_POST['copies_received']) ? (int)$_POST['copies_received'] : 1;
+    $copies_received = (int)$_POST['copies_received'];
     $date_received = $_POST['date_received'];
     $normalized_received_timestamp = normalizeDateTimeInput($date_received);
     $date_received_only = $normalized_received_timestamp ? date('Y-m-d', strtotime($normalized_received_timestamp)) : null;
@@ -85,7 +80,10 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
         exit();
     }
 
-    if ($copies_received < 1) $copies_received = 1;
+    if ($copies_received < 1) {
+        echo json_encode(['success' => false, 'message' => 'Number of copies must be at least 1']);
+        exit();
+    }
 
     if (empty($normalized_received_timestamp)) {
         echo json_encode(['success' => false, 'message' => 'Date received is required']);
@@ -156,97 +154,13 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     exit();
 }
 
-if (isset($_POST['ajax_action']) && $_POST['ajax_action'] === 'distribute_document') {
-    header('Content-Type: application/json');
-
-    $document_id = getPostedInt('document_id');
-    $date_distributed = trim($_POST['date_distributed'] ?? '');
-
-    if ($document_id <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Invalid document selected']);
-        exit();
-    }
-
-    if ($date_distributed === '') {
-        echo json_encode(['success' => false, 'message' => 'Date distributed is required']);
-        exit();
-    }
-
-    $conn->begin_transaction();
-
-    try {
-        $document_stmt = $conn->prepare("
-            SELECT d.id, d.document_name, d.copies_received,
-                   COUNT(dd.id) AS distribution_count
-            FROM documents d
-            LEFT JOIN document_distribution dd ON dd.document_id = d.id
-            WHERE d.id = ?
-            GROUP BY d.id, d.document_name, d.copies_received
-            FOR UPDATE
-        ");
-        $document_stmt->bind_param("i", $document_id);
-        $document_stmt->execute();
-        $document = $document_stmt->get_result()->fetch_assoc();
-        $document_stmt->close();
-
-        if (!$document) {
-            throw new Exception('Document not found');
-        }
-
-        if ((int)$document['distribution_count'] > 0) {
-            throw new Exception('This document has already been distributed and can only be distributed once');
-        }
-
-        $number_distributed = max(1, (int)$document['copies_received']);
-
-        if ($number_distributed < 1) {
-            throw new Exception('This document has no copies available for distribution');
-        }
-
-        $insert_stmt = $conn->prepare("
-            INSERT INTO document_distribution (document_id, number_received, number_distributed, date_distributed)
-            VALUES (?, ?, ?, ?)
-        ");
-        $insert_stmt->bind_param("iiis", $document_id, $number_distributed, $number_distributed, $date_distributed);
-
-        if (!$insert_stmt->execute()) {
-            throw new Exception('Unable to save distribution: ' . $insert_stmt->error);
-        }
-        $insert_stmt->close();
-
-        $conn->commit();
-
-        echo json_encode([
-            'success' => true,
-            'message' => 'Distribution saved for "' . $document['document_name'] . '"',
-        ]);
-    } catch (Exception $e) {
-        $conn->rollback();
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-
-    exit();
-}
-
-// Get all documents with their distribution summary
+// Get all documents with their basic info (no distribution or availability tracking)
 $sql = "SELECT 
             d.*, 
             dt.type_name as document_type,
-            $document_received_expr,
-            COALESCE(dd_summary.distribution_count, 0) AS distribution_count,
-            COALESCE(dd_summary.total_distributed, 0) AS total_distributed,
-            dd_summary.last_distribution_date
+            $document_received_expr
         FROM documents d
         LEFT JOIN document_types dt ON d.type_id = dt.id
-        LEFT JOIN (
-            SELECT
-                document_id,
-                COUNT(*) AS distribution_count,
-                SUM(number_distributed) AS total_distributed,
-                MAX(date_distributed) AS last_distribution_date
-            FROM document_distribution
-            GROUP BY document_id
-        ) dd_summary ON dd_summary.document_id = d.id
         ORDER BY d.date_received DESC";
 
 $documents_result = $conn->query($sql);
@@ -257,11 +171,13 @@ if (!$documents_result) {
 
 // Calculate basic statistics
 $stats = [
-    'total_documents' => 0
+    'total_documents' => 0,
+    'total_copies' => 0
 ];
 
 $stats_sql = "SELECT 
-                COUNT(DISTINCT d.id) as total_documents
+                COUNT(DISTINCT d.id) as total_documents,
+                SUM(d.copies_received) as total_copies
               FROM documents d";
 
 $stats_result = $conn->query($stats_sql);
@@ -556,62 +472,6 @@ if (isset($_SESSION['toast'])) {
         .fab:hover .fab-tooltip {
             opacity: 1;
         }
-
-        .action-icon-btn {
-            width: 2rem;
-            height: 2rem;
-            border-radius: 9999px;
-            border: 1px solid #e5e5e5;
-            background-color: white;
-            color: #4a4a4a;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
-
-        .action-icon-btn:hover {
-            background-color: #f5f5f4;
-            color: #1e1e1e;
-            border-color: #d6d3d1;
-        }
-
-        @media print {
-            body {
-                background: white !important;
-            }
-
-            #sidebar,
-            .modal,
-            .fab,
-            .no-print,
-            #documentsPagination,
-            #toastContainer,
-            .toastify {
-                display: none !important;
-            }
-
-            .ml-60 {
-                margin-left: 0 !important;
-            }
-
-            .shadow,
-            .shadow-sm,
-            .shadow-md,
-            .shadow-lg {
-                box-shadow: none !important;
-            }
-
-            th:last-child,
-            td:last-child {
-                display: none !important;
-            }
-
-            a {
-                color: inherit !important;
-                text-decoration: none !important;
-            }
-        }
     </style>
 </head>
 
@@ -629,15 +489,12 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Document List</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">View and manage documents in the system</p>
                     </div>
-                    <button type="button" onclick="printDocumentsPage()" class="no-print px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        <i class="fa-solid fa-print mr-1"></i> Print
-                    </button>
                 </div>
             </div>
 
             <div class="p-8">
                 <!-- Filters -->
-                <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6 no-print">
+                <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="text-sm font-medium text-[#1e1e1e]">Filter:</span>
 
@@ -681,17 +538,16 @@ if (isset($_SESSION['toast'])) {
                                     <th onclick="sortTable(1)">Document Name <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(2)">Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(3)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(4)">Status <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(5)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th>Action</th>
+                                    <th onclick="sortTable(4)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th onclick="sortTable(5)">Total Copies <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody">
                                 <?php if ($documents_result && $documents_result->num_rows > 0): ?>
                                     <?php
                                     while ($doc = $documents_result->fetch_assoc()):
+                                        $total = $doc['copies_received'];
                                         $serialDisplay = getDocumentSerialDisplay($doc, $documents_has_serial_number);
-                                        $isDistributed = (int)($doc['distribution_count'] ?? 0) > 0;
                                     ?>
                                         <tr class="document-row hover:bg-[#fafafa]"
                                             data-id="<?php echo $doc['id']; ?>"
@@ -699,7 +555,7 @@ if (isset($_SESSION['toast'])) {
                                             data-name="<?php echo strtolower(htmlspecialchars($doc['document_name'])); ?>"
                                             data-serial="<?php echo strtolower(htmlspecialchars($serialDisplay)); ?>"
                                             data-origin="<?php echo strtolower(htmlspecialchars($doc['origin'] ?? '')); ?>"
-                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . $serialDisplay . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . ($doc['received_timestamp'] ?? '') . ' ' . ($isDistributed ? 'distributed' : 'pending')))); ?>">
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($doc['document_name'] ?? '') . ' ' . $serialDisplay . ' ' . ($doc['document_type'] ?? '') . ' ' . ($doc['origin'] ?? '') . ' ' . ($doc['received_timestamp'] ?? '') . ' ' . $total))); ?>">
 
                                             <td class="serial-column"><?php echo htmlspecialchars($serialDisplay); ?> </td>
                                             <td class="font-medium">
@@ -713,42 +569,15 @@ if (isset($_SESSION['toast'])) {
                                                 </span>
                                             </td>
                                             <td><?php echo htmlspecialchars($doc['origin'] ?? 'N/A'); ?> </td>
-                                            <td>
-                                                <?php if ($isDistributed): ?>
-                                                    <span class="badge badge-info">Distributed</span>
-                                                <?php else: ?>
-                                                    <span class="badge">Pending Distribution</span>
-                                                <?php endif; ?>
-                                            </td>
                                             <td class="text-sm text-[#1e1e1e] whitespace-nowrap">
                                                 <?php echo formatTimestampDisplay($doc['received_timestamp'] ?? null); ?>
                                             </td>
-                                            <td>
-                                                <div class="flex items-center gap-2">
-                                                    <?php if ($isDistributed): ?>
-                                                        <button
-                                                            type="button"
-                                                            onclick="openHistoryModal('<?php echo htmlspecialchars(addslashes($doc['document_name'])); ?>', '<?php echo !empty($doc['last_distribution_date']) ? date('M j, Y', strtotime($doc['last_distribution_date'])) : 'N/A'; ?>')"
-                                                            class="action-icon-btn"
-                                                            title="View Distribution Status">
-                                                            <i class="fa-regular fa-eye"></i>
-                                                        </button>
-                                                    <?php else: ?>
-                                                        <button
-                                                            type="button"
-                                                            onclick="openDistributeModal(<?php echo (int)$doc['id']; ?>, '<?php echo htmlspecialchars(addslashes($doc['document_name'])); ?>')"
-                                                            class="action-icon-btn"
-                                                            title="Distribute Document">
-                                                            <i class="fa-solid fa-share-from-square"></i>
-                                                        </button>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
+                                            <td class="font-mono"><?php echo $total; ?> </td>
                                         </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="7" class="text-center py-8 text-sm text-[#6e6e6e]">
+                                        <td colspan="6" class="text-center py-8 text-sm text-[#6e6e6e]">
                                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
                                             No documents found.
                                             <button onclick="openAddDocumentModal()" class="text-[#1e1e1e] underline">Add your first document</button>
@@ -762,6 +591,7 @@ if (isset($_SESSION['toast'])) {
                     <!-- Table Footer with Record Count -->
                     <div class="px-5 py-3 border-t border-[#e5e5e5] bg-[#fafafa] text-xs text-[#6e6e6e] flex justify-between items-center">
                         <span>Showing <span id="visibleCount"><?php echo $documents_result ? $documents_result->num_rows : 0; ?></span> documents</span>
+                        <span>Total Copies: <?php echo number_format($stats['total_copies'] ?? 0); ?></span>
                     </div>
                 </div>
 
@@ -833,6 +663,9 @@ if (isset($_SESSION['toast'])) {
                     </div>
 
                     <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
+                        <input type="number" id="add_copies_received" required min="1" value="1"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
                         <p class="text-xs text-[#6e6e6e] mt-1">Serial number will be auto-generated</p>
                     </div>
 
@@ -860,126 +693,6 @@ if (isset($_SESSION['toast'])) {
         </div>
     </div>
 
-    <div id="distributeDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Distribute Document</h3>
-                <button onclick="closeDistributeModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-
-            <form id="distributeDocumentForm" onsubmit="return false;">
-                <input type="hidden" id="distribute_document_id">
-
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document</label>
-                        <input type="text" id="distribute_document_name" readonly
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-[#fafafa] text-[#1e1e1e]">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Distributed <span class="text-red-400">*</span></label>
-                        <input type="date" id="distribute_date_distributed" value="<?php echo date('Y-m-d'); ?>"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                    </div>
-
-                    <p class="text-xs text-[#6e6e6e]">This document will be marked as distributed once and can only be distributed one time.</p>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-5">
-                    <button type="button" onclick="closeDistributeModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="button" onclick="submitDistributeDocument()" id="distributeDocumentSubmitBtn"
-                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                        <i class="fa-regular fa-floppy-disk mr-1"></i>
-                        Save Distribution
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div id="confirmDistributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Confirm Distribution</h3>
-                <button onclick="closeConfirmDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-
-            <div class="space-y-3">
-                <p class="text-sm text-[#1e1e1e]">Mark this document as distributed?</p>
-                <div class="p-3 border border-[#e5e5e5] rounded-md bg-[#fafafa]">
-                    <p id="confirmDistributionName" class="text-sm font-medium text-[#1e1e1e]"></p>
-                    <p id="confirmDistributionDate" class="text-xs text-[#6e6e6e] mt-1"></p>
-                </div>
-                <p class="text-xs text-[#6e6e6e]">This action can only be done once for this document.</p>
-            </div>
-
-            <div class="flex justify-end gap-2 mt-5">
-                <button type="button" onclick="closeConfirmDistributionModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <button type="button" onclick="confirmDistributionSubmission()" id="confirmDistributionSubmitBtn"
-                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                    Confirm
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div id="distributionAlertModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 id="distributionAlertTitle" class="text-base font-medium text-[#1e1e1e]">Distribution Alert</h3>
-                <button onclick="closeDistributionAlertModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-            <p id="distributionAlertMessage" class="text-sm text-[#1e1e1e]"></p>
-            <div class="flex justify-end mt-5">
-                <button type="button" onclick="closeDistributionAlertModal()"
-                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div id="historyInfoModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Distribution Details</h3>
-                <button onclick="closeHistoryModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-            <div class="space-y-3">
-                <div>
-                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document</p>
-                    <p id="historyDocumentName" class="text-sm text-[#1e1e1e]"></p>
-                </div>
-                <div>
-                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Distribution Date</p>
-                    <p id="historyDistributionDate" class="text-sm text-[#1e1e1e]"></p>
-                </div>
-            </div>
-            <div class="flex justify-between items-center mt-5">
-                <a href="distribution.php" class="text-sm text-[#1e1e1e] underline">Open Full History</a>
-                <button type="button" onclick="closeHistoryModal()"
-                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Toast Container (for custom toasts) -->
     <div id="toastContainer"></div>
 
@@ -987,7 +700,6 @@ if (isset($_SESSION['toast'])) {
     <script>
         // Store document data
         let documents = [];
-        let pendingDistribution = null;
 
         // Toast notification function
         function showToast(message, type = 'success') {
@@ -1007,10 +719,6 @@ if (isset($_SESSION['toast'])) {
             }).showToast();
         }
 
-        function printDocumentsPage() {
-            window.print();
-        }
-
         // Show toast from PHP session
         <?php if ($toast): ?>
             document.addEventListener('DOMContentLoaded', function() {
@@ -1024,6 +732,7 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('add_document_name').value = '';
             document.getElementById('add_type_id').value = '';
             document.getElementById('add_origin').value = '';
+            document.getElementById('add_copies_received').value = '1';
             document.getElementById('add_date_received').value = '<?php echo date('Y-m-d\TH:i'); ?>';
 
             document.getElementById('addDocumentModal').style.display = 'flex';
@@ -1033,51 +742,11 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('addDocumentModal').style.display = 'none';
         }
 
-        function openDistributeModal(documentId, documentName) {
-            document.getElementById('distribute_document_id').value = documentId;
-            document.getElementById('distribute_document_name').value = documentName;
-            document.getElementById('distribute_date_distributed').value = '<?php echo date('Y-m-d'); ?>';
-            document.getElementById('distributeDocumentModal').style.display = 'flex';
-        }
-
-        function closeDistributeModal() {
-            document.getElementById('distributeDocumentModal').style.display = 'none';
-        }
-
-        function openConfirmDistributionModal(documentName, dateDistributed) {
-            document.getElementById('confirmDistributionName').textContent = documentName;
-            document.getElementById('confirmDistributionDate').textContent = `Distribution date: ${dateDistributed}`;
-            document.getElementById('confirmDistributionModal').style.display = 'flex';
-        }
-
-        function closeConfirmDistributionModal() {
-            document.getElementById('confirmDistributionModal').style.display = 'none';
-        }
-
-        function openDistributionAlertModal(title, message) {
-            document.getElementById('distributionAlertTitle').textContent = title;
-            document.getElementById('distributionAlertMessage').textContent = message;
-            document.getElementById('distributionAlertModal').style.display = 'flex';
-        }
-
-        function closeDistributionAlertModal() {
-            document.getElementById('distributionAlertModal').style.display = 'none';
-        }
-
-        function openHistoryModal(documentName, distributionDate) {
-            document.getElementById('historyDocumentName').textContent = documentName;
-            document.getElementById('historyDistributionDate').textContent = distributionDate;
-            document.getElementById('historyInfoModal').style.display = 'flex';
-        }
-
-        function closeHistoryModal() {
-            document.getElementById('historyInfoModal').style.display = 'none';
-        }
-
         function submitAddDocument() {
             const document_name = document.getElementById('add_document_name').value.trim();
             const type_id = document.getElementById('add_type_id').value;
             const origin = document.getElementById('add_origin').value.trim();
+            const copies_received = parseInt(document.getElementById('add_copies_received').value);
             const date_received = document.getElementById('add_date_received').value;
 
             // Validation
@@ -1088,6 +757,11 @@ if (isset($_SESSION['toast'])) {
 
             if (!type_id) {
                 showToast('Please select a document type', 'warning');
+                return;
+            }
+
+            if (!copies_received || copies_received < 1) {
+                showToast('Number of copies must be at least 1', 'warning');
                 return;
             }
 
@@ -1108,7 +782,7 @@ if (isset($_SESSION['toast'])) {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&date_received=${date_received}`
+                    body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -1130,86 +804,6 @@ if (isset($_SESSION['toast'])) {
                     showToast('An error occurred. Please try again.', 'error');
                     submitBtn.innerHTML = originalText;
                     submitBtn.disabled = false;
-                });
-        }
-
-        function submitDistributeDocument() {
-            const documentId = document.getElementById('distribute_document_id').value;
-            const documentName = document.getElementById('distribute_document_name').value.trim();
-            const dateDistributed = document.getElementById('distribute_date_distributed').value;
-
-            if (!documentId) {
-                showToast('Invalid document selected', 'warning');
-                return;
-            }
-
-            if (!dateDistributed) {
-                showToast('Please select the distribution date', 'warning');
-                return;
-            }
-
-            pendingDistribution = {
-                documentId,
-                documentName,
-                dateDistributed
-            };
-
-            closeDistributeModal();
-            openConfirmDistributionModal(documentName, dateDistributed);
-        }
-
-        function confirmDistributionSubmission() {
-            if (!pendingDistribution) {
-                return;
-            }
-
-            const {
-                documentId,
-                documentName,
-                dateDistributed
-            } = pendingDistribution;
-            const submitBtn = document.getElementById('distributeDocumentSubmitBtn');
-            const originalText = submitBtn.innerHTML;
-            const confirmBtn = document.getElementById('confirmDistributionSubmitBtn');
-            const originalConfirmText = confirmBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Saving...';
-            submitBtn.disabled = true;
-            confirmBtn.innerHTML = 'Saving...';
-            confirmBtn.disabled = true;
-
-            fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `ajax_action=distribute_document&document_id=${encodeURIComponent(documentId)}&date_distributed=${encodeURIComponent(dateDistributed)}`
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        closeConfirmDistributionModal();
-                        openDistributionAlertModal('Distribution Saved', data.message);
-                        setTimeout(() => {
-                            location.reload();
-                        }, 1200);
-                    } else {
-                        closeConfirmDistributionModal();
-                        openDistributionAlertModal('Distribution Failed', data.message);
-                        submitBtn.innerHTML = originalText;
-                        submitBtn.disabled = false;
-                        confirmBtn.innerHTML = originalConfirmText;
-                        confirmBtn.disabled = false;
-                        pendingDistribution = null;
-                    }
-                })
-                .catch(() => {
-                    closeConfirmDistributionModal();
-                    openDistributionAlertModal('Distribution Failed', 'An error occurred. Please try again.');
-                    submitBtn.innerHTML = originalText;
-                    submitBtn.disabled = false;
-                    confirmBtn.innerHTML = originalConfirmText;
-                    confirmBtn.disabled = false;
-                    pendingDistribution = null;
                 });
         }
 
@@ -1412,6 +1006,13 @@ if (isset($_SESSION['toast'])) {
                 const aCol = a.querySelectorAll('td')[columnIndex]?.textContent.trim() || '';
                 const bCol = b.querySelectorAll('td')[columnIndex]?.textContent.trim() || '';
 
+                // Check if numeric (for Total Copies column)
+                if (columnIndex === 5) {
+                    const aNum = parseInt(aCol) || 0;
+                    const bNum = parseInt(bCol) || 0;
+                    return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+                }
+
                 // String comparison
                 const comparison = aCol.localeCompare(bCol);
                 return sortDirection === 'asc' ? comparison : -comparison;
@@ -1451,25 +1052,9 @@ if (isset($_SESSION['toast'])) {
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addDocumentModal = document.getElementById('addDocumentModal');
-            const distributeDocumentModal = document.getElementById('distributeDocumentModal');
-            const confirmDistributionModal = document.getElementById('confirmDistributionModal');
-            const distributionAlertModal = document.getElementById('distributionAlertModal');
-            const historyInfoModal = document.getElementById('historyInfoModal');
 
             if (event.target == addDocumentModal) {
                 closeAddDocumentModal();
-            }
-            if (event.target == distributeDocumentModal) {
-                closeDistributeModal();
-            }
-            if (event.target == confirmDistributionModal) {
-                closeConfirmDistributionModal();
-            }
-            if (event.target == distributionAlertModal) {
-                closeDistributionAlertModal();
-            }
-            if (event.target == historyInfoModal) {
-                closeHistoryModal();
             }
         }
 
@@ -1477,10 +1062,6 @@ if (isset($_SESSION['toast'])) {
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeAddDocumentModal();
-                closeDistributeModal();
-                closeConfirmDistributionModal();
-                closeDistributionAlertModal();
-                closeHistoryModal();
             }
         });
     </script>
