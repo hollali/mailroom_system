@@ -1,100 +1,91 @@
-# Mailroom Management System - Full Walkthrough
+# Mailroom Management System
 
-The Mailroom Management System is a centralized platform designed to handle the intake, tracking, and distribution of documents, parcels, and newspapers. Built with **PHP**, **MySQL**, and **Tailwind CSS**, it provides a responsive and premium experience for mailroom staff.
-
----
-
-## 1. Dashboard & Analytics
-
-The Dashboard is the control center of the application. It provides real-time statistics and a high-level overview of recent activities across all departments.
-
-![Dashboard Overview](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/dashboard_page_1775930187047.png)
-
-### Key Features:
-
-- **Stat Cards**: Instant view of total documents, parcels, and newspapers.
-- **Dynamic Stats**: Daily, weekly, and monthly growth indicators.
-- **Recent Activity Ledger**: Tabbed interface showing the latest movements (Receiving vs. Distribution) for each module.
-- **Quick Links**: Direct access to the most common actions (View Parcels, Open Documents).
+A professional PHP + MySQL application for managing documents, parcels, and newspaper circulation from a centralized dashboard. Designed for library or office mailroom operations.
 
 ---
 
-## 2. Document Management
+## 🚀 Overview
 
-The Documents module handles incoming mail and formal documentation. It supports categorization and a robust set of management actions.
+The Mailroom Management System streamlines the intake and distribution of all physical mail assets. It provides staff with real-time statistics, searchable history, and transactional security for all operations.
 
-![Documents List View](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/documents_list_page_1775930197642.png)
+### Core Modules:
 
-### Core Capabilities:
-
-- **Serial Numbering**: Automated generation of unique serial numbers (e.g., `DOC202612345`).
-- **Advanced Actions**:
-  - **View**: Modal-based detailed view without page reloads.
-  - **Edit**: Update metadata (Name, Origin, Total Copies) with server-side validation.
-  - **Delete**: Secure deletion with a confirmation modal and cascade protection.
-- **Stock Tracking**: Real-time validation ensuring total copies never fall below the amount already distributed.
+- **Documents**: Intake, categorization, and the new View/Edit/Delete actions.
+- **Parcels**: Receipt tracking, pending item management, and pickup recording.
+- **Newspapers**: Subscription management, daily circulation, and history logging.
 
 ---
 
-## 3. Parcel Tracking
+## 📽 Demo Walkthroughs
 
-Designed for the receipt and pickup of physical packages, the Parcel module ensures accountability for received items.
+### Overall System Walkthrough
 
-![Parcel Management](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/parcels_management_page_1775930208727.png)
+![System Walkthrough](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/project_screenshots_1775930167257.webp)
 
-### Workflow:
-
-1. **Intake**: Generate tracking IDs and record sender/recipient details.
-2. **Status Monitoring**: Track items as `Pending` or `Picked Up`.
-3. **Pickup Recording**: Capture the picker's name, phone number, and designation to close the tracking loop.
-
----
-
-## 4. Newspaper Circulation
-
-The Newspaper module manages daily subscriptions and recipient-based distribution.
-
-![Newspaper Distribution](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/newspaper_distribution_page_1775930218477.png)
-
-### Features:
-
-- **Subscription Management**: Define various newspaper categories and frequencies.
-- **Recipient Registry**: Manage active recipients and maintain distribution history.
-- **Daily Workflow**: Efficient distribution interface ensuring a subscription is only issued once per recipient per day.
-
----
-
-## 📽 Video Walkthroughs
-
-### Full System Overview
-
-![System Overview](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/project_screenshots_1775930167257.webp)
-
-### Document Management Deep Dive
+### Document Management Features
 
 ![Document Management](/home/hollali/.gemini/antigravity/brain/8b5c43d9-f01f-4c34-800b-9324a5ae02be/verify_doc_actions_1775928457740.webp)
 
 ---
 
-## Technical Architecture
+## ✨ Recent Enhancements
 
-### Database Schema
+We have recently upgraded the system with several premium features:
 
-The system uses a relational database with key tables for **Documents**, **Parcels**, and **Daily Distributions**.
-
-> [!NOTE]
-> Foreign Key constraints with `ON DELETE CASCADE` are utilized to maintain data integrity when records are removed.
-
-### Design System
-
-- **Styling**: Vanilla CSS and Tailwind CSS for a premium, card-based layout.
-- **Interactions**: FontAwesome icons for visual cues and Toastify JS for real-time feedback.
-- **Performance**: AJAX-driven modals to reduce full-page reloads and improve staff efficiency.
+- **Document Actions**: Per-row **View**, **Edit**, and **Delete** actions in the document list.
+- **Document History**: A dedicated `documents_distribution_history.php` page to track and manage past distributions.
+- **Data Integrity**: Added Foreign Key constraints with `ON DELETE CASCADE` to ensure history is cleaned up when primary records are removed.
+- **Improved UI**: Enhanced modals with smooth transitions and real-time toast notifications.
 
 ---
 
-## Getting Started
+## 🛠 Project Structure
 
-1. **Import Database**: Run `config/mailroom_system.sql` in your MySQL environment.
-2. **Configure Connection**: Update `config/db.php` with your local credentials.
-3. **Launch Server**: Deploy to an Apache/Nginx environment or use `php -S localhost:8000`.
+- `index.php` - Dashboard and combined activity overview.
+- `documents.php` - Document intake, listing, and advanced actions (View/Edit/Delete).
+- `documents_distribution_history.php` - Log of past document distributions.
+- `parcels.php` - Parcel receiving, tracking, and pickup.
+- `newspaper_distribution.php` - Daily newspaper circulation workflow.
+- `distribution_history.php` - Newspaper distribution history log.
+- `document_type.php` - Document category management.
+- `newspaper_categories.php` - Subscription management.
+- `recipients.php` - Recipient registry for newspapers.
+- `sidebar.php` - Shared navigation and layout component.
+- `config/db.php` - Database connection settings.
+- `config/mailroom_system.sql` - Core database schema.
+- `config/document_distribution_history.sql` - Migration for history integrity.
+
+---
+
+## 📥 Setup Instructions
+
+1. **Deploy to Web Root**: Copy the project files to your server's public directory (e.g., `/var/www/html`).
+2. **Database Setup**:
+   - Create a MySQL database (e.g., `mailroom_system`).
+   - Import `config/mailroom_system.sql`.
+   - Import `config/document_distribution_history.sql` to apply the latest integrity updates.
+3. **Configure Connection**: Update your database credentials in `config/db.php`.
+4. **Permissions**: Ensure the web server has read/write permissions for the project directory.
+
+### Quick Start (PHP built-in server)
+
+```bash
+php -S localhost:8000
+```
+
+Then visit `http://localhost:8000` in your browser.
+
+---
+
+## 🔒 Security & Best Practices
+
+- **Prepared Statements**: Used for all database mutations to prevent SQL injection.
+- **Transactions**: Multi-table operations (like distribution) are wrapped in database transactions.
+- **Toast Feedback**: Real-time success/error messaging using Toastify JS.
+- **Responsive Design**: Built with Tailwind CSS for mobile and desktop compatibility.
+
+---
+
+## 📄 License
+
+This project is currently provided for internal mailroom use. Please add a formal license (e.g., MIT) before public distribution.
