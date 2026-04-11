@@ -154,6 +154,94 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
     exit();
 }
 
+// Handle get document info for Edit Modal
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'get_document') {
+    header('Content-Type: application/json');
+    $id = (int)$_POST['id'];
+
+    $stmt = $conn->prepare("SELECT d.*, dt.type_name FROM documents d LEFT JOIN document_types dt ON d.type_id = dt.id WHERE d.id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($doc = $result->fetch_assoc()) {
+        echo json_encode(['success' => true, 'document' => $doc]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Document not found']);
+    }
+    $stmt->close();
+    exit();
+}
+
+// Handle edit document via AJAX
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'edit_document') {
+    header('Content-Type: application/json');
+
+    $id = (int)$_POST['id'];
+    $document_name = trim($_POST['document_name']);
+    $type_id = (int)$_POST['type_id'];
+    $origin = trim($_POST['origin']);
+    $copies_received = (int)$_POST['copies_received'];
+    $date_received = $_POST['date_received'];
+    $normalized_received_timestamp = normalizeDateTimeInput($date_received);
+    $date_received_only = $normalized_received_timestamp ? date('Y-m-d', strtotime($normalized_received_timestamp)) : null;
+
+    if ($id <= 0 || empty($document_name) || $type_id <= 0 || $copies_received < 1 || empty($normalized_received_timestamp)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid input data']);
+        exit();
+    }
+
+    // Check if new total copies is less than distributed copies
+    $check_dist = $conn->prepare("SELECT COALESCE(SUM(number_distributed), 0) as distributed FROM document_distribution WHERE document_id = ?");
+    $check_dist->bind_param("i", $id);
+    $check_dist->execute();
+    $distributed = $check_dist->get_result()->fetch_assoc()['distributed'];
+    $check_dist->close();
+
+    if ($copies_received < $distributed) {
+        echo json_encode(['success' => false, 'message' => "Cannot reduce total copies to $copies_received. Total distributed is $distributed."]);
+        exit();
+    }
+
+    if ($documents_has_created_at) {
+        $stmt = $conn->prepare("UPDATE documents SET document_name = ?, type_id = ?, origin = ?, copies_received = ?, date_received = ?, created_at = ? WHERE id = ?");
+        $stmt->bind_param("sisissi", $document_name, $type_id, $origin, $copies_received, $date_received_only, $normalized_received_timestamp, $id);
+    } else {
+        $stmt = $conn->prepare("UPDATE documents SET document_name = ?, type_id = ?, origin = ?, copies_received = ?, date_received = ? WHERE id = ?");
+        $stmt->bind_param("sisis i", $document_name, $type_id, $origin, $copies_received, $date_received_only, $id);
+    }
+
+    if ($stmt->execute()) {
+        echo json_encode(['success' => true, 'message' => 'Document updated successfully']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);
+    }
+    $stmt->close();
+    exit();
+}
+
+// Handle delete document via AJAX
+if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'delete_document') {
+    header('Content-Type: application/json');
+    $id = (int)$_POST['id'];
+
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid ID']);
+        exit();
+    }
+
+    $stmt = $conn->prepare("DELETE FROM documents WHERE id = ?");
+    $stmt->bind_param("i", $id);
+
+    if ($stmt->execute()) {
+        echo json_encode(['success' => true, 'message' => 'Document deleted successfully']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);
+    }
+    $stmt->close();
+    exit();
+}
+
 // Get all documents with their basic info (no distribution or availability tracking)
 $sql = "SELECT 
             d.*, 
@@ -318,6 +406,32 @@ if (isset($_SESSION['toast'])) {
         .serial-column {
             font-family: monospace;
             font-size: 0.8rem;
+        }
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: 1px solid #e5e5e5;
+            background-color: white;
+            color: #4a4a4a;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .action-btn:hover {
+            background-color: #f5f5f4;
+            color: #1e1e1e;
+            border-color: #9e9e9e;
+        }
+
+        .action-btn.delete-btn:hover {
+            background-color: #fee2e2;
+            color: #dc2626;
+            border-color: #fecaca;
         }
 
         /* Pagination styles */
@@ -540,6 +654,7 @@ if (isset($_SESSION['toast'])) {
                                     <th onclick="sortTable(3)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(4)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(5)">Total Copies <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody">
@@ -573,11 +688,24 @@ if (isset($_SESSION['toast'])) {
                                                 <?php echo formatTimestampDisplay($doc['received_timestamp'] ?? null); ?>
                                             </td>
                                             <td class="font-mono"><?php echo $total; ?> </td>
+                                            <td class="whitespace-nowrap">
+                                                <div class="flex gap-2">
+                                                    <button onclick="openViewModal(<?php echo $doc['id']; ?>)" class="action-btn" title="View Details">
+                                                        <i class="fa-solid fa-eye"></i>
+                                                    </button>
+                                                    <button onclick="openEditModal(<?php echo $doc['id']; ?>)" class="action-btn" title="Edit Document">
+                                                        <i class="fa-solid fa-pen-to-square"></i>
+                                                    </button>
+                                                    <button onclick="openDeleteModal(<?php echo $doc['id']; ?>, '<?php echo htmlspecialchars(addslashes($doc['document_name'])); ?>')" class="action-btn delete-btn" title="Delete Document">
+                                                        <i class="fa-solid fa-trash-can"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="6" class="text-center py-8 text-sm text-[#6e6e6e]">
+                                        <td colspan="7" class="text-center py-8 text-sm text-[#6e6e6e]">
                                             <i class="fa-regular fa-folder-open text-3xl mb-2 block"></i>
                                             No documents found.
                                             <button onclick="openAddDocumentModal()" class="text-[#1e1e1e] underline">Add your first document</button>
@@ -616,35 +744,96 @@ if (isset($_SESSION['toast'])) {
         </main>
     </div>
 
-    <!-- Floating Action Button -->
-    <button onclick="openAddDocumentModal()" class="fab" title="Add New Document">
-        <i class="fa-solid fa-plus"></i>
-        <span class="fab-tooltip">Add Document</span>
-    </button>
-
-    <!-- Add Document Modal -->
-    <div id="addDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+    <!-- View Document Modal -->
+    <div id="viewDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
         <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Add New Document</h3>
-                <button onclick="closeAddDocumentModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-[#f5f5f4] flex items-center justify-center text-[#1e1e1e]">
+                        <i class="fa-solid fa-file-lines text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-medium text-[#1e1e1e]">Document Details</h3>
+                        <p class="text-xs text-[#6e6e6e]" id="view_serial_display"></p>
+                    </div>
+                </div>
+                <button onclick="closeViewModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
 
-            <form id="addDocumentForm" onsubmit="return false;">
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4 pb-4 border-b border-[#f5f5f4]">
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">Document Name</p>
+                        <p class="text-sm font-medium text-[#1e1e1e]" id="view_document_name"></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">Document Type</p>
+                        <span id="view_type_badge" class="badge badge-info"></span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 pb-4 border-b border-[#f5f5f4]">
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">Origin / Source</p>
+                        <p class="text-sm text-[#1e1e1e]" id="view_origin"></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">Total Copies Received</p>
+                        <p class="text-sm font-mono text-[#1e1e1e]" id="view_copies"></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">Received Timestamp</p>
+                        <p class="text-sm text-[#1e1e1e]" id="view_date"></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-[#9e9e9e] uppercase tracking-wider font-semibold mb-1">System ID</p>
+                        <p class="text-sm font-mono text-[#6e6e6e]" id="view_id"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-8 pt-4 border-t border-[#f5f5f4]">
+                <button type="button" onclick="closeViewModal()"
+                    class="px-5 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium transition-colors">
+                    Close
+                </button>
+                <button type="button" id="view_edit_btn"
+                    class="px-5 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] font-medium transition-colors">
+                    <i class="fa-solid fa-pen-to-square mr-1.5"></i>
+                    Edit Document
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Document Modal -->
+    <div id="editDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Edit Document</h3>
+                <button onclick="closeEditModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="editDocumentForm" onsubmit="return false;">
+                <input type="hidden" id="edit_id">
                 <div class="grid grid-cols-1 gap-4">
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Name <span class="text-red-400">*</span></label>
-                        <input type="text" id="add_document_name" required
-                            placeholder="Enter document name"
+                        <input type="text" id="edit_document_name" required
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                             autocomplete="off">
                     </div>
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Type <span class="text-red-400">*</span></label>
-                        <select id="add_type_id" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                        <select id="edit_type_id" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
                             <option value="">Select Type</option>
                             <?php foreach ($document_types as $type): ?>
                                 <option value="<?php echo $type['id']; ?>">
@@ -656,40 +845,67 @@ if (isset($_SESSION['toast'])) {
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Origin</label>
-                        <input type="text" id="add_origin"
-                            placeholder="e.g., Courier, Mail, Internal"
+                        <input type="text" id="edit_origin"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                             autocomplete="off">
                     </div>
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
-                        <input type="number" id="add_copies_received" required min="1" value="1"
+                        <input type="number" id="edit_copies_received" required min="1"
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                        <p class="text-xs text-[#6e6e6e] mt-1">Serial number will be auto-generated</p>
                     </div>
 
                     <div>
                         <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp <span class="text-red-400">*</span></label>
-                        <input type="datetime-local" id="add_date_received" required
-                            value="<?php echo date('Y-m-d\TH:i'); ?>"
+                        <input type="datetime-local" id="edit_date_received" required
                             class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
                             autocomplete="off">
                     </div>
                 </div>
 
                 <div class="flex justify-end gap-2 mt-5">
-                    <button type="button" onclick="closeAddDocumentModal()"
+                    <button type="button" onclick="closeEditModal()"
                         class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                         Cancel
                     </button>
-                    <button type="button" onclick="submitAddDocument()" id="addDocumentSubmitBtn"
+                    <button type="button" onclick="submitEditDocument()" id="editDocumentSubmitBtn"
                         class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
                         <i class="fa-regular fa-floppy-disk mr-1"></i>
-                        Save Document
+                        Update Document
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#c73b2b]">Confirm Deletion</h3>
+                <button onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="mb-5">
+                <p class="text-sm text-[#4a4a4a]">Are you sure you want to delete <span id="deleteDocNameDisplay" class="font-bold"></span>?</p>
+                <p class="text-xs text-[#c73b2b] mt-2 font-medium">Warning: This action will also delete all distribution records associated with this document and cannot be undone.</p>
+            </div>
+
+            <input type="hidden" id="delete_id">
+            <div class="flex justify-end gap-2 mt-5">
+                <button type="button" onclick="closeDeleteModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <button type="button" onclick="confirmDeleteDocument()" id="deleteDocumentBtn"
+                    class="px-4 py-2 text-sm bg-[#c73b2b] text-white rounded-md hover:bg-[#b52a1b]">
+                    <i class="fa-regular fa-trash-can mr-1"></i>
+                    Yes, Delete Document
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1049,19 +1265,201 @@ if (isset($_SESSION['toast'])) {
             renderDocumentsPagination();
         });
 
+        // View Modal Functions
+        function openViewModal(id) {
+            fetch('documents.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ajax_action=get_document&id=${id}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const doc = data.document;
+                    document.getElementById('view_id').textContent = '#' + doc.id;
+                    document.getElementById('view_document_name').textContent = doc.document_name;
+                    document.getElementById('view_type_badge').textContent = (doc.type_name || 'Uncategorized');
+                    document.getElementById('view_origin').textContent = doc.origin || 'N/A';
+                    document.getElementById('view_copies').textContent = doc.copies_received;
+                    
+                    // Format timestamp
+                    if (doc.created_at || doc.date_received) {
+                        const dateStr = doc.created_at || doc.date_received;
+                        const dt = new Date(dateStr);
+                        document.getElementById('view_date').textContent = dt.toLocaleString('en-US', { 
+                            month: 'short', day: 'numeric', year: 'numeric', 
+                            hour: 'numeric', minute: '2-digit', hour12: true 
+                        });
+                    } else {
+                        document.getElementById('view_date').textContent = 'N/A';
+                    }
+
+                    // Serial Number (reusing logic from table generator if possible, or simple fallback)
+                    const serial = doc.serial_number || ('DOC-' + doc.id.toString().padStart(6, '0'));
+                    document.getElementById('view_serial_display').textContent = serial;
+
+                    // Setup edit button in view modal
+                    document.getElementById('view_edit_btn').onclick = function() {
+                        closeViewModal();
+                        openEditModal(doc.id);
+                    };
+
+                    document.getElementById('viewDocumentModal').style.display = 'flex';
+                } else {
+                    showToast(data.message, 'error');
+                }
+            })
+            .catch(error => showToast('Error fetching document details', 'error'));
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewDocumentModal').style.display = 'none';
+        }
+
+        // Edit Modal Functions
+        function openEditModal(id) {
+            fetch('documents.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ajax_action=get_document&id=${id}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const doc = data.document;
+                    document.getElementById('edit_id').value = doc.id;
+                    document.getElementById('edit_document_name').value = doc.document_name;
+                    document.getElementById('edit_type_id').value = doc.type_id;
+                    document.getElementById('edit_origin').value = doc.origin || '';
+                    document.getElementById('edit_copies_received').value = doc.copies_received;
+                    
+                    // Format timestamp for datetime-local
+                    if (doc.created_at) {
+                        const dt = new Date(doc.created_at);
+                        const localDt = new Date(dt.getTime() - (dt.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+                        document.getElementById('edit_date_received').value = localDt;
+                    } else if (doc.date_received) {
+                        document.getElementById('edit_date_received').value = doc.date_received + 'T00:00';
+                    }
+
+                    document.getElementById('editDocumentModal').style.display = 'flex';
+                } else {
+                    showToast(data.message, 'error');
+                }
+            })
+            .catch(error => showToast('Error fetching document details', 'error'));
+        }
+
+        function closeEditModal() {
+            document.getElementById('editDocumentModal').style.display = 'none';
+        }
+
+        function submitEditDocument() {
+            const id = document.getElementById('edit_id').value;
+            const document_name = document.getElementById('edit_document_name').value.trim();
+            const type_id = document.getElementById('edit_type_id').value;
+            const origin = document.getElementById('edit_origin').value.trim();
+            const copies_received = parseInt(document.getElementById('edit_copies_received').value);
+            const date_received = document.getElementById('edit_date_received').value;
+
+            if (!id || !document_name || !type_id || !copies_received || !date_received) {
+                showToast('Please fill all required fields', 'warning');
+                return;
+            }
+
+            const submitBtn = document.getElementById('editDocumentSubmitBtn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Updating...';
+            submitBtn.disabled = true;
+
+            fetch('documents.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ajax_action=edit_document&id=${id}&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    closeEditModal();
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showToast(data.message, 'error');
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
+                }
+            })
+            .catch(error => {
+                showToast('An error occurred', 'error');
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        }
+
+        // Delete Modal Functions
+        function openDeleteModal(id, name) {
+            document.getElementById('delete_id').value = id;
+            document.getElementById('deleteDocNameDisplay').textContent = name;
+            document.getElementById('deleteDocumentModal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteDocumentModal').style.display = 'none';
+        }
+
+        function confirmDeleteDocument() {
+            const id = document.getElementById('delete_id').value;
+            if (!id) return;
+
+            const btn = document.getElementById('deleteDocumentBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-regular fa-spinner fa-spin mr-1"></i> Deleting...';
+            btn.disabled = true;
+
+            fetch('documents.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `ajax_action=delete_document&id=${id}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    closeDeleteModal();
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showToast(data.message, 'error');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                showToast('An error occurred', 'error');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
-            const addDocumentModal = document.getElementById('addDocumentModal');
+            const addModal = document.getElementById('addDocumentModal');
+            const viewModal = document.getElementById('viewDocumentModal');
+            const editModal = document.getElementById('editDocumentModal');
+            const deleteModal = document.getElementById('deleteDocumentModal');
 
-            if (event.target == addDocumentModal) {
-                closeAddDocumentModal();
-            }
+            if (event.target == addModal) closeAddDocumentModal();
+            if (event.target == viewModal) closeViewModal();
+            if (event.target == editModal) closeEditModal();
+            if (event.target == deleteModal) closeDeleteModal();
         }
 
         // ESC key to close modals
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeAddDocumentModal();
+                closeViewModal();
+                closeEditModal();
+                closeDeleteModal();
             }
         });
     </script>
