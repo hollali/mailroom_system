@@ -173,6 +173,31 @@ try {
         $stats['month_newspapers'] = $result->fetch_assoc()['total'];
     }
 
+    // Category-level newspaper copy receipt stats
+    $category_stats = [];
+    $category_result = $conn->query("SELECT nc.id, nc.category_name,
+            SUM(CASE WHEN n.date_received = '$today' THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as daily_count,
+            SUM(CASE WHEN YEARWEEK(n.date_received, 1) = YEARWEEK('$today', 1) THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as weekly_count,
+            SUM(CASE WHEN MONTH(n.date_received) = MONTH('$today') AND YEAR(n.date_received) = YEAR('$today') THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as monthly_count,
+            SUM(CASE WHEN YEAR(n.date_received) = YEAR('$today') THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as yearly_count,
+            SUM(COALESCE(NULLIF(n.total_copies, 0), n.available_copies)) as total_count
+        FROM newspaper_categories nc
+        LEFT JOIN newspapers n ON n.category_id = nc.id
+        GROUP BY nc.id, nc.category_name
+        ORDER BY nc.category_name");
+    if ($category_result) {
+        while ($row = $category_result->fetch_assoc()) {
+            $category_stats[] = [
+                'category_name' => $row['category_name'],
+                'daily_count' => (int)$row['daily_count'],
+                'weekly_count' => (int)$row['weekly_count'],
+                'monthly_count' => (int)$row['monthly_count'],
+                'yearly_count' => (int)$row['yearly_count'],
+                'total_count' => (int)$row['total_count'],
+            ];
+        }
+    }
+
     // Recent activity grouped by tab
     $recent_document_activities = [];
     $recent_parcel_activities = [];
@@ -625,6 +650,59 @@ try {
                     </div>
                 </div>
 
+                <?php if (!empty($category_stats)): ?>
+                    <div class="panel circular-panel mb-8">
+                        <div class="panel-header space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h2 class="text-lg font-semibold text-[#1c1917]">Newspaper statistics</h2>
+                                <span class="text-sm muted">By category</span>
+                            </div>
+                            <div class="activity-tabs" data-tab-group>
+                                <?php foreach ($category_stats as $index => $cat): ?>
+                                    <button type="button" class="activity-tab <?php echo $index === 0 ? 'active' : ''; ?>" 
+                                            data-tab-target="newspaperCat-<?php echo $index; ?>">
+                                        <?php echo htmlspecialchars($cat['category_name']); ?>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <?php foreach ($category_stats as $index => $cat): ?>
+                                <div id="newspaperCat-<?php echo $index; ?>" class="activity-pane <?php echo $index === 0 ? 'active' : ''; ?>">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                                        <div class="stat-box">
+                                            <div class="stat-label">Total received</div>
+                                            <div class="stat-value text-2xl"><?php echo number_format($cat['total_count']); ?></div>
+                                        </div>
+                                        <div class="stat-box">
+                                            <div class="stat-label">Today</div>
+                                            <div class="stat-value text-2xl"><?php echo number_format($cat['daily_count']); ?></div>
+                                            <div class="mt-1 text-xs muted">Copies</div>
+                                        </div>
+                                        <div class="stat-box">
+                                            <div class="stat-label">This week</div>
+                                            <div class="stat-value text-2xl"><?php echo number_format($cat['weekly_count']); ?></div>
+                                            <div class="mt-1 text-xs muted">Copies</div>
+                                        </div>
+                                        <div class="stat-box">
+                                            <div class="stat-label">This month</div>
+                                            <div class="stat-value text-2xl"><?php echo number_format($cat['monthly_count']); ?></div>
+                                            <div class="mt-1 text-xs muted">Copies</div>
+                                        </div>
+                                        <div class="stat-box">
+                                            <div class="stat-label">This year</div>
+                                            <div class="stat-value text-2xl"><?php echo number_format($cat['yearly_count']); ?></div>
+                                            <div class="mt-1 text-xs muted">Copies</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <div class="stat-box text-center muted mb-8">No newspaper category stats available.</div>
+                <?php endif; ?>
+
                 <section class="flex flex-col gap-6">
                     <div class="flex flex-col gap-6">
                         <div class="panel circular-panel">
@@ -679,7 +757,7 @@ try {
                                 <h2 class="text-lg font-semibold text-[#1c1917]">Recent activity</h2>
                                 <span class="text-sm muted">Across all records</span>
                             </div>
-                            <div class="activity-tabs">
+                            <div class="activity-tabs" data-tab-group>
                                 <button type="button" class="activity-tab active" data-tab-target="newspaperActivity">Newspaper</button>
                                 <button type="button" class="activity-tab" data-tab-target="documentActivity">Documents</button>
                                 <button type="button" class="activity-tab" data-tab-target="parcelActivity">Parcels</button>
@@ -806,25 +884,31 @@ try {
         })();
 
         (function() {
-            const tabs = Array.from(document.querySelectorAll('.activity-tab'));
-            const panes = Array.from(document.querySelectorAll('.activity-pane'));
+            const groups = Array.from(document.querySelectorAll('[data-tab-group]'));
 
-            if (!tabs.length || !panes.length) {
-                return;
-            }
+            groups.forEach((group) => {
+                const tabs = Array.from(group.querySelectorAll('.activity-tab'));
+                const panel = group.closest('.panel');
+                if (!panel) return;
+                
+                const panes = Array.from(panel.querySelectorAll('.activity-pane'));
 
-            tabs.forEach((tab) => {
-                tab.addEventListener('click', function() {
-                    const targetId = tab.dataset.tabTarget;
+                tabs.forEach((tab) => {
+                    tab.addEventListener('click', function() {
+                        const targetId = tab.dataset.tabTarget;
 
-                    tabs.forEach((item) => item.classList.remove('active'));
-                    panes.forEach((pane) => pane.classList.remove('active'));
+                        // Only remove active from tabs in THIS group
+                        tabs.forEach((item) => item.classList.remove('active'));
+                        
+                        // Only remove active from panes in THIS panel
+                        panes.forEach((pane) => pane.classList.remove('active'));
 
-                    tab.classList.add('active');
-                    const targetPane = document.getElementById(targetId);
-                    if (targetPane) {
-                        targetPane.classList.add('active');
-                    }
+                        tab.classList.add('active');
+                        const targetPane = document.getElementById(targetId);
+                        if (targetPane) {
+                            targetPane.classList.add('active');
+                        }
+                    });
                 });
             });
         })();

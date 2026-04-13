@@ -10,6 +10,12 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+// Ensure the document_distribution table has a status column for distribution states
+$statusCheck = $conn->query("SHOW COLUMNS FROM document_distribution LIKE 'status'");
+if ($statusCheck && $statusCheck->num_rows === 0) {
+    $conn->query("ALTER TABLE document_distribution ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'distributed'");
+}
+
 function formatTimestampDisplay($value)
 {
     if (empty($value)) {
@@ -62,9 +68,9 @@ if (isset($_POST['submit'])) {
             if ($number > 0) {
                 // Insert distribution record (without department and recipient name)
                 $sql = "INSERT INTO document_distribution 
-                        (document_id, number_received, number_distributed, date_distributed)
+                        (document_id, number_received, number_distributed, date_distributed, status)
                         VALUES 
-                        (?, ?, ?, ?)";
+                        (?, ?, ?, ?, 'distributed')";
 
                 $stmt = $conn->prepare($sql);
                 if (!$stmt) {
@@ -117,6 +123,65 @@ if (isset($_POST['submit'])) {
     }
 
     header('Location: distribution.php');
+    exit();
+}
+
+// Handle Withdraw Distribution
+if (isset($_GET['withdraw'])) {
+    $id = (int)$_GET['withdraw'];
+
+    // Begin transaction
+    $conn->begin_transaction();
+
+    try {
+        // Get distribution details before withdrawing
+        $get_stmt = $conn->prepare("SELECT document_id, number_distributed FROM document_distribution WHERE id = ?");
+        $get_stmt->bind_param("i", $id);
+        $get_stmt->execute();
+        $result = $get_stmt->get_result();
+        $distribution = $result->fetch_assoc();
+        $get_stmt->close();
+
+        if ($distribution) {
+            // Mark the distribution record as withdrawn instead of deleting it
+            $withdraw_stmt = $conn->prepare("UPDATE document_distribution SET status = 'withdrawn' WHERE id = ?");
+            $withdraw_stmt->bind_param("i", $id);
+
+            if (!$withdraw_stmt->execute()) {
+                throw new Exception("Error withdrawing record: " . $conn->error);
+            }
+            $withdraw_stmt->close();
+
+            // Restore copies to document
+            $update_stmt = $conn->prepare("UPDATE documents SET copies_received = copies_received + ? WHERE id = ?");
+            $update_stmt->bind_param("ii", $distribution['number_distributed'], $distribution['document_id']);
+
+            if (!$update_stmt->execute()) {
+                throw new Exception("Error restoring copies: " . $conn->error);
+            }
+            $update_stmt->close();
+
+            $conn->commit();
+            $_SESSION['toast'] = [
+                'type' => 'success',
+                'message' => "Distribution withdrawn and copies restored successfully!"
+            ];
+        } else {
+            throw new Exception("Distribution record not found");
+        }
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Error: " . $e->getMessage()
+        ];
+    }
+
+    // Preserve any query parameters
+    $query_params = $_GET;
+    unset($query_params['withdraw']);
+    $redirect_url = 'distribution.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+    header('Location: ' . $redirect_url);
     exit();
 }
 
@@ -209,8 +274,11 @@ $document_types = $conn->query("
 
 // Get distribution records with document information
 $result = $conn->query("
-    SELECT dd.*, d.document_name, d.type_id, dt.type_name as document_type,
-           d.copies_received as total_copies
+    SELECT dd.*, dd.status as distribution_status, d.document_name, d.type_id, dt.type_name as document_type,
+           d.copies_received as total_copies,
+           GREATEST(0, d.copies_received - COALESCE((
+               SELECT SUM(number_distributed) FROM document_distribution WHERE document_id = d.id AND status != 'withdrawn'
+           ), 0)) as available_copies
     FROM document_distribution dd
     JOIN documents d ON dd.document_id = d.id
     LEFT JOIN document_types dt ON d.type_id = dt.id
@@ -461,6 +529,22 @@ if (isset($_SESSION['toast'])) {
             color: #1e1e1e;
         }
 
+        .action-btn.redistribute-btn {
+            color: #047857;
+        }
+
+        .action-btn.withdraw-btn {
+            color: #b91c1c;
+        }
+
+        .action-btn.redistribute-btn:hover {
+            color: #065f46;
+        }
+
+        .action-btn.withdraw-btn:hover {
+            color: #991b1b;
+        }
+
         .delete-btn:hover {
             color: #dc2626;
         }
@@ -693,6 +777,7 @@ if (isset($_SESSION['toast'])) {
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(4)">
                                     Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
+                                <th class="p-3">Status</th>
                                 <th class="p-3">Actions</th>
                             </tr>
                         </thead>
@@ -724,11 +809,30 @@ if (isset($_SESSION['toast'])) {
                                         <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                         <td class="p-3 whitespace-nowrap"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
                                         <td class="p-3">
+                                            <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
+                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-danger' : 'badge-success'; ?>">
+                                                <?php echo ucfirst($status); ?>
+                                            </span>
+                                        </td>
+                                        <td class="p-3">
                                             <div class="flex gap-2">
                                                 <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)"
                                                     class="action-btn" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
                                                 </button>
+                                                <?php if ($status !== 'withdrawn'): ?>
+                                                    <?php if ($row['available_copies'] > 0): ?>
+                                                        <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
+                                                            class="action-btn redistribute-btn" title="Redistribute copies">
+                                                            <i class="fa-solid fa-arrow-rotate-right"></i>
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <button type="button" onclick="withdrawDistribution(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
+                                                            class="action-btn withdraw-btn" title="Withdraw distribution">
+                                                            <i class="fa-solid fa-rotate-left"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
                                                 <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
                                                     class="action-btn delete-btn" title="Delete">
                                                     <i class="fa-regular fa-trash-can"></i>
@@ -970,12 +1074,94 @@ if (isset($_SESSION['toast'])) {
         </div>
     </div>
 
+    <!-- Withdraw Confirmation Modal -->
+    <div id="withdrawModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Withdraw</h2>
+                <button type="button" onclick="closeWithdrawModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="py-2">
+                <p class="text-sm text-[#6e6e6e]">Do you want to withdraw this distribution and restore the copies to inventory?</p>
+                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p class="text-sm font-medium text-yellow-800" id="withdrawDocumentName"></p>
+                    <p class="text-xs text-yellow-600 mt-1" id="withdrawCopiesCount"></p>
+                </div>
+                <p class="text-xs text-[#9e9e9e] mt-3">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    This will mark the distribution as withdrawn and restore the copies back to the document inventory.
+                </p>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeWithdrawModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <a href="#" id="confirmWithdrawBtn"
+                    class="px-4 py-2 text-sm bg-yellow-600 text-white rounded-md hover:bg-yellow-700">
+                    Withdraw Distribution
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Distribution Modal -->
+    <div id="confirmDistributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-[60] modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Distribution</h2>
+                <button type="button" onclick="closeConfirmDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="py-2">
+                <p class="text-sm text-[#6e6e6e]">Please confirm the following distribution details:</p>
+                <div class="mt-4 space-y-3 p-4 bg-[#f5f5f4] rounded-md">
+                    <div class="flex justify-between">
+                        <span class="text-xs text-[#6e6e6e] uppercase">Document</span>
+                        <span class="text-sm font-medium text-right" id="confirmDocName">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-xs text-[#6e6e6e] uppercase">Date Distributed</span>
+                        <span class="text-sm font-medium" id="confirmDate">-</span>
+                    </div>
+                    <div class="flex justify-between border-t border-[#e5e5e5] pt-2">
+                        <span class="text-xs text-[#6e6e6e] uppercase">Total Copies</span>
+                        <span class="text-sm font-bold" id="confirmTotalCopies">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeConfirmDistributionModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Edit Details
+                </button>
+                <button onclick="finalSubmitDistribution()" id="finalConfirmBtn"
+                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] flex items-center gap-2 transition-all">
+                    <i class="fa-regular fa-circle-check"></i>
+                    Confirm & Save
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Show toast notification from PHP session
         <?php if ($toast): ?>
-            document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo addslashes($toast['message']); ?>', '<?php echo $toast['type']; ?>');
-            });
+                (function() {
+                    const showQueuedToast = () => showToast('<?php echo addslashes($toast['message']); ?>', '<?php echo $toast['type']; ?>');
+                    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                        showQueuedToast();
+                    } else {
+                        document.addEventListener('DOMContentLoaded', showQueuedToast);
+                    }
+                })();
         <?php endif; ?>
 
         // Toast notification function
@@ -1203,7 +1389,25 @@ if (isset($_SESSION['toast'])) {
                 return false;
             }
 
-            return confirm(`You are about to distribute ${totalCopies} copy(ies). Continue?`);
+            // Instead of confirm(), show the custom modal
+            document.getElementById('confirmDocName').textContent = selectedOption.text.split('(')[0].trim();
+            document.getElementById('confirmDate').textContent = document.getElementById('modalDateDistributed').value;
+            document.getElementById('confirmTotalCopies').textContent = totalCopies;
+
+            document.getElementById('confirmDistributionModal').style.display = 'flex';
+            return false; // Prevent immediate submission
+        }
+
+        function finalSubmitDistribution() {
+            const btn = document.getElementById('finalConfirmBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving...';
+            
+            document.getElementById('distributionForm').submit();
+        }
+
+        function closeConfirmDistributionModal() {
+            document.getElementById('confirmDistributionModal').style.display = 'none';
         }
 
         // ========== DELETE MODAL FUNCTIONS ==========
@@ -1221,9 +1425,57 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('deleteModal').style.display = 'flex';
         }
 
+        let currentWithdrawId = null;
+
+        function openWithdrawModal(id, documentName, copies) {
+            currentWithdrawId = id;
+            document.getElementById('withdrawDocumentName').textContent = documentName;
+            document.getElementById('withdrawCopiesCount').textContent = `Copies: ${copies}`;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('withdraw', id);
+            document.getElementById('confirmWithdrawBtn').href = '?' + urlParams.toString();
+
+            document.getElementById('withdrawModal').style.display = 'flex';
+        }
+
+        function withdrawDistribution(id, documentName, copies) {
+            openWithdrawModal(id, documentName, copies);
+        }
+
+        function continueDistribution(documentId) {
+            const select = document.getElementById('modalDocumentSelect');
+            if (!select) {
+                showToast('Distribution modal is not available.', 'error');
+                return;
+            }
+
+            const option = select.querySelector(`option[value="${documentId}"]`);
+            if (!option) {
+                showToast('This document cannot be continued because it is no longer available for distribution.', 'warning');
+                return;
+            }
+
+            openDistributionModal();
+            select.value = documentId;
+            updateAvailableCopies();
+
+            const copiesInput = document.querySelector('.distribution-copies');
+            if (copiesInput) {
+                copiesInput.value = '1';
+            }
+            updateDistributionSummary();
+            showToast('Ready to continue distribution for the selected document.', 'info', 2000);
+        }
+
         function closeDeleteModal() {
             document.getElementById('deleteModal').style.display = 'none';
             currentDeleteId = null;
+        }
+
+        function closeWithdrawModal() {
+            document.getElementById('withdrawModal').style.display = 'none';
+            currentWithdrawId = null;
         }
 
         // View distribution details
@@ -1437,10 +1689,14 @@ if (isset($_SESSION['toast'])) {
             const distributionModal = document.getElementById('distributionModal');
             const viewModal = document.getElementById('viewModal');
             const deleteModal = document.getElementById('deleteModal');
+            const confirmModal = document.getElementById('confirmDistributionModal');
+            const withdrawModal = document.getElementById('withdrawModal');
 
             if (event.target == distributionModal) closeDistributionModal();
             if (event.target == viewModal) closeViewModal();
             if (event.target == deleteModal) closeDeleteModal();
+            if (event.target == confirmModal) closeConfirmDistributionModal();
+            if (event.target == withdrawModal) closeWithdrawModal();
         }
 
         // ESC key to close modals
@@ -1449,6 +1705,8 @@ if (isset($_SESSION['toast'])) {
                 closeDistributionModal();
                 closeViewModal();
                 closeDeleteModal();
+                closeConfirmDistributionModal();
+                closeWithdrawModal();
             }
         });
     </script>

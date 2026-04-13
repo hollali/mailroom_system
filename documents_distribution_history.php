@@ -91,10 +91,11 @@ $page   = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $limit  = 10;
 $offset = ($page - 1) * $limit;
 
-$search      = isset($_GET['search'])      ? trim($_GET['search'])      : '';
-$type_filter = isset($_GET['type'])        ? trim($_GET['type'])        : '';
-$date_from   = isset($_GET['date_from'])   ? trim($_GET['date_from'])   : '';
-$date_to     = isset($_GET['date_to'])     ? trim($_GET['date_to'])     : '';
+$search       = isset($_GET['search'])      ? trim($_GET['search'])      : '';
+$type_filter  = isset($_GET['type'])        ? trim($_GET['type'])        : '';
+$status_filter = isset($_GET['status'])     ? trim($_GET['status'])      : '';
+$date_from    = isset($_GET['date_from'])   ? trim($_GET['date_from'])   : '';
+$date_to      = isset($_GET['date_to'])     ? trim($_GET['date_to'])     : '';
 
 // Build WHERE clause
 $where_clauses = [];
@@ -114,6 +115,12 @@ if (!empty($search)) {
 if ($type_filter !== '') {
     $where_clauses[] = "dt.type_name = ?";
     $params[] = $type_filter;
+    $types .= "s";
+}
+
+if ($status_filter !== '') {
+    $where_clauses[] = "COALESCE(dd.status, 'distributed') = ?";
+    $params[] = $status_filter;
     $types .= "s";
 }
 
@@ -150,7 +157,7 @@ $total_pages = $total_records > 0 ? ceil($total_records / $limit) : 1;
 // ─── Main records query ───────────────────────────────────────────────────────
 $sql = "
     SELECT dd.id, dd.document_id, dd.number_received, dd.number_distributed,
-           dd.date_distributed, dd.created_at,
+           dd.date_distributed, dd.created_at, COALESCE(dd.status, 'distributed') AS distribution_status,
            d.document_name, d.origin,
            dt.type_name AS document_type
     FROM document_distribution dd
@@ -209,7 +216,11 @@ if (isset($_SESSION['toast'])) {
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -218,7 +229,10 @@ if (isset($_SESSION['toast'])) {
         }
 
         /* ── Table ── */
-        table { width: 100%; border-collapse: collapse; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
 
         th {
             text-align: left;
@@ -234,8 +248,16 @@ if (isset($_SESSION['toast'])) {
             cursor: pointer;
             user-select: none;
         }
-        th:hover { background: #f4f4f3; }
-        th .sort-icon { color: #d6d3d1; margin-left: 4px; font-size: 10px; }
+
+        th:hover {
+            background: #f4f4f3;
+        }
+
+        th .sort-icon {
+            color: #d6d3d1;
+            margin-left: 4px;
+            font-size: 10px;
+        }
 
         td {
             padding: 12px 16px;
@@ -244,7 +266,10 @@ if (isset($_SESSION['toast'])) {
             color: #1c1917;
             vertical-align: middle;
         }
-        tr:hover td { background: #fafaf9; }
+
+        tr:hover td {
+            background: #fafaf9;
+        }
 
         /* ── Badges ── */
         .badge {
@@ -254,8 +279,18 @@ if (isset($_SESSION['toast'])) {
             font-size: 11px;
             font-weight: 500;
         }
-        .badge-type  { background: #e3f2fd; color: #0b5e8a; }
-        .badge-count { background: #f0fdf4; color: #166534; font-family: monospace; font-size: 13px; }
+
+        .badge-type {
+            background: #e3f2fd;
+            color: #0b5e8a;
+        }
+
+        .badge-count {
+            background: #f0fdf4;
+            color: #166534;
+            font-family: monospace;
+            font-size: 13px;
+        }
 
         /* ── Action buttons ── */
         .action-btn {
@@ -268,8 +303,16 @@ if (isset($_SESSION['toast'])) {
             border-radius: 4px;
             transition: all .15s;
         }
-        .action-btn:hover         { color: #1c1917; background: #f5f5f4; }
-        .delete-btn:hover         { color: #dc2626; background: #fef2f2; }
+
+        .action-btn:hover {
+            color: #1c1917;
+            background: #f5f5f4;
+        }
+
+        .delete-btn:hover {
+            color: #dc2626;
+            background: #fef2f2;
+        }
 
         /* ── Stat cards ── */
         .stat-card {
@@ -279,10 +322,29 @@ if (isset($_SESSION['toast'])) {
             padding: 16px 20px;
             transition: all .2s;
         }
-        .stat-card:hover { border-color: #a8a29e; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
-        .stat-number { font-size: 28px; font-weight: 600; color: #1c1917; line-height: 1; }
-        .stat-label  { font-size: 12px; color: #78716c; margin-top: 4px; }
-        .stat-icon   { font-size: 20px; color: #d6d3d1; }
+
+        .stat-card:hover {
+            border-color: #a8a29e;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1c1917;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #78716c;
+            margin-top: 4px;
+        }
+
+        .stat-icon {
+            font-size: 20px;
+            color: #d6d3d1;
+        }
 
         /* ── Filters ── */
         .filter-input {
@@ -294,7 +356,10 @@ if (isset($_SESSION['toast'])) {
             outline: none;
             transition: border-color .15s;
         }
-        .filter-input:focus { border-color: #a8a29e; }
+
+        .filter-input:focus {
+            border-color: #a8a29e;
+        }
 
         .btn-primary {
             background: #1c1917;
@@ -310,7 +375,10 @@ if (isset($_SESSION['toast'])) {
             text-decoration: none;
             transition: background .15s;
         }
-        .btn-primary:hover { background: #292524; }
+
+        .btn-primary:hover {
+            background: #292524;
+        }
 
         .btn-secondary {
             background: white;
@@ -326,7 +394,10 @@ if (isset($_SESSION['toast'])) {
             text-decoration: none;
             transition: background .15s;
         }
-        .btn-secondary:hover { background: #fafaf9; }
+
+        .btn-secondary:hover {
+            background: #fafaf9;
+        }
 
         .btn-danger {
             background: #dc2626;
@@ -338,26 +409,32 @@ if (isset($_SESSION['toast'])) {
             cursor: pointer;
             transition: background .15s;
         }
-        .btn-danger:hover { background: #b91c1c; }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
 
         /* ── Modal ── */
         .modal {
-            position: fixed; inset: 0;
-            background: rgba(0,0,0,.35);
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .35);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 1000;
             padding: 16px;
         }
+
         .modal-content {
             background: white;
             border-radius: 10px;
             width: 100%;
             max-width: 540px;
-            box-shadow: 0 20px 60px rgba(0,0,0,.15);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .15);
             overflow: hidden;
         }
+
         .modal-header {
             padding: 18px 22px;
             border-bottom: 1px solid #e5e5e5;
@@ -365,8 +442,16 @@ if (isset($_SESSION['toast'])) {
             justify-content: space-between;
             align-items: center;
         }
-        .modal-header h3 { font-size: 15px; font-weight: 600; }
-        .modal-body   { padding: 20px 22px; }
+
+        .modal-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            padding: 20px 22px;
+        }
+
         .modal-footer {
             padding: 14px 22px;
             border-top: 1px solid #e5e5e5;
@@ -382,12 +467,35 @@ if (isset($_SESSION['toast'])) {
             align-items: baseline;
             gap: 12px;
         }
-        .detail-row:last-child { border-bottom: none; }
-        .detail-label { width: 150px; min-width: 150px; font-size: 12px; font-weight: 500; color: #78716c; text-transform: uppercase; letter-spacing: .04em; }
-        .detail-value { flex: 1; font-size: 14px; color: #1c1917; }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            width: 150px;
+            min-width: 150px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #78716c;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .detail-value {
+            flex: 1;
+            font-size: 14px;
+            color: #1c1917;
+        }
 
         /* ── Pagination ── */
-        .pagination { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+        .pagination {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
         .page-link {
             padding: 6px 12px;
             border: 1px solid #e5e5e5;
@@ -398,12 +506,34 @@ if (isset($_SESSION['toast'])) {
             color: #1c1917;
             transition: all .15s;
         }
-        .page-link:hover { background: #fafaf9; border-color: #d6d3d1; }
-        .page-link.active { background: #1c1917; color: white; border-color: #1c1917; }
-        .page-link.disabled { opacity: .45; pointer-events: none; }
+
+        .page-link:hover {
+            background: #fafaf9;
+            border-color: #d6d3d1;
+        }
+
+        .page-link.active {
+            background: #1c1917;
+            color: white;
+            border-color: #1c1917;
+        }
+
+        .page-link.disabled {
+            opacity: .45;
+            pointer-events: none;
+        }
 
         /* ── Toast ── */
-        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         .toast {
             background: white;
             border: 1px solid #e5e5e5;
@@ -413,16 +543,32 @@ if (isset($_SESSION['toast'])) {
             align-items: center;
             gap: 12px;
             min-width: 280px;
-            box-shadow: 0 4px 16px rgba(0,0,0,.1);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, .1);
             animation: slideIn .25s ease;
         }
-        .toast-success { border-left: 3px solid #10b981; }
-        .toast-error   { border-left: 3px solid #ef4444; }
-        .toast-warning { border-left: 3px solid #f59e0b; }
+
+        .toast-success {
+            border-left: 3px solid #10b981;
+        }
+
+        .toast-error {
+            border-left: 3px solid #ef4444;
+        }
+
+        .toast-warning {
+            border-left: 3px solid #f59e0b;
+        }
 
         @keyframes slideIn {
-            from { transform: translateX(40px); opacity: 0; }
-            to   { transform: translateX(0);    opacity: 1; }
+            from {
+                transform: translateX(40px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
 
         /* ── Ref badge ── */
@@ -438,16 +584,43 @@ if (isset($_SESSION['toast'])) {
         }
 
         /* ── Empty state ── */
-        .empty-state { text-align: center; padding: 56px 24px; color: #78716c; }
-        .empty-state i { font-size: 40px; color: #d6d3d1; margin-bottom: 12px; display: block; }
-        .empty-state p { font-size: 15px; }
+        .empty-state {
+            text-align: center;
+            padding: 56px 24px;
+            color: #78716c;
+        }
+
+        .empty-state i {
+            font-size: 40px;
+            color: #d6d3d1;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .empty-state p {
+            font-size: 15px;
+        }
 
         /* ── Print ── */
         @media print {
-            #toastContainer, #sidebar, #mobileMenuBtn, #sidebarOverlay,
-            .modal, .no-print { display: none !important; }
-            main { margin-left: 0 !important; }
-            th:last-child, td:last-child { display: none !important; }
+
+            #toastContainer,
+            #sidebar,
+            #mobileMenuBtn,
+            #sidebarOverlay,
+            .modal,
+            .no-print {
+                display: none !important;
+            }
+
+            main {
+                margin-left: 0 !important;
+            }
+
+            th:last-child,
+            td:last-child {
+                display: none !important;
+            }
         }
     </style>
 </head>
@@ -527,6 +700,14 @@ if (isset($_SESSION['toast'])) {
                         </select>
                     </div>
                     <div class="w-[145px]">
+                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Status</label>
+                        <select id="statusFilter" name="status" class="filter-input w-full">
+                            <option value="">All Statuses</option>
+                            <option value="distributed" <?php echo $status_filter === 'distributed' ? 'selected' : ''; ?>>Distributed</option>
+                            <option value="withdrawn" <?php echo $status_filter === 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
+                        </select>
+                    </div>
+                    <div class="w-[145px]">
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">From Date</label>
                         <input type="date" name="date_from" class="filter-input w-full"
                             value="<?php echo htmlspecialchars($date_from); ?>">
@@ -570,6 +751,7 @@ if (isset($_SESSION['toast'])) {
                                 <th onclick="sortTable(3)">Copies Distributed <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th onclick="sortTable(4)">Date <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th onclick="sortTable(5)">Recorded At <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th>Status</th>
                                 <th class="no-print"></th>
                             </tr>
                         </thead>
@@ -581,7 +763,7 @@ if (isset($_SESSION['toast'])) {
                                         <td><span class="ref-badge"><?php echo htmlspecialchars($ref); ?></span></td>
                                         <td class="font-medium">
                                             <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
-                                               class="hover:underline text-[#1c1917]">
+                                                class="hover:underline text-[#1c1917]">
                                                 <?php echo htmlspecialchars($row['document_name']); ?>
                                             </a>
                                         </td>
@@ -602,6 +784,12 @@ if (isset($_SESSION['toast'])) {
                                         <td class="text-[#78716c] text-sm whitespace-nowrap">
                                             <?php echo formatTimestampDisplay($row['created_at']); ?>
                                         </td>
+                                        <td>
+                                            <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
+                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-danger' : 'badge-count'; ?>">
+                                                <?php echo ucfirst($status); ?>
+                                            </span>
+                                        </td>
                                         <td class="whitespace-nowrap no-print">
                                             <button onclick="viewRecord(<?php echo $row['id']; ?>)"
                                                 class="action-btn" title="View details">
@@ -616,18 +804,18 @@ if (isset($_SESSION['toast'])) {
                                 <?php endwhile; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="7">
+                                    <td colspan="8">
                                         <div class="empty-state">
                                             <i class="fa-regular fa-folder-open"></i>
                                             <p>No distribution records found.</p>
-                                            <?php if (!empty($search) || !empty($type_filter) || !empty($date_from) || !empty($date_to)): ?>
+                                            <?php if (!empty($search) || !empty($type_filter) || !empty($status_filter) || !empty($date_from) || !empty($date_to)): ?>
                                                 <a href="documents_distribution_history.php"
-                                                   class="text-sm text-[#1c1917] underline mt-2 inline-block">
+                                                    class="text-sm text-[#1c1917] underline mt-2 inline-block">
                                                     Clear filters
                                                 </a>
                                             <?php else: ?>
                                                 <a href="distribution.php"
-                                                   class="text-sm text-[#1c1917] underline mt-2 inline-block">
+                                                    class="text-sm text-[#1c1917] underline mt-2 inline-block">
                                                     Start distributing documents
                                                 </a>
                                             <?php endif; ?>
@@ -652,6 +840,7 @@ if (isset($_SESSION['toast'])) {
                 $qs_base = http_build_query(array_filter([
                     'search'    => $search,
                     'type'      => $type_filter,
+                    'status'    => $status_filter,
                     'date_from' => $date_from,
                     'date_to'   => $date_to,
                 ]));
@@ -676,7 +865,7 @@ if (isset($_SESSION['toast'])) {
                         for ($i = $start; $i <= $end; $i++):
                         ?>
                             <a href="?page=<?php echo $i; ?><?php echo $qs; ?>"
-                               class="page-link <?php echo $i == $page ? 'active' : ''; ?>">
+                                class="page-link <?php echo $i == $page ? 'active' : ''; ?>">
                                 <?php echo $i; ?>
                             </a>
                         <?php endfor;
@@ -751,7 +940,11 @@ if (isset($_SESSION['toast'])) {
         // ── Toast ──────────────────────────────────────────────────────────────
         function showToast(type, message) {
             const container = document.getElementById('toastContainer');
-            const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation' };
+            const icons = {
+                success: 'fa-circle-check',
+                error: 'fa-circle-xmark',
+                warning: 'fa-triangle-exclamation'
+            };
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             toast.innerHTML = `
@@ -770,18 +963,25 @@ if (isset($_SESSION['toast'])) {
         }
 
         <?php if ($toast): ?>
-        document.addEventListener('DOMContentLoaded', function () {
-            showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
-        });
+            document.addEventListener('DOMContentLoaded', function() {
+                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
+            });
         <?php endif; ?>
 
         // ── Modal helpers ──────────────────────────────────────────────────────
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
 
         // Close on backdrop click
         document.querySelectorAll('.modal').forEach(m => {
-            m.addEventListener('click', e => { if (e.target === m) closeModal(m.id); });
+            m.addEventListener('click', e => {
+                if (e.target === m) closeModal(m.id);
+            });
         });
 
         // ── View Record ────────────────────────────────────────────────────────
@@ -806,10 +1006,20 @@ if (isset($_SESSION['toast'])) {
                     }
                     const r = data.record;
                     const ref = `DDIST-${r.date_distributed.replace(/-/g,'').slice(0,8)}-${String(r.id).padStart(4,'0')}`;
-                    const distDate  = new Date(r.date_distributed).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
-                    const createdAt = r.created_at
-                        ? new Date(r.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })
-                        : 'N/A';
+                    const distDate = new Date(r.date_distributed).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                    const createdAt = r.created_at ?
+                        new Date(r.created_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }) :
+                        'N/A';
 
                     document.getElementById('viewModalBody').innerHTML = `
                         <div class="detail-row"><div class="detail-label">Reference</div><div class="detail-value"><span class="ref-badge">${escapeHtml(ref)}</span></div></div>
@@ -843,21 +1053,25 @@ if (isset($_SESSION['toast'])) {
 
         // ── Live search debounce ───────────────────────────────────────────────
         let searchTimer;
-        document.getElementById('searchInput').addEventListener('input', function () {
+        document.getElementById('searchInput').addEventListener('input', function() {
             clearTimeout(searchTimer);
             searchTimer = setTimeout(() => document.getElementById('filterForm').submit(), 380);
         });
 
-        // Auto-submit on type filter change
-        document.getElementById('typeFilter').addEventListener('change', function () {
+        // Auto-submit on type or status filter change
+        document.getElementById('typeFilter').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+        document.getElementById('statusFilter').addEventListener('change', function() {
             document.getElementById('filterForm').submit();
         });
 
         // ── Client-side table sort ─────────────────────────────────────────────
         let sortDir = {};
+
         function sortTable(colIndex) {
             const tbody = document.getElementById('tableBody');
-            const rows  = Array.from(tbody.querySelectorAll('tr')).filter(r => r.cells.length > 1);
+            const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.cells.length > 1);
             if (!rows.length) return;
 
             sortDir[colIndex] = !sortDir[colIndex];
@@ -866,8 +1080,8 @@ if (isset($_SESSION['toast'])) {
             rows.sort((a, b) => {
                 const av = a.cells[colIndex]?.innerText.trim() || '';
                 const bv = b.cells[colIndex]?.innerText.trim() || '';
-                const an = parseFloat(av.replace(/[^0-9.-]/g,''));
-                const bn = parseFloat(bv.replace(/[^0-9.-]/g,''));
+                const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
+                const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
                 if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
                 return asc ? av.localeCompare(bv) : bv.localeCompare(av);
             });
@@ -886,4 +1100,5 @@ if (isset($_SESSION['toast'])) {
         }
     </script>
 </body>
+
 </html>

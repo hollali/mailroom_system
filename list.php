@@ -697,13 +697,7 @@ include './sidebar.php';
                     </div>
                 </div>
 
-                <!-- Newspapers Table -->
-                <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden mb-6">
-                    <div class="px-4 py-3 bg-[#fafafa] border-b border-[#e5e5e5]">
-                        <h3 class="text-sm font-medium text-[#1e1e1e]">Newspapers</h3>
-                    </div>
-
-                    <!-- Filters -->
+                <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden mb-6 no-print">
                     <div class="p-4 border-b border-[#e5e5e5]">
                         <form method="GET" id="newspaperFilterForm" class="flex flex-wrap gap-3 items-center">
                             <input type="hidden" name="page" value="1">
@@ -757,178 +751,180 @@ include './sidebar.php';
                                 <i class="fa-solid fa-rotate-right mr-1"></i>Reset
                             </a>
                         </form>
+                    </div>
+                </div>
 
-                        <!-- Active Filters Display -->
-                        <?php if ($filter_category > 0 || !empty($search)): ?>
-                            <div class="flex flex-wrap gap-2 mt-3">
-                                <?php if ($filter_category > 0):
-                                    $cat_name = '';
-                                    foreach ($all_categories as $cat) {
-                                        if ($cat['id'] == $filter_category) {
-                                            $cat_name = $cat['category_name'];
-                                            break;
-                                        }
-                                    }
-                                ?>
-                                    <span class="filter-badge">
-                                        Category: <?php echo htmlspecialchars($cat_name); ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_category' => 0, 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-regular fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
+                <!-- Active Filters Display -->
+                <?php if ($filter_category > 0 || !empty($search)): ?>
+                    <div class="flex flex-wrap gap-2 mt-3">
+                        <?php if ($filter_category > 0):
+                            $cat_name = '';
+                            foreach ($all_categories as $cat) {
+                                if ($cat['id'] == $filter_category) {
+                                    $cat_name = $cat['category_name'];
+                                    break;
+                                }
+                            }
+                        ?>
+                            <span class="filter-badge">
+                                Category: <?php echo htmlspecialchars($cat_name); ?>
+                                <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_category' => 0, 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                                    <i class="fa-regular fa-xmark"></i>
+                                </a>
+                            </span>
+                        <?php endif; ?>
 
-                                <?php if (!empty($search)): ?>
-                                    <span class="filter-badge">
-                                        Search: "<?php echo htmlspecialchars($search); ?>"
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['search' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                            <i class="fa-solid fa-xmark"></i>
-                                        </a>
-                                    </span>
-                                <?php endif; ?>
-                            </div>
+                        <?php if (!empty($search)): ?>
+                            <span class="filter-badge">
+                                Search: "<?php echo htmlspecialchars($search); ?>"
+                                <a href="?<?php echo http_build_query(array_merge($_GET, ['search' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </a>
+                            </span>
                         <?php endif; ?>
                     </div>
-
-                    <!-- Newspapers Table -->
-                    <div class="overflow-x-auto">
-                        <table>
-                            <thead>
-                                <tr class="bg-[#fafafa]">
-                                    <th class="text-xs">ID</th>
-                                    <th class="text-xs">Newspaper</th>
-                                    <th class="text-xs">Issue #</th>
-                                    <th class="text-xs">Category</th>
-                                    <th class="text-xs">Date Received</th>
-                                    <th class="text-xs">Status</th>
-                                    <th class="text-xs">Available</th>
-                                    <th class="text-xs">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if ($all_newspapers && $all_newspapers->num_rows > 0): ?>
-                                    <?php while ($paper = $all_newspapers->fetch_assoc()): ?>
-                                        <tr class="hover:bg-[#fafafa] newspaper-row" id="newspaper-row-<?php echo $paper['id']; ?>"
-                                            data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
-                                            data-category="<?php echo (int) ($paper['category_id'] ?? 0); ?>"
-                                            data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
-                                            <td class="text-sm text-[#6e6e6e]"><?php echo $paper['id']; ?></td>
-                                            <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($paper['newspaper_name']); ?></td>
-                                            <td class="text-sm font-mono text-[#1e1e1e] issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
-                                            <td class="text-sm">
-                                                <span class="status-badge status-<?php echo htmlspecialchars($paper['status']); ?>">
-                                                    <?php echo ucfirst(htmlspecialchars($paper['status'])); ?>
-                                                </span>
-                                            </td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $paper['available_copies']; ?></td>
-                                            <td class="text-sm">
-                                                <div class="flex gap-2 items-center">
-                                                    <button onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)"
-                                                        class="action-btn" title="View Details">
-                                                        <i class="fa-regular fa-eye"></i>
-                                                    </button>
-                                                    <button onclick="openUpdateModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', <?php echo $paper['available_copies']; ?>)"
-                                                        class="action-btn" title="Edit">
-                                                        <i class="fa-regular fa-pen-to-square"></i>
-                                                    </button>
-                                                    <?php
-                                                    $is_archived = $paper['status'] === 'archived';
-                                                    $toggle_label = $is_archived ? 'Continue' : 'Discontinue';
-                                                    $toggle_icon = $is_archived ? 'fa-play' : 'fa-ban';
-                                                    $toggle_class = $is_archived ? 'text-green-600' : 'text-orange-600';
-                                                    $toggle_query = http_build_query(array_merge($_GET, ['toggle_status' => $paper['id']]));
-                                                    ?>
-                                                    <a href="?<?php echo $toggle_query; ?>" class="action-btn <?php echo $toggle_class; ?>" title="<?php echo $toggle_label; ?>">
-                                                        <i class="fa-solid <?php echo $toggle_icon; ?>"></i>
-                                                    </a>
-                                                    <button onclick="openDeleteModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', '<?php echo htmlspecialchars($paper['newspaper_number']); ?>')"
-                                                        class="action-btn delete-btn" title="Delete">
-                                                        <i class="fa-regular fa-trash-can"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endwhile; ?>
-                                    <tr id="newspaperNoResultsRow" class="hidden">
-                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
-                                            No newspapers match the current live search on this page.
-                                        </td>
-                                    </tr>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
-                                            No newspapers found.
-                                            <button onclick="openAddModal()" class="text-blue-600 hover:underline">Add one</button> to get started.
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Pagination -->
-                    <?php if ($total_pages > 1): ?>
-                        <?php
-                        $pageStart = $total_rows > 0 ? $offset + 1 : 0;
-                        $pageEnd = min($offset + ($all_newspapers ? $all_newspapers->num_rows : 0), $total_rows);
-                        $start = max(1, $page - 2);
-                        $end = min($total_pages, $page + 2);
-                        ?>
-                        <div class="pagination-shell">
-                            <div class="pagination-meta">
-                                <div class="pagination-title">
-                                    Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> item<?php echo ($all_newspapers && $all_newspapers->num_rows == 1) ? '' : 's'; ?> on this page
-                                </div>
-                                <div class="pagination-subtitle">
-                                    Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_rows; ?> total
-                                </div>
-                            </div>
-                            <div class="pagination-controls">
-                                <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
-                                <div class="pagination">
-                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                        <i class="fa-regular fa-chevrons-left"></i>
-                                    </a>
-                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                        <i class="fa-regular fa-chevron-left"></i>
-                                    </a>
-
-                                    <?php if ($start > 1): ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
-                                        <?php if ($start > 2): ?>
-                                            <span class="pagination-ellipsis">...</span>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-
-                                    <?php for ($i = $start; $i <= $end; $i++): ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
-                                            class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
-                                            <?php echo $i; ?>
-                                        </a>
-                                    <?php endfor; ?>
-
-                                    <?php if ($end < $total_pages): ?>
-                                        <?php if ($end < $total_pages - 1): ?>
-                                            <span class="pagination-ellipsis">...</span>
-                                        <?php endif; ?>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
-                                    <?php endif; ?>
-
-                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                        <i class="fa-regular fa-chevron-right"></i>
-                                    </a>
-                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                        <i class="fa-regular fa-chevrons-right"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-                </div>
+                <?php endif; ?>
             </div>
-        </main>
+
+            <!-- Newspapers Table -->
+            <div class="overflow-x-auto">
+                <table>
+                    <thead>
+                        <tr class="bg-[#fafafa]">
+                            <th class="text-xs">ID</th>
+                            <th class="text-xs">Newspaper</th>
+                            <th class="text-xs">Issue #</th>
+                            <th class="text-xs">Category</th>
+                            <th class="text-xs">Date Received</th>
+                            <th class="text-xs">Status</th>
+                            <th class="text-xs">Available</th>
+                            <th class="text-xs">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($all_newspapers && $all_newspapers->num_rows > 0): ?>
+                            <?php while ($paper = $all_newspapers->fetch_assoc()): ?>
+                                <tr class="hover:bg-[#fafafa] newspaper-row" id="newspaper-row-<?php echo $paper['id']; ?>"
+                                    data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
+                                    data-category="<?php echo (int) ($paper['category_id'] ?? 0); ?>"
+                                    data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
+                                    <td class="text-sm text-[#6e6e6e]"><?php echo $paper['id']; ?></td>
+                                    <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($paper['newspaper_name']); ?></td>
+                                    <td class="text-sm font-mono text-[#1e1e1e] issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
+                                    <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
+                                    <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
+                                    <td class="text-sm">
+                                        <span class="status-badge status-<?php echo htmlspecialchars($paper['status']); ?>">
+                                            <?php echo ucfirst(htmlspecialchars($paper['status'])); ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-sm text-[#1e1e1e]"><?php echo $paper['available_copies']; ?></td>
+                                    <td class="text-sm">
+                                        <div class="flex gap-2 items-center">
+                                            <button onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)"
+                                                class="action-btn" title="View Details">
+                                                <i class="fa-regular fa-eye"></i>
+                                            </button>
+                                            <button onclick="openUpdateModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', <?php echo $paper['available_copies']; ?>)"
+                                                class="action-btn" title="Edit">
+                                                <i class="fa-regular fa-pen-to-square"></i>
+                                            </button>
+                                            <?php
+                                            $is_archived = $paper['status'] === 'archived';
+                                            $toggle_label = $is_archived ? 'Continue' : 'Discontinue';
+                                            $toggle_icon = $is_archived ? 'fa-play' : 'fa-ban';
+                                            $toggle_class = $is_archived ? 'text-green-600' : 'text-orange-600';
+                                            $toggle_query = http_build_query(array_merge($_GET, ['toggle_status' => $paper['id']]));
+                                            ?>
+                                            <a href="?<?php echo $toggle_query; ?>" class="action-btn <?php echo $toggle_class; ?>" title="<?php echo $toggle_label; ?>">
+                                                <i class="fa-solid <?php echo $toggle_icon; ?>"></i>
+                                            </a>
+                                            <button onclick="openDeleteModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', '<?php echo htmlspecialchars($paper['newspaper_number']); ?>')"
+                                                class="action-btn delete-btn" title="Delete">
+                                                <i class="fa-regular fa-trash-can"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                            <tr id="newspaperNoResultsRow" class="hidden">
+                                <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
+                                    No newspapers match the current live search on this page.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
+                                    No newspapers found.
+                                    <button onclick="openAddModal()" class="text-blue-600 hover:underline">Add one</button> to get started.
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <?php if ($total_pages > 1): ?>
+                <?php
+                $pageStart = $total_rows > 0 ? $offset + 1 : 0;
+                $pageEnd = min($offset + ($all_newspapers ? $all_newspapers->num_rows : 0), $total_rows);
+                $start = max(1, $page - 2);
+                $end = min($total_pages, $page + 2);
+                ?>
+                <div class="pagination-shell">
+                    <div class="pagination-meta">
+                        <div class="pagination-title">
+                            Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> item<?php echo ($all_newspapers && $all_newspapers->num_rows == 1) ? '' : 's'; ?> on this page
+                        </div>
+                        <div class="pagination-subtitle">
+                            Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_rows; ?> total
+                        </div>
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                        <div class="pagination">
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                <i class="fa-regular fa-chevrons-left"></i>
+                            </a>
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
+                                <i class="fa-regular fa-chevron-left"></i>
+                            </a>
+
+                            <?php if ($start > 1): ?>
+                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
+                                <?php if ($start > 2): ?>
+                                    <span class="pagination-ellipsis">...</span>
+                                <?php endif; ?>
+                            <?php endif; ?>
+
+                            <?php for ($i = $start; $i <= $end; $i++): ?>
+                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
+                                    class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
+                                    <?php echo $i; ?>
+                                </a>
+                            <?php endfor; ?>
+
+                            <?php if ($end < $total_pages): ?>
+                                <?php if ($end < $total_pages - 1): ?>
+                                    <span class="pagination-ellipsis">...</span>
+                                <?php endif; ?>
+                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
+                            <?php endif; ?>
+
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                <i class="fa-regular fa-chevron-right"></i>
+                            </a>
+                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
+                                <i class="fa-regular fa-chevrons-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+    </div>
+    </div>
+    </main>
     </div>
 
     <!-- Add Newspaper Modal -->

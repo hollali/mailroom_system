@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 
         foreach ($recipient_ids as $recipient_id) {
             $recipient_id = (int)$recipient_id;
-            
+
             // Get recipient details
             $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND is_active = 1");
             if (!$recipient = $recipient_query->fetch_assoc()) {
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             // Determine which selected papers are actually available for this specific recipient
             $actual_distributed_ids = [];
             $actual_distributed_names = [];
-            
+
             foreach ($selected_categories as $paper_id) {
                 $pid = (int)$paper_id;
                 $stock_query = $conn->query("SELECT available_copies, total_copies, newspaper_name, newspaper_number FROM newspapers WHERE id = $pid AND available_copies > 0");
@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
         if (!empty($skipped_no_stock)) {
             $message .= " (" . count($skipped_no_stock) . " skipped due to no stock).";
         }
-        
+
         if (count($success_recipients) == 0 && (!empty($already_received) || !empty($skipped_no_stock))) {
             $_SESSION['toast'] = ['type' => 'error', 'message' => "Skipped distributions. Recipients already received or out of stock."];
             header('Location: newspaper_distribution.php');
@@ -174,7 +174,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                 'message' => "No distributions were made."
             ];
         }
-
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['toast'] = [
@@ -433,72 +432,72 @@ include './sidebar.php';
                         </div>
 
                         <div id="recipientListContainer" class="mt-2 relative">
-                        <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('recipientsDropdownOptions').classList.toggle('hidden')">
-                            <span class="block truncate" id="recipientsDropdownText">Select recipients...</span>
-                            <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                <i class="fa-solid fa-chevron-down text-gray-400"></i>
-                            </span>
-                        </button>
-                        <div id="recipientsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
-                            <?php 
-                            if ($recipients && $recipients->num_rows > 0) {
-                                $recipients->data_seek(0);
-                                while ($recipient = $recipients->fetch_assoc()) {
-                                    $rec_name = $recipient['name'];
-                                    $already_got = isset($already_received_lookup[$rec_name]);
-                                    $disabled = $already_got ? 'disabled' : '';
-                                    $label_class = $already_got ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer';
-                                    $label = htmlspecialchars($recipient['name']);
-                                    if ($already_got) $label .= ' (Already received today)';
-                                    echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 {$label_class}'>";
-                                    echo "<input type='checkbox' name='recipient_ids_chk[]' value='{$recipient['id']}' {$disabled} class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
-                                    echo "<span>{$label}</span>";
-                                    echo "</label>";
+                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('recipientsDropdownOptions').classList.toggle('hidden')">
+                                <span class="block truncate" id="recipientsDropdownText">Select recipients...</span>
+                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                                </span>
+                            </button>
+                            <div id="recipientsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
+                                <?php
+                                if ($recipients && $recipients->num_rows > 0) {
+                                    $recipients->data_seek(0);
+                                    while ($recipient = $recipients->fetch_assoc()) {
+                                        $rec_name = $recipient['name'];
+                                        $already_got = isset($already_received_lookup[$rec_name]);
+                                        $disabled = $already_got ? 'disabled' : '';
+                                        $label_class = $already_got ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer';
+                                        $label = htmlspecialchars($recipient['name']);
+                                        if ($already_got) $label .= ' (Already received today)';
+                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 {$label_class}'>";
+                                        echo "<input type='checkbox' name='recipient_ids_chk[]' value='{$recipient['id']}' {$disabled} class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
+                                        echo "<span>{$label}</span>";
+                                        echo "</label>";
+                                    }
+                                } else {
+                                    echo "<div class='px-4 py-2 text-gray-500'>No recipients found</div>";
                                 }
-                            } else {
-                                echo "<div class='px-4 py-2 text-gray-500'>No recipients found</div>";
-                            }
-                            ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white border border-gray-200 p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-base font-medium">2. Select Subscriptions (Papers)</h2>
-                        <div class="selected-count-badge">
-                            <span id="selectedCountBadge">0</span> selected
+                                ?>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mt-2 relative">
-                        <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
-                            <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
-                            <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                <i class="fa-solid fa-chevron-down text-gray-400"></i>
-                            </span>
-                        </button>
-                        <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
-                            <?php 
-                            if ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
-                                $categories_for_distribution->data_seek(0);
-                                while ($paper = $categories_for_distribution->fetch_assoc()) {
-                                    $label = htmlspecialchars($paper['newspaper_name']);
-                                    if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
-                                    $label .= ' - ' . $paper['available_copies'] . ' left';
-                                    
-                                    echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
-                                    echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
-                                    echo "<span>{$label}</span>";
-                                    echo "</label>";
+                    <div class="bg-white border border-gray-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-base font-medium">2. Select Subscriptions (Papers)</h2>
+                            <div class="selected-count-badge">
+                                <span id="selectedCountBadge">0</span> selected
+                            </div>
+                        </div>
+
+                        <div class="mt-2 relative">
+                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
+                                <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
+                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                                </span>
+                            </button>
+                            <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
+                                <?php
+                                if ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
+                                    $categories_for_distribution->data_seek(0);
+                                    while ($paper = $categories_for_distribution->fetch_assoc()) {
+                                        $label = htmlspecialchars($paper['newspaper_name']);
+                                        if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
+                                        $label .= ' - ' . $paper['available_copies'] . ' left';
+
+                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
+                                        echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
+                                        echo "<span>{$label}</span>";
+                                        echo "</label>";
+                                    }
+                                } else {
+                                    echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
                                 }
-                            } else {
-                                echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
-                            }
-                            ?>
+                                ?>
+                            </div>
                         </div>
                     </div>
-                </div>
                 </div>
             </div>
         </main>
@@ -545,14 +544,14 @@ include './sidebar.php';
         // Initialize Choices.js
         const recipientsSelectEl = document.getElementById('recipientsSelect');
         const subscriptionsSelectEl = document.getElementById('subscriptionsSelect');
-        
+
         // Close dropdowns on outside click
         document.addEventListener('click', function(event) {
             const recBtn = document.getElementById('recipientsDropdownText')?.parentElement;
             const recDropdown = document.getElementById('recipientsDropdownOptions');
             const subBtn = document.getElementById('subscriptionsDropdownText')?.parentElement;
             const subDropdown = document.getElementById('subscriptionsDropdownOptions');
-            
+
             if (recBtn && recDropdown && !recBtn.contains(event.target) && !recDropdown.contains(event.target)) {
                 recDropdown.classList.add('hidden');
             }
@@ -569,17 +568,17 @@ include './sidebar.php';
         function updateSelectionCount() {
             const recs = getCheckedValues('recipient_ids_chk[]');
             const subs = getCheckedValues('selected_categories_chk[]');
-            
+
             const recCount = recs.length;
             const catCount = subs.length;
-            
+
             document.getElementById('selectedCountBadge').textContent = catCount;
             document.getElementById('selectedRecipientCountBadge').textContent = recCount;
 
             const distributeBtn = document.getElementById('distributeBtn');
             const btnText = `Distribute (${recCount} rec, ${catCount} sub)`;
             if (distributeBtn) distributeBtn.querySelector('span').textContent = btnText;
-            
+
             if (distributeBtn) distributeBtn.disabled = (catCount === 0 || recCount === 0);
 
             const recText = document.getElementById('recipientsDropdownText');
@@ -592,7 +591,7 @@ include './sidebar.php';
         function openDistributeModal() {
             const recCount = getCheckedValues('recipient_ids_chk[]').length;
             const catCount = getCheckedValues('selected_categories_chk[]').length;
-            
+
             if (recCount === 0) {
                 showToast('error', 'Please select at least one recipient');
                 return;

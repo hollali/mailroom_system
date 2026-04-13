@@ -95,7 +95,8 @@ CREATE TABLE `document_distribution` (
   `number_received` int(11) NOT NULL,
   `number_distributed` int(11) NOT NULL,
   `date_distributed` date NOT NULL,
-  `created_at` timestamp NULL DEFAULT current_timestamp()
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `status` varchar(20) NOT NULL DEFAULT 'distributed'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --

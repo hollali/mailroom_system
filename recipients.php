@@ -90,27 +90,53 @@ if (isset($_GET['delete'])) {
     $result = $check->fetch_assoc();
 
     if ($result['count'] > 0) {
-        // Instead of deleting, deactivate
-        $stmt = $conn->prepare("UPDATE recipients SET is_active = 0 WHERE id = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
         $_SESSION['toast'] = [
-            'type' => 'warning',
-            'message' => "Recipient has distribution records. Deactivated instead of deleted."
+            'type' => 'error',
+            'message' => "Cannot delete recipient with distribution records. Please deactivate them instead."
         ];
     } else {
         // Delete if no distributions
         $stmt = $conn->prepare("DELETE FROM recipients WHERE id = ?");
         $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $_SESSION['toast'] = [
-            'type' => 'success',
-            'message' => "Recipient deleted successfully"
-        ];
+        if ($stmt->execute()) {
+            $_SESSION['toast'] = [
+                'type' => 'success',
+                'message' => "Recipient deleted successfully"
+            ];
+        } else {
+            $_SESSION['toast'] = [
+                'type' => 'error',
+                'message' => "Error deleting recipient: " . $conn->error
+            ];
+        }
     }
 
     $query_params = $_GET;
     unset($query_params['delete'], $query_params['page']);
+    $redirect_url = 'recipients.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+
+    header('Location: ' . $redirect_url);
+    exit();
+}
+
+// Handle Deactivate Recipient
+if (isset($_GET['deactivate'])) {
+    $id = (int)$_GET['deactivate'];
+    $stmt = $conn->prepare("UPDATE recipients SET is_active = 0 WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    if ($stmt->execute()) {
+        $_SESSION['toast'] = [
+            'type' => 'success',
+            'message' => "Recipient deactivated successfully"
+        ];
+    } else {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Error deactivating recipient: " . $conn->error
+        ];
+    }
+    $query_params = $_GET;
+    unset($query_params['deactivate'], $query_params['page']);
     $redirect_url = 'recipients.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
 
     header('Location: ' . $redirect_url);
@@ -122,11 +148,17 @@ if (isset($_GET['activate'])) {
     $id = (int)$_GET['activate'];
     $stmt = $conn->prepare("UPDATE recipients SET is_active = 1 WHERE id = ?");
     $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $_SESSION['toast'] = [
-        'type' => 'success',
-        'message' => "Recipient activated successfully"
-    ];
+    if ($stmt->execute()) {
+        $_SESSION['toast'] = [
+            'type' => 'success',
+            'message' => "Recipient activated successfully"
+        ];
+    } else {
+        $_SESSION['toast'] = [
+            'type' => 'error',
+            'message' => "Error activating recipient: " . $conn->error
+        ];
+    }
     $query_params = $_GET;
     unset($query_params['activate'], $query_params['page']);
     $redirect_url = 'recipients.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
@@ -208,10 +240,12 @@ function buildRecipientsUrl($overrides = [], $remove_keys = [])
     return 'recipients.php' . (!empty($params) ? '?' . http_build_query($params) : '');
 }
 
-$delete_base_url = buildRecipientsUrl([], ['delete', 'activate', 'page']);
+$delete_base_url = buildRecipientsUrl([], ['delete', 'activate', 'deactivate', 'page']);
 $delete_separator = strpos($delete_base_url, '?') !== false ? '&' : '?';
-$activate_base_url = buildRecipientsUrl([], ['activate', 'delete', 'page']);
+$activate_base_url = buildRecipientsUrl([], ['activate', 'delete', 'deactivate', 'page']);
 $activate_separator = strpos($activate_base_url, '?') !== false ? '&' : '?';
+$deactivate_base_url = buildRecipientsUrl([], ['deactivate', 'activate', 'delete', 'page']);
+$deactivate_separator = strpos($deactivate_base_url, '?') !== false ? '&' : '?';
 
 // Get toast message from session
 $toast = null;
@@ -276,6 +310,31 @@ include './sidebar.php';
 
         .activate-btn:hover {
             color: #10b981;
+        }
+
+        .deactivate-btn:hover {
+            color: #f59e0b;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-badge-active {
+            background-color: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #cefadd;
+        }
+
+        .status-badge-inactive {
+            background-color: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fef3c7;
         }
 
         .pagination-shell {
@@ -565,6 +624,7 @@ include './sidebar.php';
                                     <tr class="bg-[#fafafa] border-b border-[#e5e5e5]">
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">#</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Recipient Name</th>
+                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Status</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Created</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
@@ -581,6 +641,17 @@ include './sidebar.php';
                                             >
                                             <td class="p-3 text-sm"><?php echo $counter++; ?></td>
                                             <td class="p-3 text-sm font-medium"><?php echo htmlspecialchars($recipient['name']); ?></td>
+                                            <td class="p-3">
+                                                <?php if ($recipient['is_active']): ?>
+                                                    <span class="status-badge status-badge-active">
+                                                        <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> Active
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="status-badge status-badge-inactive">
+                                                        <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> Inactive
+                                                    </span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td class="p-3 text-sm text-[#6e6e6e]">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
                                             </td>
@@ -591,17 +662,20 @@ include './sidebar.php';
                                                         <i class="fa-regular fa-pen-to-square"></i>
                                                     </button>
                                                     <?php if ($recipient['is_active']): ?>
-                                                        <button onclick="deleteRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
-                                                            class="action-btn delete-btn" title="Delete/Deactivate">
-                                                            <i class="fa-regular fa-trash-can"></i>
+                                                        <button onclick="deactivateRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
+                                                            class="action-btn deactivate-btn" title="Deactivate">
+                                                            <i class="fa-solid fa-toggle-on text-lg"></i>
                                                         </button>
                                                     <?php else: ?>
-                                                        <button type="button"
-                                                            class="action-btn activate-btn" title="Activate"
-                                                            onclick="activateRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')">
-                                                            <i class="fa-regular fa-circle-check"></i>
+                                                        <button onclick="activateRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
+                                                            class="action-btn activate-btn" title="Activate">
+                                                            <i class="fa-solid fa-toggle-off text-lg"></i>
                                                         </button>
                                                     <?php endif; ?>
+                                                    <button onclick="deleteRecipient(<?php echo $recipient['id']; ?>, '<?php echo htmlspecialchars(addslashes($recipient['name'])); ?>')"
+                                                        class="action-btn delete-btn" title="Delete Permanent">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -764,18 +838,23 @@ include './sidebar.php';
     <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
         <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Action</h2>
+                <h2 class="text-lg font-medium text-[#dc2626]">Confirm Permanent Delete</h2>
                 <button type="button" onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
 
             <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]" id="deleteMessage">Are you sure you want to delete this recipient?</p>
-                <p class="text-xs text-[#9e9e9e] mt-3" id="deleteNote">
-                    <i class="fa-solid fa-circle-info mr-1"></i>
-                    If this recipient has distribution records, they will be deactivated instead of deleted.
-                </p>
+                <p class="text-sm text-[#6e6e6e]" id="deleteMessage">Are you sure you want to permanently delete this recipient?</p>
+                <div class="bg-red-50 border border-red-100 rounded-md p-3 mt-4">
+                    <p class="text-xs text-red-700 font-medium">
+                        <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>
+                        Warning: This action is permanent and cannot be undone.
+                    </p>
+                    <p class="text-[11px] text-red-600 mt-1 ml-4.5">
+                        Recipients with existing distribution records cannot be deleted and should be deactivated instead.
+                    </p>
+                </div>
             </div>
 
             <div class="flex justify-end gap-2 mt-6">
@@ -785,7 +864,38 @@ include './sidebar.php';
                 </button>
                 <a href="#" id="confirmDeleteBtn"
                     class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
-                    Confirm
+                    Yes, Delete Permanent
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deactivate Confirmation Modal -->
+    <div id="deactivateModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[#d97706]">Confirm Deactivation</h2>
+                <button type="button" onclick="closeDeactivateModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="py-2">
+                <p class="text-sm text-[#6e6e6e]" id="deactivateMessage">Are you sure you want to deactivate this recipient?</p>
+                <p class="text-xs text-[#9e9e9e] mt-3">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    Deactivated recipients will not appear in future distribution selection lists.
+                </p>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="closeDeactivateModal()"
+                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                    Cancel
+                </button>
+                <a href="#" id="confirmDeactivateBtn"
+                    class="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700">
+                    Deactivate
                 </a>
             </div>
         </div>
@@ -953,6 +1063,20 @@ include './sidebar.php';
             modal.style.display = 'none';
         }
 
+        function deactivateRecipient(id, name) {
+            document.getElementById('deactivateMessage').innerHTML = `Are you sure you want to deactivate "<strong>${escapeHtml(name)}</strong>"?`;
+            document.getElementById('confirmDeactivateBtn').href = `<?php echo addslashes($deactivate_base_url . $deactivate_separator); ?>deactivate=${id}`;
+            const modal = document.getElementById('deactivateModal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+        }
+
+        function closeDeactivateModal() {
+            const modal = document.getElementById('deactivateModal');
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
+
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -1018,6 +1142,7 @@ include './sidebar.php';
             const editModal = document.getElementById('editModal');
             const deleteModal = document.getElementById('deleteModal');
             const activateModal = document.getElementById('activateModal');
+            const deactivateModal = document.getElementById('deactivateModal');
             const notificationModal = document.getElementById('notificationModal');
 
             if (event.target == addModal) {
@@ -1032,6 +1157,9 @@ include './sidebar.php';
             if (event.target == activateModal) {
                 closeActivateModal();
             }
+            if (event.target == deactivateModal) {
+                closeDeactivateModal();
+            }
             if (event.target == notificationModal) {
                 closeNotificationModal();
             }
@@ -1043,6 +1171,9 @@ include './sidebar.php';
                 closeAddModal();
                 closeEditModal();
                 closeDeleteModal();
+                closeActivateModal();
+                closeDeactivateModal();
+                closeNotificationModal();
             }
         });
     </script>

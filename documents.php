@@ -603,6 +603,10 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Document List</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">View and manage documents in the system</p>
                     </div>
+                    <button onclick="openAddDocumentModal()" class="px-4 py-2 bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] text-sm flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-plus"></i>
+                        Add Document
+                    </button>
                 </div>
             </div>
 
@@ -742,6 +746,74 @@ if (isset($_SESSION['toast'])) {
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Add Document Modal -->
+    <div id="addDocumentModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
+        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-5">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-base font-medium text-[#1e1e1e]">Add New Document</h3>
+                <button onclick="closeAddDocumentModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form id="addDocumentForm" onsubmit="return false;">
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Name <span class="text-red-400">*</span></label>
+                        <input type="text" id="add_document_name" required
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                            autocomplete="off" placeholder="Enter document name">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Document Type <span class="text-red-400">*</span></label>
+                        <select id="add_type_id" required class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
+                            <option value="">Select Type</option>
+                            <?php foreach ($document_types as $type): ?>
+                                <option value="<?php echo $type['id']; ?>">
+                                    <?php echo htmlspecialchars($type['type_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Origin / Source</label>
+                        <input type="text" id="add_origin"
+                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                            autocomplete="off" placeholder="e.g. Office of the President">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Number of Copies <span class="text-red-400">*</span></label>
+                            <input type="number" id="add_copies_received" required min="1" value="1"
+                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp <span class="text-red-400">*</span></label>
+                            <input type="datetime-local" id="add_date_received" required
+                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
+                                autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-6">
+                    <button type="button" onclick="closeAddDocumentModal()"
+                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="submitAddDocument()" id="addDocumentSubmitBtn"
+                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                        <i class="fa-solid fa-plus mr-1"></i>
+                        Add Document
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- View Document Modal -->
@@ -1463,6 +1535,11 @@ if (isset($_SESSION['toast'])) {
             }
         });
     </script>
+    <!-- Floating Action Button -->
+    <button class="fab" onclick="openAddDocumentModal()" title="Add Document">
+        <i class="fa-solid fa-plus"></i>
+        <span class="fab-tooltip">Add Document</span>
+    </button>
 </body>
 
 </html>
