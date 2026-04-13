@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
         $success_recipients = [];
         $failed_recipients = [];
         $already_received = [];
+        $skipped_no_stock = [];
 
         foreach ($recipient_ids as $recipient_id) {
             $recipient_id = (int)$recipient_id;
@@ -101,16 +102,44 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
                 continue;
             }
 
+            // Determine which selected papers are actually available for this specific recipient
+            $actual_distributed_ids = [];
+            $actual_distributed_names = [];
+            
+            foreach ($selected_categories as $paper_id) {
+                $pid = (int)$paper_id;
+                $stock_query = $conn->query("SELECT available_copies, total_copies, newspaper_name, newspaper_number FROM newspapers WHERE id = $pid AND available_copies > 0");
+                if ($paper_info = $stock_query->fetch_assoc()) {
+                    $actual_distributed_ids[] = $pid;
+                    $actual_distributed_names[] = $paper_info['newspaper_name'] . ($paper_info['newspaper_number'] ? ' (Issue: ' . $paper_info['newspaper_number'] . ')' : '');
+                }
+            }
+
+            if (empty($actual_distributed_ids)) {
+                $skipped_no_stock[] = $individual_name;
+                continue;
+            }
+
+            $current_newspaper_ids_str = implode(',', $actual_distributed_ids);
+            $current_newspapers_str = implode(', ', $actual_distributed_names);
+            $current_success_count = count($actual_distributed_ids);
+
             // Insert new distribution record
             $stmt = $conn->prepare("INSERT INTO distribution (distributed_to, department, copies, date_distributed, distributed_by, newspapers_list, newspaper_ids) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssissss", $individual_name, $department, $success_count, $date_distributed, $distributed_by, $newspapers_str, $newspaper_ids_str);
+            $stmt->bind_param("ssissss", $individual_name, $department, $current_success_count, $date_distributed, $distributed_by, $current_newspapers_str, $current_newspaper_ids_str);
 
             if ($stmt->execute()) {
                 $success_recipients[] = $individual_name;
-                // Deduct copies for successful distribution
-                foreach ($selected_categories as $paper_id) {
-                    $pid = (int)$paper_id;
-                    $conn->query("UPDATE newspapers SET available_copies = GREATEST(0, available_copies - 1) WHERE id = $pid");
+                // Deduct copies and update status for each distributed paper
+                foreach ($actual_distributed_ids as $pid) {
+                    $conn->query("UPDATE newspapers SET 
+                        available_copies = GREATEST(0, available_copies - 1),
+                        status = CASE 
+                            WHEN (available_copies - 1) <= 0 THEN 'distributed' 
+                            WHEN (available_copies - 1) < total_copies THEN 'partial'
+                            ELSE 'available'
+                        END
+                        WHERE id = $pid");
                 }
             } else {
                 $failed_recipients[] = $individual_name;
@@ -123,11 +152,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
         $message = "Distributed to " . count($success_recipients) . " recipient(s).";
         if (!empty($already_received)) {
             $message .= " (" . count($already_received) . " skipped as already received).";
-            if (count($success_recipients) == 0) {
-                $_SESSION['toast'] = ['type' => 'error', 'message' => "Skipped distributions. All selected recipients already received today."];
-                header('Location: newspaper_distribution.php');
-                exit();
-            }
+        }
+        if (!empty($skipped_no_stock)) {
+            $message .= " (" . count($skipped_no_stock) . " skipped due to no stock).";
+        }
+        
+        if (count($success_recipients) == 0 && (!empty($already_received) || !empty($skipped_no_stock))) {
+            $_SESSION['toast'] = ['type' => 'error', 'message' => "Skipped distributions. Recipients already received or out of stock."];
+            header('Location: newspaper_distribution.php');
+            exit();
         }
 
         if (count($success_recipients) > 0) {

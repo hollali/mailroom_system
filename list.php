@@ -194,6 +194,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
     exit();
 }
 
+// Handle Discontinue / Continue Newspaper
+if (isset($_GET['toggle_status'])) {
+    $id = (int)$_GET['toggle_status'];
+    $stmt = $conn->prepare("SELECT status, available_copies FROM newspapers WHERE id = ?");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $paper = $result->fetch_assoc();
+    $stmt->close();
+
+    if ($paper) {
+        if ($paper['status'] === 'archived') {
+            $new_status = $paper['available_copies'] > 0 ? 'available' : 'distributed';
+            setToast('success', 'Newspaper has been continued for distribution.');
+        } else {
+            $new_status = 'archived';
+            setToast('info', 'Newspaper has been discontinued from distribution.');
+        }
+
+        $update = $conn->prepare("UPDATE newspapers SET status = ? WHERE id = ?");
+        $update->bind_param('si', $new_status, $id);
+        $update->execute();
+        $update->close();
+    } else {
+        setToast('error', 'Invalid newspaper selected.');
+    }
+
+    $query_params = $_GET;
+    unset($query_params['toggle_status']);
+    $redirect_url = 'list.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
+    header('Location: ' . $redirect_url);
+    exit();
+}
+
 // ========== GET DATA FOR DISPLAY ==========
 
 // Get all categories
@@ -214,6 +248,11 @@ $filter_status = isset($_GET['filter_status']) ? $_GET['filter_status'] : '';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'date_received';
 $sort_order = isset($_GET['sort_order']) ? $_GET['sort_order'] : 'DESC';
+
+$allowed_statuses = ['available', 'partial', 'distributed', 'archived', 'pending'];
+if ($filter_status !== '' && !in_array($filter_status, $allowed_statuses, true)) {
+    $filter_status = '';
+}
 
 // Build query for all newspapers with filters
 $where_clauses = [];
@@ -344,6 +383,16 @@ include './sidebar.php';
         .status-distributed {
             background-color: #ffebee;
             color: #d32f2f;
+        }
+
+        .status-archived {
+            background-color: #f3f4f6;
+            color: #475569;
+        }
+
+        .status-pending {
+            background-color: #eff6ff;
+            color: #1d4ed8;
         }
 
         .issue-number {
@@ -606,7 +655,7 @@ include './sidebar.php';
                             <i class="fa-solid fa-newspaper"></i>
                         </div>
                     </div>
-                    
+
                     <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
                         <div>
                             <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">This Year</p>
@@ -616,7 +665,7 @@ include './sidebar.php';
                             <i class="fa-solid fa-calendar"></i>
                         </div>
                     </div>
-                    
+
                     <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
                         <div>
                             <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">This Month</p>
@@ -675,6 +724,15 @@ include './sidebar.php';
                                 <?php foreach ($all_categories as $cat): ?>
                                     <option value="<?php echo $cat['id']; ?>" <?php echo $filter_category == $cat['id'] ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($cat['category_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+
+                            <select name="filter_status" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
+                                <option value="">All Statuses</option>
+                                <?php foreach ($allowed_statuses as $status_option): ?>
+                                    <option value="<?php echo $status_option; ?>" <?php echo $filter_status === $status_option ? 'selected' : ''; ?>>
+                                        <?php echo ucfirst($status_option); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -742,6 +800,7 @@ include './sidebar.php';
                                     <th class="text-xs">Issue #</th>
                                     <th class="text-xs">Category</th>
                                     <th class="text-xs">Date Received</th>
+                                    <th class="text-xs">Status</th>
                                     <th class="text-xs">Available</th>
                                     <th class="text-xs">Actions</th>
                                 </tr>
@@ -758,9 +817,14 @@ include './sidebar.php';
                                             <td class="text-sm font-mono text-[#1e1e1e] issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
+                                            <td class="text-sm">
+                                                <span class="status-badge status-<?php echo htmlspecialchars($paper['status']); ?>">
+                                                    <?php echo ucfirst(htmlspecialchars($paper['status'])); ?>
+                                                </span>
+                                            </td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $paper['available_copies']; ?></td>
                                             <td class="text-sm">
-                                                <div class="flex gap-2">
+                                                <div class="flex gap-2 items-center">
                                                     <button onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)"
                                                         class="action-btn" title="View Details">
                                                         <i class="fa-regular fa-eye"></i>
@@ -769,6 +833,16 @@ include './sidebar.php';
                                                         class="action-btn" title="Edit">
                                                         <i class="fa-regular fa-pen-to-square"></i>
                                                     </button>
+                                                    <?php
+                                                    $is_archived = $paper['status'] === 'archived';
+                                                    $toggle_label = $is_archived ? 'Continue' : 'Discontinue';
+                                                    $toggle_icon = $is_archived ? 'fa-play' : 'fa-ban';
+                                                    $toggle_class = $is_archived ? 'text-green-600' : 'text-orange-600';
+                                                    $toggle_query = http_build_query(array_merge($_GET, ['toggle_status' => $paper['id']]));
+                                                    ?>
+                                                    <a href="?<?php echo $toggle_query; ?>" class="action-btn <?php echo $toggle_class; ?>" title="<?php echo $toggle_label; ?>">
+                                                        <i class="fa-solid <?php echo $toggle_icon; ?>"></i>
+                                                    </a>
                                                     <button onclick="openDeleteModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', '<?php echo htmlspecialchars($paper['newspaper_number']); ?>')"
                                                         class="action-btn delete-btn" title="Delete">
                                                         <i class="fa-regular fa-trash-can"></i>
@@ -778,7 +852,7 @@ include './sidebar.php';
                                         </tr>
                                     <?php endwhile; ?>
                                     <tr id="newspaperNoResultsRow" class="hidden">
-                                        <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
+                                        <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
                                             No newspapers match the current live search on this page.
                                         </td>
                                     </tr>

@@ -32,21 +32,67 @@ function generateDistributionReference($id, $date_distributed = null)
 if (isset($_GET['delete_distribution'])) {
     $id = (int)$_GET['delete_distribution'];
 
-    $stmt = $conn->prepare("DELETE FROM distribution WHERE id = ?");
-    $stmt->bind_param("i", $id);
+    $conn->begin_transaction();
 
-    if ($stmt->execute()) {
+    try {
+        // 1. Get newspaper IDs associated with this distribution to restore stock
+        $stmt = $conn->prepare("SELECT newspaper_id, newspaper_ids FROM distribution WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $dist = $result->fetch_assoc();
+        $stmt->close();
+
+        if ($dist) {
+            // Collect all unique newspaper IDs to restore
+            $ids_to_restore = [];
+            
+            // Handle multiple IDs from newspaper_ids column
+            if (!empty($dist['newspaper_ids'])) {
+                $ids = explode(',', $dist['newspaper_ids']);
+                foreach ($ids as $pid) {
+                    $pid = (int)trim($pid);
+                    if ($pid > 0) $ids_to_restore[$pid] = true;
+                }
+            }
+            
+            // Handle legacy single newspaper_id
+            if (!empty($dist['newspaper_id'])) {
+                $ids_to_restore[(int)$dist['newspaper_id']] = true;
+            }
+
+            // Restore stock and update status for each ID
+            foreach (array_keys($ids_to_restore) as $pid) {
+                // Increment available_copies and update status
+                $conn->query("UPDATE newspapers SET 
+                    available_copies = available_copies + 1,
+                    status = CASE 
+                        WHEN (available_copies + 1) >= total_copies THEN 'available'
+                        ELSE 'partial'
+                    END
+                    WHERE id = $pid");
+            }
+        }
+
+        // 2. Delete the distribution record
+        $stmt = $conn->prepare("DELETE FROM distribution WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $stmt->close();
+
+        $conn->commit();
+
         $_SESSION['toast'] = [
             'type' => 'success',
-            'message' => 'Distribution record deleted successfully'
+            'message' => 'Distribution record deleted and stock restored.'
         ];
-    } else {
+    } catch (Exception $e) {
+        $conn->rollback();
         $_SESSION['toast'] = [
             'type' => 'error',
-            'message' => 'Error deleting distribution record'
+            'message' => 'Error: ' . $e->getMessage()
         ];
     }
-    $stmt->close();
 
     header('Location: distribution_history.php');
     exit();
@@ -528,7 +574,6 @@ include './sidebar.php';
                                     <th>Date</th>
                                     <th>Recipient</th>
                                     <th>Department</th>
-                                    <th>Subscriptions</th>
                                     <th>Count</th>
                                     <th>Distributed By</th>
                                     <th></th>
@@ -543,7 +588,6 @@ include './sidebar.php';
                                             <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                             <td class="font-medium"><?php echo htmlspecialchars($row['distributed_to']); ?></td>
                                             <td><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
-                                            <td><?php echo formatCategoriesList($row['categories_list'] ?? null, $row['newspapers_list'] ?? null); ?></td>
                                             <td><?php echo (int)$row['copies']; ?></td>
                                             <td><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
                                             <td class="whitespace-nowrap">
@@ -560,7 +604,7 @@ include './sidebar.php';
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="8" class="text-center py-12 text-gray-500">
+                                        <td colspan="7" class="text-center py-12 text-gray-500">
                                             <i class="fa-regular fa-inbox text-3xl mb-2 block"></i>
                                             <p>No distribution records found</p>
                                             <a href="newspaper_distribution.php" class="text-blue-600 hover:underline text-sm mt-2 inline-block">
