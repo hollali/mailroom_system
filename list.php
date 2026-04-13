@@ -1155,7 +1155,7 @@ include './sidebar.php';
                     <span class="text-sm text-[#1e1e1e]">${message}</span>
                 </div>
                 <button onclick="this.parentElement.remove()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-regular fa-xmark"></i>
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             `;
 

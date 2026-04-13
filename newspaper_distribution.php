@@ -668,11 +668,12 @@ include './sidebar.php';
 
         <?php if (!empty($already_received_today)): ?>
             document.addEventListener('DOMContentLoaded', function() {
-                showToast(
-                    'warning',
-                    'Already received today: <?php echo addslashes(implode(", ", $already_received_today)); ?>',
-                    2000
-                );
+                const alreadyReceived = <?php echo json_encode($already_received_today); ?>;
+                alreadyReceived.forEach((name, index) => {
+                    setTimeout(() => {
+                        showToast('warning', `Already received today: ${name}`, 3000);
+                    }, index * 800); // 800ms delay between toasts
+                });
             });
         <?php endif; ?>
 
