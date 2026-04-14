@@ -247,20 +247,12 @@ if (isset($_GET['delete'])) {
 // Get all documents with their current available copies
 $documents = $conn->query("
     SELECT d.*, dt.type_name as document_type,
-           (d.copies_received - COALESCE((
-                SELECT SUM(number_distributed) 
-                FROM document_distribution 
-                WHERE document_id = d.id
-           ), 0)) as available_copies
+           d.copies_received as available_copies
     FROM documents d 
     LEFT JOIN document_types dt ON d.type_id = dt.id 
     ORDER BY 
         CASE 
-            WHEN (d.copies_received - COALESCE((
-                SELECT SUM(number_distributed) 
-                FROM document_distribution 
-                WHERE document_id = d.id
-            ), 0)) > 0 THEN 0 
+            WHEN d.copies_received > 0 THEN 0 
             ELSE 1 
         END,
         d.document_name ASC
@@ -275,10 +267,7 @@ $document_types = $conn->query("
 // Get distribution records with document information
 $result = $conn->query("
     SELECT dd.*, dd.status as distribution_status, d.document_name, d.type_id, dt.type_name as document_type,
-           d.copies_received as total_copies,
-           GREATEST(0, d.copies_received - COALESCE((
-               SELECT SUM(number_distributed) FROM document_distribution WHERE document_id = d.id AND status != 'withdrawn'
-           ), 0)) as available_copies
+           d.copies_received as available_copies
     FROM document_distribution dd
     JOIN documents d ON dd.document_id = d.id
     LEFT JOIN document_types dt ON d.type_id = dt.id
@@ -820,18 +809,21 @@ if (isset($_SESSION['toast'])) {
                                                     class="action-btn" title="View Details">
                                                     <i class="fa-regular fa-eye"></i>
                                                 </button>
-                                                <?php if ($status !== 'withdrawn'): ?>
-                                                    <?php if ($row['available_copies'] > 0): ?>
-                                                        <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
-                                                            class="action-btn redistribute-btn" title="Redistribute copies">
-                                                            <i class="fa-solid fa-arrow-rotate-right"></i>
-                                                        </button>
-                                                    <?php else: ?>
-                                                        <button type="button" onclick="withdrawDistribution(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
-                                                            class="action-btn withdraw-btn" title="Withdraw distribution">
-                                                            <i class="fa-solid fa-rotate-left"></i>
-                                                        </button>
-                                                    <?php endif; ?>
+                                                <?php if ($status === 'withdrawn'): ?>
+                                                    <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
+                                                        class="action-btn redistribute-btn" title="Redistribute document">
+                                                        <i class="fa-solid fa-arrow-rotate-right"></i>
+                                                    </button>
+                                                <?php elseif ($row['available_copies'] > 0): ?>
+                                                    <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
+                                                        class="action-btn redistribute-btn" title="Redistribute copies">
+                                                        <i class="fa-solid fa-arrow-rotate-right"></i>
+                                                    </button>
+                                                <?php else: ?>
+                                                    <button type="button" onclick="withdrawDistribution(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
+                                                        class="action-btn withdraw-btn" title="Withdraw distribution">
+                                                        <i class="fa-solid fa-rotate-left"></i>
+                                                    </button>
                                                 <?php endif; ?>
                                                 <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
                                                     class="action-btn delete-btn" title="Delete">
@@ -1504,8 +1496,8 @@ if (isset($_SESSION['toast'])) {
                         <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString() : 'N/A'}</p>
                     </div>
                     <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Total Copies of Document</p>
-                        <p class="text-sm">${data.total_copies || 0}</p>
+                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Available Copies of Document</p>
+                        <p class="text-sm">${data.available_copies || 0}</p>
                     </div>
                 </div>
             `;
