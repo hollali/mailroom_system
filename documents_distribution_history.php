@@ -30,7 +30,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_record' && isset($_GET['id'])
     $id = (int)$_GET['id'];
 
     $stmt = $conn->prepare("
-        SELECT dd.*, d.document_name, d.origin, dt.type_name AS document_type
+        SELECT dd.*, COALESCE(dd.status, 'distributed') AS distribution_status, d.document_name, d.origin, dt.type_name AS document_type
         FROM document_distribution dd
         JOIN documents d ON dd.document_id = d.id
         LEFT JOIN document_types dt ON d.type_id = dt.id
