@@ -292,6 +292,13 @@ if (isset($_SESSION['toast'])) {
             font-size: 13px;
         }
 
+        .badge-withdrawn {
+            background: #fef2f2;
+            color: #991b1b;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
         /* ── Action buttons ── */
         .action-btn {
             color: #a8a29e;
@@ -786,7 +793,7 @@ if (isset($_SESSION['toast'])) {
                                         </td>
                                         <td>
                                             <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
-                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-danger' : 'badge-count'; ?>">
+                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-withdrawn' : 'badge-count'; ?>">
                                                 <?php echo ucfirst($status); ?>
                                             </span>
                                         </td>
@@ -1029,6 +1036,11 @@ if (isset($_SESSION['toast'])) {
                         <div class="detail-row"><div class="detail-label">Copies Distributed</div><div class="detail-value"><span class="badge badge-count">${r.number_distributed}</span></div></div>
                         <div class="detail-row"><div class="detail-label">Date Distributed</div><div class="detail-value">${distDate}</div></div>
                         <div class="detail-row"><div class="detail-label">Recorded At</div><div class="detail-value text-[#78716c] text-sm">${createdAt}</div></div>
+                        <div class="detail-row"><div class="detail-label">Status</div><div class="detail-value">
+                            <span class="badge ${r.distribution_status === 'withdrawn' ? 'badge-withdrawn' : 'badge-count'}">
+                                ${escapeHtml(r.distribution_status.charAt(0).toUpperCase() + r.distribution_status.slice(1))}
+                            </span>
+                        </div></div>
                     `;
                 })
                 .catch(() => {

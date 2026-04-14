@@ -814,11 +814,6 @@ if (isset($_SESSION['toast'])) {
                                                         class="action-btn redistribute-btn" title="Redistribute document">
                                                         <i class="fa-solid fa-arrow-rotate-right"></i>
                                                     </button>
-                                                <?php elseif ($row['available_copies'] > 0): ?>
-                                                    <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
-                                                        class="action-btn redistribute-btn" title="Redistribute copies">
-                                                        <i class="fa-solid fa-arrow-rotate-right"></i>
-                                                    </button>
                                                 <?php else: ?>
                                                     <button type="button" onclick="withdrawDistribution(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
                                                         class="action-btn withdraw-btn" title="Withdraw distribution">
