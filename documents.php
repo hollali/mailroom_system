@@ -1536,10 +1536,7 @@ if (isset($_SESSION['toast'])) {
         });
     </script>
     <!-- Floating Action Button -->
-    <button class="fab" onclick="openAddDocumentModal()" title="Add Document">
-        <i class="fa-solid fa-plus"></i>
-        <span class="fab-tooltip">Add Document</span>
-    </button>
+    
 </body>
 
 </html>
