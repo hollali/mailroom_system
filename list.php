@@ -316,6 +316,33 @@ if ($stats_result && $row = $stats_result->fetch_assoc()) {
     ];
 }
 
+$today = date('Y-m-d');
+$active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'statistics') ? 'statistics' : 'newspapers';
+
+$category_stats = [];
+$category_result = $conn->query("SELECT nc.id, nc.category_name,
+        SUM(CASE WHEN n.date_received = '$today' THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as daily_count,
+        SUM(CASE WHEN YEARWEEK(n.date_received, 1) = YEARWEEK('$today', 1) THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as weekly_count,
+        SUM(CASE WHEN MONTH(n.date_received) = MONTH('$today') AND YEAR(n.date_received) = YEAR('$today') THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as monthly_count,
+        SUM(CASE WHEN YEAR(n.date_received) = YEAR('$today') THEN COALESCE(NULLIF(n.total_copies, 0), n.available_copies) ELSE 0 END) as yearly_count,
+        SUM(COALESCE(NULLIF(n.total_copies, 0), n.available_copies)) as total_count
+    FROM newspaper_categories nc
+    LEFT JOIN newspapers n ON n.category_id = nc.id
+    GROUP BY nc.id, nc.category_name
+    ORDER BY nc.category_name");
+if ($category_result) {
+    while ($row = $category_result->fetch_assoc()) {
+        $category_stats[] = [
+            'category_name' => $row['category_name'],
+            'daily_count' => (int)$row['daily_count'],
+            'weekly_count' => (int)$row['weekly_count'],
+            'monthly_count' => (int)$row['monthly_count'],
+            'yearly_count' => (int)$row['yearly_count'],
+            'total_count' => (int)$row['total_count'],
+        ];
+    }
+}
+
 // Get toast message from session
 $toast = null;
 if (isset($_SESSION['toast'])) {
@@ -619,6 +646,75 @@ include './sidebar.php';
             max-height: 90vh;
             overflow-y: auto;
         }
+
+        .page-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+
+        .page-tab {
+            border: 1px solid #e5e5e5;
+            background: #fafaf9;
+            color: #57534e;
+            border-radius: 999px;
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .page-tab:hover {
+            background: #f5f5f4;
+            color: #1e1e1e;
+        }
+
+        .page-tab.active {
+            background: #1e1e1e;
+            border-color: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .page-pane {
+            display: none;
+        }
+
+        .page-pane.active {
+            display: block;
+        }
+
+        .stats-panel {
+            background: #ffffff;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .stats-panel-header {
+            padding: 18px 20px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .stats-panel-body {
+            padding: 20px;
+        }
+
+        .stats-table-wrap {
+            overflow-x: auto;
+        }
+
+        .stats-table-wrap th.numeric,
+        .stats-table-wrap td.numeric {
+            text-align: right;
+        }
+
+        .stats-table-wrap tfoot td {
+            font-weight: 600;
+            background: #fafafa;
+            border-top: 2px solid #e5e5e5;
+        }
     </style>
 </head>
 
@@ -642,7 +738,19 @@ include './sidebar.php';
                 </div>
             </div>
 
-            <div class="p-8">
+            <div class="px-8 pt-6">
+                <div class="page-tabs" data-page-tab-group>
+                    <button type="button" class="page-tab <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>" data-page-tab="newspapers">
+                        <i class="fa-solid fa-newspaper mr-2"></i>Newspapers
+                    </button>
+                    <button type="button" class="page-tab <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>" data-page-tab="statistics">
+                        <i class="fa-solid fa-chart-column mr-2"></i>Statistics
+                    </button>
+                </div>
+            </div>
+
+            <div id="newspapersPane" class="page-pane <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>">
+            <div class="p-8 pt-0">
 
                 <!-- Stats Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 no-print">
@@ -750,6 +858,10 @@ include './sidebar.php';
                             <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
                                 <i class="fa-solid fa-rotate-right mr-1"></i>Reset
                             </a>
+
+                            <button type="button" onclick="printNewspaperList()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                                <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -922,12 +1034,86 @@ include './sidebar.php';
                     </div>
                 </div>
             <?php endif; ?>
-    </div>
-    </div>
+            </div>
+
+            <div id="statisticsPane" class="page-pane <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>">
+                <div class="p-8 pt-0">
+                    <?php if (!empty($category_stats)): ?>
+                        <?php
+                        $stats_totals = [
+                            'total_count' => 0,
+                            'daily_count' => 0,
+                            'weekly_count' => 0,
+                            'monthly_count' => 0,
+                            'yearly_count' => 0,
+                        ];
+                        foreach ($category_stats as $cat) {
+                            foreach ($stats_totals as $key => $value) {
+                                $stats_totals[$key] += $cat[$key];
+                            }
+                        }
+                        ?>
+                        <div class="stats-panel">
+                            <div class="stats-panel-header">
+                                <div class="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <h2 class="text-lg font-semibold text-[#1e1e1e]">Newspaper statistics</h2>
+                                        <p class="text-sm text-[#6e6e6e] mt-0.5">Copy counts by category</p>
+                                    </div>
+                                    <button type="button" onclick="printNewspaperStatistics()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] no-print">
+                                        <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="stats-table-wrap">
+                                <table id="newspaperStatsTable">
+                                    <thead>
+                                        <tr class="bg-[#fafafa]">
+                                            <th class="text-xs">Category</th>
+                                            <th class="text-xs numeric">Total received</th>
+                                            <th class="text-xs numeric">Today</th>
+                                            <th class="text-xs numeric">This week</th>
+                                            <th class="text-xs numeric">This month</th>
+                                            <th class="text-xs numeric">This year</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($category_stats as $cat): ?>
+                                            <tr class="hover:bg-[#fafafa]">
+                                                <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($cat['category_name']); ?></td>
+                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['total_count']); ?></td>
+                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['daily_count']); ?></td>
+                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['weekly_count']); ?></td>
+                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['monthly_count']); ?></td>
+                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['yearly_count']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td class="text-sm text-[#1e1e1e]">Total</td>
+                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['total_count']); ?></td>
+                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['daily_count']); ?></td>
+                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['weekly_count']); ?></td>
+                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['monthly_count']); ?></td>
+                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['yearly_count']); ?></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="bg-white border border-[#e5e5e5] rounded-md p-8 text-center text-[#6e6e6e]">
+                            No newspaper category stats available.
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
     </main>
     </div>
 
     <!-- Add Newspaper Modal -->
+
     <div id="addModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50">
         <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
             <div class="flex justify-between items-center mb-4">
@@ -1370,6 +1556,167 @@ include './sidebar.php';
         document.getElementById('newspaperLiveSearch')?.addEventListener('input', filterNewspapersLive);
         document.querySelector('#newspaperFilterForm select[name="filter_category"]')?.addEventListener('change', filterNewspapersLive);
         document.querySelector('#newspaperFilterForm select[name="filter_status"]')?.addEventListener('change', filterNewspapersLive);
+
+        function printHtmlOnPage(html) {
+            const frame = document.createElement('iframe');
+            frame.style.position = 'fixed';
+            frame.style.right = '0';
+            frame.style.bottom = '0';
+            frame.style.width = '0';
+            frame.style.height = '0';
+            frame.style.border = '0';
+            document.body.appendChild(frame);
+
+            const frameWindow = frame.contentWindow;
+            const frameDocument = frameWindow.document;
+            frameDocument.open();
+            frameDocument.write(html);
+            frameDocument.close();
+
+            frameWindow.focus();
+            frameWindow.print();
+
+            setTimeout(() => {
+                frame.remove();
+            }, 1000);
+        }
+
+        function getPrintTableStyles() {
+            return `
+                body { font-family: Arial, sans-serif; padding: 20px; color: #1e1e1e; }
+                h1 { font-size: 22px; margin: 0 0 6px; }
+                .meta { color: #6e6e6e; font-size: 13px; margin-bottom: 18px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #ddd; padding: 10px 12px; font-size: 13px; }
+                th { background-color: #f5f5f4; text-align: left; }
+                td.numeric, th.numeric { text-align: right; }
+                tfoot td { font-weight: 600; background-color: #fafafa; }
+            `;
+        }
+
+        function printNewspaperList() {
+            const rows = Array.from(document.querySelectorAll('.newspaper-row')).filter((row) => row.style.display !== 'none');
+            if (!rows.length) {
+                showToast('error', 'No newspapers to print on this page.');
+                return;
+            }
+
+            let rowsHtml = '';
+            rows.forEach((row) => {
+                const cells = row.querySelectorAll('td');
+                rowsHtml += `
+                    <tr>
+                        <td>${cells[0].textContent.trim()}</td>
+                        <td>${cells[1].textContent.trim()}</td>
+                        <td>${cells[2].textContent.trim()}</td>
+                        <td>${cells[3].textContent.trim()}</td>
+                        <td>${cells[4].textContent.trim()}</td>
+                        <td>${cells[5].textContent.trim()}</td>
+                        <td>${cells[6].textContent.trim()}</td>
+                    </tr>
+                `;
+            });
+
+            const search = document.getElementById('newspaperLiveSearch')?.value?.trim() || '';
+            const categorySelect = document.querySelector('#newspaperFilterForm select[name="filter_category"]');
+            const statusSelect = document.querySelector('#newspaperFilterForm select[name="filter_status"]');
+            const categoryLabel = categorySelect?.selectedOptions[0]?.textContent?.trim() || 'All Categories';
+            const statusLabel = statusSelect?.value ? statusSelect.selectedOptions[0].textContent.trim() : 'All Statuses';
+            const filters = [
+                `Category: ${categoryLabel}`,
+                `Status: ${statusLabel}`,
+                search ? `Search: "${search}"` : null
+            ].filter(Boolean).join(' • ');
+
+            const printContent = `
+                <html>
+                <head>
+                    <title>Newspaper List</title>
+                    <style>${getPrintTableStyles()}</style>
+                </head>
+                <body>
+                    <h1>Newspaper List</h1>
+                    <p class="meta">Generated: ${new Date().toLocaleString()}<br>${filters}<br>Showing ${rows.length} record(s) from current page</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Newspaper</th>
+                                <th>Issue #</th>
+                                <th>Category</th>
+                                <th>Date Received</th>
+                                <th>Status</th>
+                                <th>Available</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+
+            printHtmlOnPage(printContent);
+            showToast('info', 'Print dialog opened.');
+        }
+
+        function printNewspaperStatistics() {
+            const table = document.getElementById('newspaperStatsTable');
+            if (!table) {
+                showToast('error', 'No statistics available to print.');
+                return;
+            }
+
+            const printContent = `
+                <html>
+                <head>
+                    <title>Newspaper Statistics</title>
+                    <style>${getPrintTableStyles()}</style>
+                </head>
+                <body>
+                    <h1>Newspaper Statistics</h1>
+                    <p class="meta">Generated: ${new Date().toLocaleString()}<br>Copy counts by category</p>
+                    ${table.outerHTML}
+                </body>
+                </html>
+            `;
+
+            printHtmlOnPage(printContent);
+            showToast('info', 'Print dialog opened.');
+        }
+
+        (function() {
+            const pageTabs = Array.from(document.querySelectorAll('[data-page-tab]'));
+            const pagePanes = {
+                newspapers: document.getElementById('newspapersPane'),
+                statistics: document.getElementById('statisticsPane')
+            };
+
+            function setPageTab(tabName, updateUrl) {
+                pageTabs.forEach((tab) => {
+                    tab.classList.toggle('active', tab.dataset.pageTab === tabName);
+                });
+                Object.entries(pagePanes).forEach(([name, pane]) => {
+                    if (pane) {
+                        pane.classList.toggle('active', name === tabName);
+                    }
+                });
+                if (updateUrl) {
+                    const url = new URL(window.location.href);
+                    if (tabName === 'statistics') {
+                        url.searchParams.set('tab', 'statistics');
+                    } else {
+                        url.searchParams.delete('tab');
+                    }
+                    window.history.replaceState({}, '', url);
+                }
+            }
+
+            pageTabs.forEach((tab) => {
+                tab.addEventListener('click', function() {
+                    setPageTab(tab.dataset.pageTab, true);
+                });
+            });
+        })();
     </script>
 </body>
 
