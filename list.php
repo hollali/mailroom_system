@@ -723,9 +723,9 @@ include './sidebar.php';
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="flex">
-        <main class="flex-1 ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-60 min-h-screen">
             <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Management</h1>
@@ -738,7 +738,7 @@ include './sidebar.php';
                 </div>
             </div>
 
-            <div class="px-8 pt-6">
+            <div class="px-4 pt-4 lg:px-8 lg:pt-6">
                 <div class="page-tabs" data-page-tab-group>
                     <button type="button" class="page-tab <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>" data-page-tab="newspapers">
                         <i class="fa-solid fa-newspaper mr-2"></i>Newspapers
@@ -750,7 +750,7 @@ include './sidebar.php';
             </div>
 
             <div id="newspapersPane" class="page-pane <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>">
-            <div class="p-8 pt-0">
+            <div class="p-4 pt-0 lg:p-8 lg:pt-0">
 
                 <!-- Stats Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 no-print">
@@ -1037,7 +1037,7 @@ include './sidebar.php';
             </div>
 
             <div id="statisticsPane" class="page-pane <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>">
-                <div class="p-8 pt-0">
+                <div class="p-4 pt-0 lg:p-8 lg:pt-0">
                     <?php if (!empty($category_stats)): ?>
                         <?php
                         $stats_totals = [
@@ -1103,7 +1103,7 @@ include './sidebar.php';
                             </div>
                         </div>
                     <?php else: ?>
-                        <div class="bg-white border border-[#e5e5e5] rounded-md p-8 text-center text-[#6e6e6e]">
+                        <div class="bg-white border border-[#e5e5e5] rounded-md p-4 lg:p-8 text-center text-[#6e6e6e]">
                             No newspaper category stats available.
                         </div>
                     <?php endif; ?>

@@ -595,9 +595,9 @@ if (isset($_SESSION['toast'])) {
         <?php include './sidebar.php'; ?>
 
         <!-- Main Content -->
-        <main class="flex-1 ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-60 min-h-screen">
             <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Document List</h1>
@@ -610,7 +610,7 @@ if (isset($_SESSION['toast'])) {
                 </div>
             </div>
 
-            <div class="p-8">
+            <div class="p-4 lg:p-8">
                 <!-- Filters -->
                 <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
                     <div class="flex flex-wrap items-center gap-3">
@@ -728,7 +728,7 @@ if (isset($_SESSION['toast'])) {
                 </div>
 
                 <!-- No Results Message (hidden by default) -->
-                <div id="noResultsMessage" class="hidden bg-white border border-[#e5e5e5] rounded-md p-8 text-center mt-4">
+                <div id="noResultsMessage" class="hidden bg-white border border-[#e5e5e5] rounded-md p-4 lg:p-8 text-center mt-4">
                     <i class="fa-regular fa-circle-xmark text-4xl text-[#9e9e9e] mb-3"></i>
                     <p class="text-sm text-[#6e6e6e]">No documents match your filters.</p>
                     <button onclick="resetFilters()" class="mt-2 text-sm text-[#1e1e1e] underline">Clear filters</button>

@@ -498,7 +498,7 @@ include './sidebar.php';
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 ml-60">
+        <main class="flex-1 lg:ml-60">
             <div class="p-6">
                 <div class="flex justify-between items-center mb-6">
                     <div>

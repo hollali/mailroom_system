@@ -637,8 +637,8 @@ if (isset($_SESSION['toast'])) {
 
     <div id="toastContainer" class="toast-container"></div>
 
-    <main class="ml-60 min-h-screen">
-        <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
+    <main class="lg:ml-60 min-h-screen">
+        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
                 <p class="text-sm text-[#6e6e6e] mt-1">View and manage all document distribution records</p>
@@ -653,7 +653,7 @@ if (isset($_SESSION['toast'])) {
             </div>
         </div>
 
-        <div class="p-8">
+        <div class="p-4 lg:p-8">
 
             <!-- ── Summary Cards ── -->
             <div class="grid grid-cols-3 gap-4 mb-6 no-print">

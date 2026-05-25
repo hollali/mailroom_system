@@ -238,6 +238,7 @@ $offset = ($page - 1) * $records_per_page;
 
 // Get total records for pagination
 $total_records = $conn->query("SELECT COUNT(*) as total FROM parcels_received")->fetch_assoc()['total'];
+$total_parcels = $total_records;
 $total_pages = ceil($total_records / $records_per_page);
 
 // Get all parcels with pickup status and details with pagination
@@ -547,9 +548,9 @@ $recent_parcels = $conn->query("
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-60 min-h-screen">
             <!-- Simple header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Parcel Management System</h1>
@@ -561,7 +562,7 @@ $recent_parcels = $conn->query("
                 </div>
             </div>
 
-            <div class="p-8">
+            <div class="p-4 lg:p-8">
                 <!-- Tabs -->
                 <div class="border-b border-[#e5e5e5] mb-6">
                     <div class="flex gap-6">
@@ -877,8 +878,8 @@ $recent_parcels = $conn->query("
                             <?php
                             $pickupStart = max(1, $page - 2);
                             $pickupEnd = min($total_pages, $page + 2);
-                            $pickupFrom = (($page - 1) * $limit) + 1;
-                            $pickupTo = min($page * $limit, $total_parcels);
+                            $pickupFrom = (($page - 1) * $records_per_page) + 1;
+                            $pickupTo = min($page * $records_per_page, $total_records);
                             ?>
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
@@ -1042,8 +1043,8 @@ $recent_parcels = $conn->query("
                             <?php
                             $recordStart = max(1, $page - 2);
                             $recordEnd = min($total_pages, $page + 2);
-                            $recordFrom = (($page - 1) * $limit) + 1;
-                            $recordTo = min($page * $limit, $total_parcels);
+                            $recordFrom = (($page - 1) * $records_per_page) + 1;
+                            $recordTo = min($page * $records_per_page, $total_records);
                             ?>
                             <div class="pagination-shell">
                                 <div class="pagination-meta">

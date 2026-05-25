@@ -32,6 +32,8 @@ $stats = [
     'dashboard_refreshed_at' => date('Y-m-d H:i:s')
 ];
 
+$dashboard_parcels = null;
+
 // Check connection
 if (!$conn) {
     die("Database connection failed: " . mysqli_connect_error());
@@ -570,8 +572,8 @@ try {
     <div class="flex">
         <?php include 'sidebar.php'; ?>
 
-        <main class="flex-1 ml-60 min-h-screen bg-[#f5f5f4]">
-            <div class="px-8 py-6 border-b border-[#e7e5e4] bg-white">
+        <main class="flex-1 lg:ml-60 min-h-screen bg-[#f5f5f4]">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e7e5e4] bg-white">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
                         <h1 class="text-[28px] font-semibold text-[#1c1917]">Mailroom Dashboard</h1>
@@ -592,7 +594,7 @@ try {
                 </div>
             </div>
 
-            <div class="p-8">
+            <div class="p-4 lg:p-8">
                 <?php if (isset($error)): ?>
                     <div class="mb-6 rounded-[28px] bg-[#ffdad6] px-5 py-4 text-[#93000a]">
                         <i class="fa-regular fa-circle-exclamation mr-2"></i>
@@ -813,7 +815,7 @@ try {
                 const tabs = Array.from(group.querySelectorAll('.activity-tab'));
                 const panel = group.closest('.panel');
                 if (!panel) return;
-                
+
                 const panes = Array.from(panel.querySelectorAll('.activity-pane'));
 
                 tabs.forEach((tab) => {
@@ -822,7 +824,7 @@ try {
 
                         // Only remove active from tabs in THIS group
                         tabs.forEach((item) => item.classList.remove('active'));
-                        
+
                         // Only remove active from panes in THIS panel
                         panes.forEach((pane) => pane.classList.remove('active'));
 

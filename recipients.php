@@ -507,9 +507,9 @@ include './sidebar.php';
 
 <body class="bg-[#f5f5f4]">
     <div class="flex">
-        <main class="flex-1 ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-60 min-h-screen">
             <!-- Header -->
-            <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Manage Recipients</h1>
@@ -521,7 +521,7 @@ include './sidebar.php';
                 </div>
             </div>
 
-            <div class="p-8">
+            <div class="p-4 lg:p-8">
                 <!-- Recipients Table -->
                 <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
                     <div class="px-5 py-4 bg-[#fafafa] border-b border-[#e5e5e5]">

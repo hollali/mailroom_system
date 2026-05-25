@@ -611,9 +611,9 @@ if ($action == 'list') {
 </head>
 
 <body class="bg-[#f5f5f4]">
-    <main class="ml-60 min-h-screen">
+    <main class="lg:ml-60 min-h-screen">
         <!-- Header -->
-        <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Types</h1>
                 <div class="flex gap-2">
@@ -633,7 +633,7 @@ if ($action == 'list') {
             </div>
         </div>
 
-        <div class="p-8">
+        <div class="p-4 lg:p-8">
             <!-- Flash Message (will be converted to toast) -->
             <?php if ($flashMessage): ?>
                 <script>

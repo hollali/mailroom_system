@@ -196,9 +196,9 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
 <body class="bg-[#f5f5f4]">
     <?php include './sidebar.php'; ?>
 
-    <main class="ml-60 min-h-screen">
+    <main class="lg:ml-60 min-h-screen">
         <!-- Header -->
-        <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Subscription</h1>
                 <button onclick="openModal()"
@@ -208,7 +208,7 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
             </div>
         </div>
 
-        <div class="p-8">
+        <div class="p-4 lg:p-8">
             <!-- Messages -->
             <?php if ($message): ?>
                 <div id="successToast" class="mb-6 p-3 border border-[#e5e5e5] bg-white rounded-md text-sm text-[#1e1e1e] transition-opacity duration-500">

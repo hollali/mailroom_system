@@ -710,9 +710,9 @@ if (isset($_SESSION['toast'])) {
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <div class="ml-60 min-h-screen">
+    <div class="lg:ml-60 min-h-screen">
         <!-- Header -->
-        <div class="px-8 py-6 border-b border-[#e5e5e5] bg-white">
+        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution</h1>
@@ -727,7 +727,7 @@ if (isset($_SESSION['toast'])) {
             </div>
         </div>
 
-        <div class="p-8">
+        <div class="p-4 lg:p-8">
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
@@ -832,7 +832,7 @@ if (isset($_SESSION['toast'])) {
                             else:
                                 ?>
                                 <tr>
-                                    <td colspan="6" class="p-8 text-center text-sm text-[#6e6e6e]">
+                                    <td colspan="6" class="p-4 lg:p-8 text-center text-sm text-[#6e6e6e]">
                                         No distribution records found. Click "New Distribution" to get started.
                                     </td>
                                 </tr>
