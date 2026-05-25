@@ -379,12 +379,17 @@ include './sidebar.php';
 
 // Get all document types for list view
 $typesData = ['data' => [], 'total' => 0];
+$types = [];
+$totalRecords = 0;
+$totalPages = 0;
+$stats_types = [];
+
 if ($action == 'list') {
     $typesData = getAllDocumentTypes($sort_by, $sort_order, $filter, $limit, $offset);
     $types = $typesData['data'];
     $totalRecords = $typesData['total'];
     $totalPages = ceil($totalRecords / $limit);
-} else {
+} elseif ($action == 'stats') {
     // For stats view, get all records without pagination
     $stats_types = getAllDocumentTypes('type_name', 'ASC', '', 1000, 0)['data'];
 }

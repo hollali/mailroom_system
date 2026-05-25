@@ -581,16 +581,6 @@ try {
                             <?php echo date('l, F j, Y g:i:s A', strtotime($stats['dashboard_refreshed_at'])); ?>
                         </p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <a href="parcels.php" class="simple-button">
-                            <i class="fa-solid fa-box"></i>
-                            View parcels
-                        </a>
-                        <a href="documents.php" class="simple-button primary-button">
-                            <i class="fa-solid fa-file-lines"></i>
-                            Open documents
-                        </a>
-                    </div>
                 </div>
             </div>
 

@@ -608,6 +608,98 @@ if (isset($_SESSION['toast'])) {
             font-size: 15px;
         }
 
+        @media (max-width: 1023px) {
+            .history-header {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 14px;
+            }
+
+            .history-actions {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .history-actions .btn-primary,
+            .history-actions .btn-secondary {
+                justify-content: center;
+            }
+
+            .history-filter-form {
+                align-items: stretch;
+            }
+
+            .history-filter-form>div {
+                width: 100%;
+                min-width: 0;
+            }
+        }
+
+        @media (max-width: 767px) {
+
+            .history-table-header,
+            .history-table-footer,
+            .history-pagination {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .history-table-header>*,
+            .history-table-footer>*,
+            .history-pagination>* {
+                width: 100%;
+            }
+
+            .history-pagination .pagination {
+                justify-content: flex-start;
+                width: 100%;
+            }
+
+            .modal {
+                align-items: flex-start;
+                overflow-y: auto;
+            }
+
+            .modal-content {
+                max-height: calc(100vh - 32px);
+                overflow-y: auto;
+            }
+
+            .modal-footer {
+                flex-direction: column-reverse;
+            }
+
+            .modal-footer .btn-secondary,
+            .modal-footer .btn-danger {
+                justify-content: center;
+                text-align: center;
+                width: 100%;
+            }
+
+            .detail-row {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .detail-label {
+                width: auto;
+                min-width: 0;
+            }
+
+            .toast-container {
+                left: 12px;
+                right: 12px;
+                top: 12px;
+            }
+
+            .toast {
+                min-width: 0;
+                width: 100%;
+            }
+        }
+
         /* ── Print ── */
         @media print {
 
@@ -638,12 +730,12 @@ if (isset($_SESSION['toast'])) {
     <div id="toastContainer" class="toast-container"></div>
 
     <main class="lg:ml-60 min-h-screen">
-        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
+        <div class="history-header px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
                 <p class="text-sm text-[#6e6e6e] mt-1">View and manage all document distribution records</p>
             </div>
-            <div class="no-print flex gap-2">
+            <div class="history-actions no-print flex gap-2">
                 <a href="distribution.php" class="btn-primary">
                     <i class="fa-regular fa-plus"></i> New Distribution
                 </a>
@@ -656,7 +748,7 @@ if (isset($_SESSION['toast'])) {
         <div class="p-4 lg:p-8">
 
             <!-- ── Summary Cards ── -->
-            <div class="grid grid-cols-3 gap-4 mb-6 no-print">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 no-print">
                 <div class="stat-card flex items-center justify-between">
                     <div>
                         <div class="stat-number"><?php echo number_format($summary['total_distributions']); ?></div>
@@ -682,8 +774,8 @@ if (isset($_SESSION['toast'])) {
 
             <!-- ── Filter Bar ── -->
             <div class="bg-white border border-[#e5e5e5] rounded-lg mb-4 no-print">
-                <form method="GET" id="filterForm" class="p-4 flex flex-wrap gap-3 items-end">
-                    <div class="flex-1 min-w-[200px]">
+                <form method="GET" id="filterForm" class="history-filter-form p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_180px_145px_145px_145px_auto] gap-3 items-end">
+                    <div>
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Search</label>
                         <div class="relative">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-[#9e9e9e]"></i>
@@ -694,7 +786,7 @@ if (isset($_SESSION['toast'])) {
                                 value="<?php echo htmlspecialchars($search); ?>">
                         </div>
                     </div>
-                    <div class="w-[180px]">
+                    <div>
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Document Type</label>
                         <select id="typeFilter" name="type" class="filter-input w-full">
                             <option value="">All Types</option>
@@ -706,7 +798,7 @@ if (isset($_SESSION['toast'])) {
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="w-[145px]">
+                    <div>
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Status</label>
                         <select id="statusFilter" name="status" class="filter-input w-full">
                             <option value="">All Statuses</option>
@@ -714,21 +806,21 @@ if (isset($_SESSION['toast'])) {
                             <option value="withdrawn" <?php echo $status_filter === 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
                         </select>
                     </div>
-                    <div class="w-[145px]">
+                    <div>
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">From Date</label>
                         <input type="date" name="date_from" class="filter-input w-full"
                             value="<?php echo htmlspecialchars($date_from); ?>">
                     </div>
-                    <div class="w-[145px]">
+                    <div>
                         <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">To Date</label>
                         <input type="date" name="date_to" class="filter-input w-full"
                             value="<?php echo htmlspecialchars($date_to); ?>">
                     </div>
-                    <div class="flex gap-2">
-                        <button type="submit" class="btn-primary">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="submit" class="btn-primary justify-center">
                             <i class="fa-solid fa-filter"></i> Filter
                         </button>
-                        <a href="documents_distribution_history.php" class="btn-secondary">
+                        <a href="documents_distribution_history.php" class="btn-secondary justify-center">
                             <i class="fa-solid fa-rotate-left"></i> Reset
                         </a>
                     </div>
@@ -737,7 +829,7 @@ if (isset($_SESSION['toast'])) {
 
             <!-- ── Records Table ── -->
             <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
-                <div class="px-5 py-3 border-b border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center">
+                <div class="history-table-header px-5 py-3 border-b border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center">
                     <h2 class="text-sm font-medium text-[#1c1917]">Distribution Records</h2>
                     <span class="text-xs text-[#78716c]">
                         <?php if ($total_records > 0): ?>
@@ -835,7 +927,7 @@ if (isset($_SESSION['toast'])) {
                 </div>
 
                 <!-- Table Footer -->
-                <div class="px-5 py-3 border-t border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center text-xs text-[#78716c]">
+                <div class="history-table-footer px-5 py-3 border-t border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center text-xs text-[#78716c]">
                     <span><?php echo number_format($total_records); ?> total record(s)</span>
                     <span>Total copies distributed: <strong><?php echo number_format($summary['total_copies_distributed']); ?></strong></span>
                 </div>
@@ -853,7 +945,7 @@ if (isset($_SESSION['toast'])) {
                 ]));
                 $qs = $qs_base ? "&$qs_base" : '';
                 ?>
-                <div class="mt-4 flex justify-between items-center">
+                <div class="history-pagination mt-4 flex justify-between items-center">
                     <div class="text-sm text-[#78716c]">
                         Page <?php echo $page; ?> of <?php echo $total_pages; ?>
                     </div>

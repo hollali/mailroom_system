@@ -696,10 +696,126 @@ if (isset($_SESSION['toast'])) {
             background-color: #2d2d2d;
         }
 
+        .print-button {
+            background-color: white;
+            color: #1e1e1e;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid #e5e5e5;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .print-button:hover {
+            background-color: #f5f5f4;
+            border-color: #cfcfcd;
+        }
+
         .warning-message {
             background-color: #fff3e0;
             border-left: 4px solid #f59e0b;
             color: #b45b0b;
+        }
+
+        .print-only {
+            display: none;
+        }
+
+        @media print {
+            @page {
+                margin: 0.55in;
+            }
+
+            body {
+                background: white !important;
+                color: #111827 !important;
+            }
+
+            #sidebar,
+            #mobileMenuBtn,
+            #sidebarOverlay,
+            #toastContainer,
+            .modal,
+            .no-print,
+            .pagination-shell,
+            .action-btn,
+            .new-distribution-btn,
+            .print-button {
+                display: none !important;
+            }
+
+            .print-only {
+                display: block !important;
+            }
+
+            .lg\:ml-60 {
+                margin-left: 0 !important;
+            }
+
+            .min-h-screen {
+                min-height: 0 !important;
+            }
+
+            .p-4,
+            .lg\:p-8,
+            .px-4,
+            .lg\:px-8 {
+                padding: 0 !important;
+            }
+
+            .bg-white,
+            .bg-\[\#fafafa\],
+            .bg-\[\#f5f5f4\] {
+                background: white !important;
+            }
+
+            .border,
+            .border-t,
+            .border-b {
+                border-color: #d1d5db !important;
+            }
+
+            .rounded-md {
+                border-radius: 0 !important;
+            }
+
+            table {
+                width: 100% !important;
+                min-width: 0 !important;
+                font-size: 11px !important;
+                border-collapse: collapse !important;
+            }
+
+            th,
+            td {
+                padding: 7px 8px !important;
+                border: 1px solid #d1d5db !important;
+            }
+
+            th {
+                background: #f3f4f6 !important;
+                color: #111827 !important;
+            }
+
+            th:last-child,
+            td:last-child {
+                display: none !important;
+            }
+
+            .badge {
+                border: 1px solid #d1d5db !important;
+                background: white !important;
+                color: #111827 !important;
+            }
+
+            a {
+                color: #111827 !important;
+                text-decoration: none !important;
+            }
         }
     </style>
 </head>
@@ -718,7 +834,11 @@ if (isset($_SESSION['toast'])) {
                     <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution</h1>
                     <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across the organization</p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 no-print">
+                    <button type="button" onclick="printDistributionStatement()" class="print-button">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Print Statement</span>
+                    </button>
                     <button onclick="openDistributionModal()" class="new-distribution-btn">
                         <i class="fa-regular fa-plus"></i>
                         <span>New Distribution</span>
@@ -728,12 +848,17 @@ if (isset($_SESSION['toast'])) {
         </div>
 
         <div class="p-4 lg:p-8">
+            <div class="print-only mb-5">
+                <h1 class="text-xl font-semibold">Document Distribution Statement</h1>
+                <p class="text-sm text-[#4b5563] mt-1">Generated on <?php echo date('F j, Y g:i A'); ?></p>
+                <p class="text-sm text-[#4b5563]">Total records: <?php echo number_format($total_distributions); ?> | Total copies distributed: <?php echo number_format($total_copies_distributed); ?></p>
+            </div>
 
             <!-- DISTRIBUTION TABLE -->
             <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
                 <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
                     <h2 class="text-sm font-medium text-[#1e1e1e]">Distribution History</h2>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-3 no-print">
                         <div class="relative flex items-center gap-2">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
                             <input type="text" id="tableSearch" placeholder="Search records..."
@@ -767,7 +892,7 @@ if (isset($_SESSION['toast'])) {
                                     Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3">Status</th>
-                                <th class="p-3">Actions</th>
+                                <th class="p-3 no-print">Actions</th>
                             </tr>
                         </thead>
 
@@ -803,7 +928,7 @@ if (isset($_SESSION['toast'])) {
                                                 <?php echo ucfirst($status); ?>
                                             </span>
                                         </td>
-                                        <td class="p-3">
+                                        <td class="p-3 no-print">
                                             <div class="flex gap-2">
                                                 <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)"
                                                     class="action-btn" title="View Details">
@@ -1389,7 +1514,7 @@ if (isset($_SESSION['toast'])) {
             const btn = document.getElementById('finalConfirmBtn');
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving...';
-            
+
             document.getElementById('distributionForm').submit();
         }
 
@@ -1630,6 +1755,24 @@ if (isset($_SESSION['toast'])) {
             clearTimeout(distributionSearchTimer);
             distributionSearchTimer = setTimeout(() => filterDistributionTable(false), 150);
         });
+
+        function printDistributionStatement() {
+            const rows = Array.from(document.querySelectorAll('.distribution-row'));
+            const previousDisplay = rows.map(row => row.style.display);
+
+            rows.forEach(row => {
+                row.style.display = row.dataset.filtered === 'false' ? 'none' : '';
+            });
+
+            window.print();
+
+            setTimeout(() => {
+                rows.forEach((row, index) => {
+                    row.style.display = previousDisplay[index];
+                });
+                renderDistributionPagination();
+            }, 250);
+        }
 
         // Table sorting
         let sortDirection = 'asc';

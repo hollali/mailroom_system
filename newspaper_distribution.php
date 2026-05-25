@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             $recipient_id = (int)$recipient_id;
 
             // Get recipient details
-            $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND is_active = 1");
+            $recipient_query = $conn->query("SELECT name FROM recipients WHERE id = $recipient_id AND COALESCE(is_active, 1) = 1");
             if (!$recipient = $recipient_query->fetch_assoc()) {
                 continue;
             }
@@ -108,7 +108,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 
             foreach ($selected_categories as $paper_id) {
                 $pid = (int)$paper_id;
-                $stock_query = $conn->query("SELECT available_copies, total_copies, newspaper_name, newspaper_number FROM newspapers WHERE id = $pid AND available_copies > 0");
+                $stock_query = $conn->query("
+                    SELECT available_copies, total_copies, newspaper_name, newspaper_number
+                    FROM newspapers
+                    WHERE id = $pid
+                      AND COALESCE(available_copies, 0) > 0
+                      AND COALESCE(status, 'available') <> 'archived'
+                ");
                 if ($paper_info = $stock_query->fetch_assoc()) {
                     $actual_distributed_ids[] = $pid;
                     $actual_distributed_names[] = $paper_info['newspaper_name'] . ($paper_info['newspaper_number'] ? ' (Issue: ' . $paper_info['newspaper_number'] . ')' : '');
@@ -186,11 +192,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
     exit();
 }
 
-// Get all active recipients
-$recipients = $conn->query("SELECT id, name FROM recipients WHERE is_active = 1 ORDER BY name");
+// Get all active recipients from recipients.php.
+$recipients = $conn->query("
+    SELECT id, name
+    FROM recipients
+    WHERE COALESCE(is_active, 1) = 1
+    ORDER BY name
+");
+$recipients_error = $recipients ? '' : $conn->error;
 
-// Get all available newspapers for distribution
-$categories_for_distribution = $conn->query("SELECT id, newspaper_name, newspaper_number, available_copies FROM newspapers WHERE available_copies > 0 AND status != 'archived' ORDER BY newspaper_name, newspaper_number");
+// Get all available newspapers from list.php.
+$categories_for_distribution = $conn->query("
+    SELECT id, newspaper_name, newspaper_number, COALESCE(available_copies, 0) AS available_copies
+    FROM newspapers
+    WHERE COALESCE(available_copies, 0) > 0
+      AND COALESCE(status, 'available') <> 'archived'
+    ORDER BY newspaper_name, newspaper_number
+");
+$newspapers_error = $categories_for_distribution ? '' : $conn->error;
 
 // Get recipients who already received distribution today
 $already_received_today = [];
@@ -218,7 +237,6 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
-include './sidebar.php';
 ?>
 
 <!DOCTYPE html>
@@ -406,6 +424,8 @@ include './sidebar.php';
 </head>
 
 <body class="bg-[#f5f5f4]">
+    <?php include './sidebar.php'; ?>
+
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="flex">
@@ -414,7 +434,7 @@ include './sidebar.php';
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h1 class="text-xl font-medium">Newspaper Distribution</h1>
-                        <p class="text-sm text-gray-500 mt-1">Select recipients and subscriptions to distribute</p>
+                        <p class="text-sm text-gray-500 mt-1">Select subscriptions and recipients to distribute</p>
                     </div>
                     <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
                         <i class="fa-solid fa-hand-holding-hand"></i>
@@ -425,7 +445,46 @@ include './sidebar.php';
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white border border-gray-200 p-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-base font-medium">1. Select Recipients</h2>
+                            <h2 class="text-base font-medium">1. Select Subscriptions (Papers)</h2>
+                            <div class="selected-count-badge">
+                                <span id="selectedCountBadge">0</span> selected
+                            </div>
+                        </div>
+
+                        <div class="mt-2 relative">
+                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
+                                <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
+                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                                </span>
+                            </button>
+                            <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
+                                <?php
+                                if ($newspapers_error) {
+                                    echo "<div class='px-4 py-2 text-red-600'>Could not load newspapers: " . htmlspecialchars($newspapers_error) . "</div>";
+                                } elseif ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
+                                    $categories_for_distribution->data_seek(0);
+                                    while ($paper = $categories_for_distribution->fetch_assoc()) {
+                                        $label = htmlspecialchars($paper['newspaper_name']);
+                                        if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
+                                        $label .= ' - ' . $paper['available_copies'] . ' left';
+
+                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
+                                        echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
+                                        echo "<span>{$label}</span>";
+                                        echo "</label>";
+                                    }
+                                } else {
+                                    echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
+                                }
+                                ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-base font-medium">2. Select Recipients</h2>
                             <div class="selected-count-badge">
                                 <span id="selectedRecipientCountBadge">0</span> selected
                             </div>
@@ -440,7 +499,9 @@ include './sidebar.php';
                             </button>
                             <div id="recipientsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
                                 <?php
-                                if ($recipients && $recipients->num_rows > 0) {
+                                if ($recipients_error) {
+                                    echo "<div class='px-4 py-2 text-red-600'>Could not load recipients: " . htmlspecialchars($recipients_error) . "</div>";
+                                } elseif ($recipients && $recipients->num_rows > 0) {
                                     $recipients->data_seek(0);
                                     while ($recipient = $recipients->fetch_assoc()) {
                                         $rec_name = $recipient['name'];
@@ -456,43 +517,6 @@ include './sidebar.php';
                                     }
                                 } else {
                                     echo "<div class='px-4 py-2 text-gray-500'>No recipients found</div>";
-                                }
-                                ?>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border border-gray-200 p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-base font-medium">2. Select Subscriptions (Papers)</h2>
-                            <div class="selected-count-badge">
-                                <span id="selectedCountBadge">0</span> selected
-                            </div>
-                        </div>
-
-                        <div class="mt-2 relative">
-                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
-                                <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
-                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
-                                </span>
-                            </button>
-                            <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
-                                <?php
-                                if ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
-                                    $categories_for_distribution->data_seek(0);
-                                    while ($paper = $categories_for_distribution->fetch_assoc()) {
-                                        $label = htmlspecialchars($paper['newspaper_name']);
-                                        if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
-                                        $label .= ' - ' . $paper['available_copies'] . ' left';
-
-                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
-                                        echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
-                                        echo "<span>{$label}</span>";
-                                        echo "</label>";
-                                    }
-                                } else {
-                                    echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
                                 }
                                 ?>
                             </div>

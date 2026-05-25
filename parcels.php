@@ -238,7 +238,6 @@ $offset = ($page - 1) * $records_per_page;
 
 // Get total records for pagination
 $total_records = $conn->query("SELECT COUNT(*) as total FROM parcels_received")->fetch_assoc()['total'];
-$total_parcels = $total_records;
 $total_pages = ceil($total_records / $records_per_page);
 
 // Get all parcels with pickup status and details with pagination
@@ -884,7 +883,7 @@ $recent_parcels = $conn->query("
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
                                     <div class="pagination-title">Showing pickups on this page</div>
-                                    <div class="pagination-subtitle">Records <?php echo $pickupFrom; ?>-<?php echo $pickupTo; ?> of <?php echo $total_parcels; ?> total</div>
+                                    <div class="pagination-subtitle">Records <?php echo $pickupFrom; ?>-<?php echo $pickupTo; ?> of <?php echo $total_records; ?> total</div>
                                 </div>
                                 <div class="pagination-controls">
                                     <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
@@ -1049,7 +1048,7 @@ $recent_parcels = $conn->query("
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
                                     <div class="pagination-title">Showing parcel records on this page</div>
-                                    <div class="pagination-subtitle">Records <?php echo $recordFrom; ?>-<?php echo $recordTo; ?> of <?php echo $total_parcels; ?> total</div>
+                                    <div class="pagination-subtitle">Records <?php echo $recordFrom; ?>-<?php echo $recordTo; ?> of <?php echo $total_records; ?> total</div>
                                 </div>
                                 <div class="pagination-controls">
                                     <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
