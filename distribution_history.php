@@ -184,6 +184,29 @@ $count_stmt->close();
 
 $total_pages = ceil($total_distributions / $limit);
 
+// Get all distribution records for export (matching filters, without pagination limit)
+$all_distributions_export = [];
+$export_sql = "SELECT * FROM distribution $where_sql ORDER BY date_distributed DESC, id DESC";
+$export_stmt = $conn->prepare($export_sql);
+if (!empty($params)) {
+    $export_stmt->bind_param($types, ...$params);
+}
+if ($export_stmt->execute()) {
+    $export_res = $export_stmt->get_result();
+    while ($row = $export_res->fetch_assoc()) {
+        $all_distributions_export[] = [
+            'reference' => 'DIST-' . date('Ymd', strtotime($row['date_distributed'])) . '-' . str_pad((string)$row['id'], 4, '0', STR_PAD_LEFT),
+            'date_distributed' => $row['date_distributed'],
+            'distributed_to' => $row['distributed_to'],
+            'department' => $row['department'] ?? '',
+            'copies' => $row['copies'],
+            'distributed_by' => $row['distributed_by'] ?? '',
+            'newspapers' => $row['newspapers_list'] ?? $row['categories_list'] ?? ''
+        ];
+    }
+}
+$export_stmt->close();
+
 // Get distribution records
 $sql = "SELECT * FROM distribution $where_sql ORDER BY date_distributed DESC, id DESC LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($sql);
@@ -561,6 +584,9 @@ include './sidebar.php';
                                 <button type="button" onclick="printDistributionHistory()" class="btn-secondary ml-2 no-print">
                                     <i class="fa-solid fa-print mr-1"></i> Print
                                 </button>
+                                <button type="button" onclick="exportToCSV()" class="btn-secondary ml-2 no-print inline-flex items-center">
+                                    <i class="fa-regular fa-file-excel mr-1"></i> Export CSV
+                                </button>
                                 <a href="distribution_history.php" class="btn-secondary ml-2">Reset</a>
                             </div>
                         </form>
@@ -872,6 +898,40 @@ include './sidebar.php';
                 });
             }
         });
+
+        // Export distribution history to CSV
+        function exportToCSV() {
+            const data = <?php echo json_encode($all_distributions_export); ?>;
+            const headers = ['Reference No.', 'Date Distributed', 'Recipient Name', 'Department', 'Copies Count', 'Distributed By', 'Newspapers List'];
+            const rows = [headers.join(',')];
+            
+            data.forEach(item => {
+                const row = [
+                    `"${item.reference}"`,
+                    `"${item.date_distributed}"`,
+                    `"${item.distributed_to.replace(/"/g, '""')}"`,
+                    `"${item.department.replace(/"/g, '""')}"`,
+                    item.copies,
+                    `"${item.distributed_by.replace(/"/g, '""')}"`,
+                    `"${item.newspapers.replace(/"/g, '""')}"`
+                ];
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `distribution_history_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            if (typeof showToast === 'function') {
+                showToast('success', 'Export completed successfully!');
+            }
+        }
     </script>
 </body>
 

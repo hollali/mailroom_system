@@ -1340,48 +1340,54 @@ if (isset($_SESSION['toast'])) {
         // View Modal Functions
         function openViewModal(id) {
             fetch('documents.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax_action=get_document&id=${id}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const doc = data.document;
-                    document.getElementById('view_id').textContent = '#' + doc.id;
-                    document.getElementById('view_document_name').textContent = doc.document_name;
-                    document.getElementById('view_type_badge').textContent = (doc.type_name || 'Uncategorized');
-                    document.getElementById('view_origin').textContent = doc.origin || 'N/A';
-                    document.getElementById('view_copies').textContent = doc.copies_received;
-                    
-                    // Format timestamp
-                    if (doc.created_at || doc.date_received) {
-                        const dateStr = doc.created_at || doc.date_received;
-                        const dt = new Date(dateStr);
-                        document.getElementById('view_date').textContent = dt.toLocaleString('en-US', { 
-                            month: 'short', day: 'numeric', year: 'numeric', 
-                            hour: 'numeric', minute: '2-digit', hour12: true 
-                        });
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `ajax_action=get_document&id=${id}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const doc = data.document;
+                        document.getElementById('view_id').textContent = '#' + doc.id;
+                        document.getElementById('view_document_name').textContent = doc.document_name;
+                        document.getElementById('view_type_badge').textContent = (doc.type_name || 'Uncategorized');
+                        document.getElementById('view_origin').textContent = doc.origin || 'N/A';
+                        document.getElementById('view_copies').textContent = doc.copies_received;
+
+                        // Format timestamp
+                        if (doc.created_at || doc.date_received) {
+                            const dateStr = doc.created_at || doc.date_received;
+                            const dt = new Date(dateStr);
+                            document.getElementById('view_date').textContent = dt.toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true
+                            });
+                        } else {
+                            document.getElementById('view_date').textContent = 'N/A';
+                        }
+
+                        // Serial Number (reusing logic from table generator if possible, or simple fallback)
+                        const serial = doc.serial_number || ('DOC-' + doc.id.toString().padStart(6, '0'));
+                        document.getElementById('view_serial_display').textContent = serial;
+
+                        // Setup edit button in view modal
+                        document.getElementById('view_edit_btn').onclick = function() {
+                            closeViewModal();
+                            openEditModal(doc.id);
+                        };
+
+                        document.getElementById('viewDocumentModal').style.display = 'flex';
                     } else {
-                        document.getElementById('view_date').textContent = 'N/A';
+                        showToast(data.message, 'error');
                     }
-
-                    // Serial Number (reusing logic from table generator if possible, or simple fallback)
-                    const serial = doc.serial_number || ('DOC-' + doc.id.toString().padStart(6, '0'));
-                    document.getElementById('view_serial_display').textContent = serial;
-
-                    // Setup edit button in view modal
-                    document.getElementById('view_edit_btn').onclick = function() {
-                        closeViewModal();
-                        openEditModal(doc.id);
-                    };
-
-                    document.getElementById('viewDocumentModal').style.display = 'flex';
-                } else {
-                    showToast(data.message, 'error');
-                }
-            })
-            .catch(error => showToast('Error fetching document details', 'error'));
+                })
+                .catch(error => showToast('Error fetching document details', 'error'));
         }
 
         function closeViewModal() {
@@ -1391,35 +1397,37 @@ if (isset($_SESSION['toast'])) {
         // Edit Modal Functions
         function openEditModal(id) {
             fetch('documents.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax_action=get_document&id=${id}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const doc = data.document;
-                    document.getElementById('edit_id').value = doc.id;
-                    document.getElementById('edit_document_name').value = doc.document_name;
-                    document.getElementById('edit_type_id').value = doc.type_id;
-                    document.getElementById('edit_origin').value = doc.origin || '';
-                    document.getElementById('edit_copies_received').value = doc.copies_received;
-                    
-                    // Format timestamp for datetime-local
-                    if (doc.created_at) {
-                        const dt = new Date(doc.created_at);
-                        const localDt = new Date(dt.getTime() - (dt.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-                        document.getElementById('edit_date_received').value = localDt;
-                    } else if (doc.date_received) {
-                        document.getElementById('edit_date_received').value = doc.date_received + 'T00:00';
-                    }
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `ajax_action=get_document&id=${id}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const doc = data.document;
+                        document.getElementById('edit_id').value = doc.id;
+                        document.getElementById('edit_document_name').value = doc.document_name;
+                        document.getElementById('edit_type_id').value = doc.type_id;
+                        document.getElementById('edit_origin').value = doc.origin || '';
+                        document.getElementById('edit_copies_received').value = doc.copies_received;
 
-                    document.getElementById('editDocumentModal').style.display = 'flex';
-                } else {
-                    showToast(data.message, 'error');
-                }
-            })
-            .catch(error => showToast('Error fetching document details', 'error'));
+                        // Format timestamp for datetime-local
+                        if (doc.created_at) {
+                            const dt = new Date(doc.created_at);
+                            const localDt = new Date(dt.getTime() - (dt.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+                            document.getElementById('edit_date_received').value = localDt;
+                        } else if (doc.date_received) {
+                            document.getElementById('edit_date_received').value = doc.date_received + 'T00:00';
+                        }
+
+                        document.getElementById('editDocumentModal').style.display = 'flex';
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => showToast('Error fetching document details', 'error'));
         }
 
         function closeEditModal() {
@@ -1445,27 +1453,29 @@ if (isset($_SESSION['toast'])) {
             submitBtn.disabled = true;
 
             fetch('documents.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax_action=edit_document&id=${id}&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast(data.message, 'success');
-                    closeEditModal();
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showToast(data.message, 'error');
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `ajax_action=edit_document&id=${id}&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeEditModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                        submitBtn.innerHTML = originalText;
+                        submitBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred', 'error');
                     submitBtn.innerHTML = originalText;
                     submitBtn.disabled = false;
-                }
-            })
-            .catch(error => {
-                showToast('An error occurred', 'error');
-                submitBtn.innerHTML = originalText;
-                submitBtn.disabled = false;
-            });
+                });
         }
 
         // Delete Modal Functions
@@ -1489,27 +1499,29 @@ if (isset($_SESSION['toast'])) {
             btn.disabled = true;
 
             fetch('documents.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax_action=delete_document&id=${id}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast(data.message, 'success');
-                    closeDeleteModal();
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showToast(data.message, 'error');
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `ajax_action=delete_document&id=${id}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        closeDeleteModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred', 'error');
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                }
-            })
-            .catch(error => {
-                showToast('An error occurred', 'error');
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            });
+                });
         }
 
         // Close modals when clicking outside
@@ -1536,7 +1548,7 @@ if (isset($_SESSION['toast'])) {
         });
     </script>
     <!-- Floating Action Button -->
-    
+
 </body>
 
 </html>

@@ -286,6 +286,32 @@ $all_newspapers = $conn->query("SELECT n.*, nc.category_name
                                    CASE WHEN '$sort_by' = 'available_copies' THEN n.available_copies END $sort_order
                                LIMIT $offset, $limit");
 
+// Get all newspapers for export matching filters (without pagination limit)
+$all_newspapers_export = [];
+$export_res = $conn->query("SELECT n.*, nc.category_name 
+                            FROM newspapers n 
+                            LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
+                            $where_sql
+                            ORDER BY 
+                                CASE WHEN '$sort_by' = 'date_received' THEN n.date_received END $sort_order,
+                                CASE WHEN '$sort_by' = 'newspaper_name' THEN n.newspaper_name END $sort_order,
+                                CASE WHEN '$sort_by' = 'category_name' THEN nc.category_name END $sort_order,
+                                CASE WHEN '$sort_by' = 'status' THEN n.status END $sort_order,
+                                CASE WHEN '$sort_by' = 'available_copies' THEN n.available_copies END $sort_order");
+if ($export_res) {
+    while ($row = $export_res->fetch_assoc()) {
+        $all_newspapers_export[] = [
+            'id' => $row['id'],
+            'newspaper_name' => $row['newspaper_name'],
+            'newspaper_number' => $row['newspaper_number'],
+            'category_name' => $row['category_name'] ?? 'Uncategorized',
+            'date_received' => $row['date_received'] ? date('Y-m-d', strtotime($row['date_received'])) : '',
+            'status' => ucfirst($row['status']),
+            'available_copies' => $row['available_copies']
+        ];
+    }
+}
+
 // Get statistics
 $total_available = $conn->query("SELECT SUM(available_copies) as total FROM newspapers")->fetch_assoc()['total'] ?? 0;
 $total_categories = $conn->query("SELECT COUNT(*) as count FROM newspaper_categories")->fetch_assoc()['count'] ?? 0;
@@ -861,6 +887,10 @@ include './sidebar.php';
 
                             <button type="button" onclick="printNewspaperList()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
                                 <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
+                            </button>
+
+                            <button type="button" onclick="exportToCSV()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                                <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i>Export CSV
                             </button>
                         </form>
                     </div>
@@ -1717,6 +1747,40 @@ include './sidebar.php';
                 });
             });
         })();
+
+        // Export newspapers to CSV
+        function exportToCSV() {
+            const data = <?php echo json_encode($all_newspapers_export); ?>;
+            const headers = ['ID', 'Newspaper Name', 'Issue Number', 'Category', 'Date Received', 'Status', 'Available Copies'];
+            const rows = [headers.join(',')];
+            
+            data.forEach(item => {
+                const row = [
+                    item.id,
+                    `"${item.newspaper_name.replace(/"/g, '""')}"`,
+                    `"${item.newspaper_number.replace(/"/g, '""')}"`,
+                    `"${item.category_name.replace(/"/g, '""')}"`,
+                    `"${item.date_received}"`,
+                    `"${item.status}"`,
+                    item.available_copies
+                ];
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `newspapers_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            if (typeof showToast === 'function') {
+                showToast('success', 'Export completed successfully!');
+            }
+        }
     </script>
 </body>
 

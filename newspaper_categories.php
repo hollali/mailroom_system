@@ -48,6 +48,19 @@ $total_pages = ceil($total_categories / $limit);
 
 // Get categories with pagination
 $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMIT $offset, $limit");
+
+// Get all categories for export without limit/offset
+$all_categories_export = [];
+$export_res = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC");
+if ($export_res) {
+    while ($row = $export_res->fetch_assoc()) {
+        $all_categories_export[] = [
+            'id' => $row['id'],
+            'category_name' => $row['category_name'],
+            'created_at' => $row['created_at'] ? date('Y-m-d H:i:s', strtotime($row['created_at'])) : ''
+        ];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -201,10 +214,16 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
         <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Subscription</h1>
-                <button onclick="openModal()"
-                    class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Subscription
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="openModal()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
+                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Subscription
+                    </button>
+                    <button onclick="exportToCSV()"
+                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                        <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -490,6 +509,42 @@ $result = $conn->query("SELECT * FROM newspaper_categories ORDER BY id DESC LIMI
                 closeConfirmModal();
             }
         });
+
+        // Export categories to CSV
+        function exportToCSV() {
+            const data = <?php echo json_encode($all_categories_export); ?>;
+            const headers = ['ID', 'Category Name', 'Created At'];
+            const rows = [headers.join(',')];
+            
+            data.forEach(item => {
+                const row = [
+                    item.id,
+                    `"${item.category_name.replace(/"/g, '""')}"`,
+                    `"${item.created_at}"`
+                ];
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `newspaper_categories_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Show toast message using a temporary dynamic element
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-white border border-[#e5e5e5] rounded-md shadow-lg p-3 text-sm text-[#1e1e1e] z-50 flex items-center transition-opacity duration-500';
+            toast.innerHTML = '<i class="fa-regular fa-circle-check mr-2 text-[#4a4a4a]"></i> Export completed successfully!';
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
     </script>
 </body>
 

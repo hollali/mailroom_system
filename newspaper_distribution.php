@@ -230,6 +230,68 @@ while ($row = $today_recipients_query->fetch_assoc()) {
 
 $already_received_lookup = array_fill_keys($already_received_today, true);
 
+// Gather today's distribution status for CSV export
+$today_distribution_export = [];
+$recipients_export_query = $conn->query("
+    SELECT id, name
+    FROM recipients
+    WHERE COALESCE(is_active, 1) = 1
+    ORDER BY name
+");
+$today_dist_query = $conn->query("
+    SELECT distributed_to, department, copies, newspapers_list
+    FROM distribution
+    WHERE date_distributed = CURDATE()
+      AND (categories_list IS NOT NULL OR newspapers_list IS NOT NULL)
+");
+$today_dists = [];
+if ($today_dist_query) {
+    while ($row = $today_dist_query->fetch_assoc()) {
+        $key = $row['distributed_to'];
+        if ($row['department']) {
+            $key .= ' - ' . $row['department'];
+        }
+        $today_dists[$key] = [
+            'copies' => $row['copies'],
+            'list' => $row['newspapers_list']
+        ];
+    }
+}
+if ($recipients_export_query) {
+    while ($row = $recipients_export_query->fetch_assoc()) {
+        $full_name = $row['name'];
+        $individual_name = $full_name;
+        $department = '';
+        if (strpos($full_name, ' - ') !== false) {
+            $parts = explode(' - ', $full_name, 2);
+            $individual_name = $parts[0];
+            $department = $parts[1];
+        }
+        
+        $received = 'No';
+        $copies = 0;
+        $list = '';
+        
+        if (isset($today_dists[$full_name])) {
+            $received = 'Yes';
+            $copies = $today_dists[$full_name]['copies'];
+            $list = $today_dists[$full_name]['list'] ?? '';
+        } elseif (isset($today_dists[$individual_name])) {
+            $received = 'Yes';
+            $copies = $today_dists[$individual_name]['copies'];
+            $list = $today_dists[$individual_name]['list'] ?? '';
+        }
+        
+        $today_distribution_export[] = [
+            'name' => $individual_name,
+            'department' => $department,
+            'received_today' => $received,
+            'copies' => $copies,
+            'newspapers' => $list
+        ];
+    }
+}
+
 // Get toast message from session
 $toast = null;
 if (isset($_SESSION['toast'])) {
@@ -436,10 +498,15 @@ if (isset($_SESSION['toast'])) {
                         <h1 class="text-xl font-medium">Newspaper Distribution</h1>
                         <p class="text-sm text-gray-500 mt-1">Select subscriptions and recipients to distribute</p>
                     </div>
-                    <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
-                        <i class="fa-solid fa-hand-holding-hand"></i>
-                        <span>Distribute</span>
-                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="exportToCSV()" class="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100 text-gray-700 inline-flex items-center">
+                            <i class="fa-regular fa-file-excel mr-1 text-gray-500"></i>Export CSV
+                        </button>
+                        <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
+                            <i class="fa-solid fa-hand-holding-hand"></i>
+                            <span>Distribute</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -713,6 +780,38 @@ if (isset($_SESSION['toast'])) {
                 closeDistributeModal();
             }
         });
+
+        // Export today's distribution status to CSV
+        function exportToCSV() {
+            const data = <?php echo json_encode($today_distribution_export); ?>;
+            const headers = ['Recipient Name', 'Department', 'Received Today', 'Copies Count', 'Newspapers List'];
+            const rows = [headers.join(',')];
+            
+            data.forEach(item => {
+                const row = [
+                    `"${item.name.replace(/"/g, '""')}"`,
+                    `"${item.department.replace(/"/g, '""')}"`,
+                    `"${item.received_today}"`,
+                    item.copies,
+                    `"${item.newspapers.replace(/"/g, '""')}"`
+                ];
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `today_distribution_status_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            if (typeof showToast === 'function') {
+                showToast('success', 'Export completed successfully!');
+            }
+        }
     </script>
 </body>
 

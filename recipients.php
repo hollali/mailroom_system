@@ -217,6 +217,20 @@ $total_pages = ceil($total_recipients / $limit);
 // Get recipients with pagination
 $recipients = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, $order_sql LIMIT $offset, $limit");
 
+// Get all recipients for export matching filters (without pagination limit)
+$all_recipients_export = [];
+$export_res = $conn->query("SELECT * FROM recipients $where_sql ORDER BY is_active DESC, $order_sql");
+if ($export_res) {
+    while ($row = $export_res->fetch_assoc()) {
+        $all_recipients_export[] = [
+            'id' => $row['id'],
+            'name' => $row['name'],
+            'is_active' => $row['is_active'] ? 'Active' : 'Inactive',
+            'created_at' => $row['created_at'] ? date('Y-m-d H:i:s', strtotime($row['created_at'])) : ''
+        ];
+    }
+}
+
 $active_recipients = (int)(($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 1"))->fetch_assoc()['total'] ?? 0);
 $inactive_recipients = (int)(($conn->query("SELECT COUNT(*) as total FROM recipients WHERE is_active = 0"))->fetch_assoc()['total'] ?? 0);
 $has_active_filters = $search !== '' || $status_filter !== 'all' || $sort_filter !== 'name_asc';
@@ -515,9 +529,14 @@ include './sidebar.php';
                         <h1 class="text-2xl font-medium text-[#1e1e1e]">Manage Recipients</h1>
                         <p class="text-sm text-[#6e6e6e] mt-1">Add, edit, and manage distribution recipients</p>
                     </div>
-                    <button onclick="openAddModal()" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                        <i class="fa-solid fa-plus mr-1"></i> Add Recipient
-                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="openAddModal()" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
+                            <i class="fa-solid fa-plus mr-1"></i> Add Recipient
+                        </button>
+                        <button onclick="exportToCSV()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
+                            <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1176,6 +1195,43 @@ include './sidebar.php';
                 closeNotificationModal();
             }
         });
+
+        // Export recipients to CSV
+        function exportToCSV() {
+            const data = <?php echo json_encode($all_recipients_export); ?>;
+            const headers = ['ID', 'Name', 'Status', 'Created At'];
+            const rows = [headers.join(',')];
+            
+            data.forEach(item => {
+                const row = [
+                    item.id,
+                    `"${item.name.replace(/"/g, '""')}"`,
+                    `"${item.is_active}"`,
+                    `"${item.created_at}"`
+                ];
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `recipients_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Show toast message using a temporary dynamic element
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-white border border-[#e5e5e5] rounded-md shadow-lg p-3 text-sm text-[#1e1e1e] z-50 flex items-center transition-opacity duration-500';
+            toast.innerHTML = '<i class="fa-regular fa-circle-check mr-2 text-[#4a4a4a]"></i> Export completed successfully!';
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
     </script>
 </body>
 
