@@ -595,7 +595,7 @@ if (isset($_SESSION['toast'])) {
         <?php include './sidebar.php'; ?>
 
         <!-- Main Content -->
-        <main class="flex-1 lg:ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
             <!-- Header -->
             <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
@@ -655,8 +655,8 @@ if (isset($_SESSION['toast'])) {
                                     <th onclick="sortTable(0)">Serial # <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(1)">Document Name <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(2)">Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(3)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
-                                    <th onclick="sortTable(4)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th class="hidden md:table-cell" onclick="sortTable(3)">Origin <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
+                                    <th class="hidden md:table-cell" onclick="sortTable(4)">Received At <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th onclick="sortTable(5)">Total Copies <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i></th>
                                     <th>Actions</th>
                                 </tr>
@@ -687,8 +687,8 @@ if (isset($_SESSION['toast'])) {
                                                     <?php echo htmlspecialchars($doc['document_type'] ?? 'Uncategorized'); ?>
                                                 </span>
                                             </td>
-                                            <td><?php echo htmlspecialchars($doc['origin'] ?? 'N/A'); ?> </td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap">
+                                            <td class="hidden md:table-cell"><?php echo htmlspecialchars($doc['origin'] ?? 'N/A'); ?> </td>
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap hidden md:table-cell">
                                                 <?php echo formatTimestampDisplay($doc['received_timestamp'] ?? null); ?>
                                             </td>
                                             <td class="font-mono"><?php echo $total; ?> </td>

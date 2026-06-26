@@ -572,7 +572,7 @@ try {
     <div class="flex">
         <?php include 'sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-60 min-h-screen bg-[#f5f5f4]">
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen bg-[#f5f5f4]">
             <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e7e5e4] bg-white">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -592,7 +592,7 @@ try {
                     </div>
                 <?php endif; ?>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
                     <div class="stat-box">
                         <div class="stat-label">Documents</div>
                         <div class="stat-value"><?php echo number_format($stats['documents']); ?></div>
@@ -631,7 +631,7 @@ try {
                                         <tr>
                                             <th>Tracking ID</th>
                                             <th>Recipient</th>
-                                            <th>Sender</th>
+                                            <th class="hidden md:table-cell">Sender</th>
                                             <th>Status</th>
                                             <th>Received</th>
                                         </tr>
@@ -642,7 +642,7 @@ try {
                                                 <tr>
                                                     <td class="font-medium text-[#1c1917]"><?php echo htmlspecialchars($parcel['tracking_id']); ?></td>
                                                     <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
-                                                    <td class="muted"><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                                    <td class="muted hidden md:table-cell"><?php echo htmlspecialchars($parcel['sender']); ?></td>
                                                     <td>
                                                         <span class="status-badge <?php echo $parcel['status'] === 'Picked Up' ? 'status-picked' : 'status-pending'; ?>">
                                                             <?php echo htmlspecialchars($parcel['status']); ?>

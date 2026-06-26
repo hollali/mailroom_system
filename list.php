@@ -376,8 +376,6 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
-// Include sidebar
-include './sidebar.php';
 ?>
 
 <!DOCTYPE html>
@@ -749,7 +747,8 @@ include './sidebar.php';
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="flex">
-        <main class="flex-1 lg:ml-60 min-h-screen">
+        <?php include './sidebar.php'; ?>
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
             <!-- Header -->
             <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
@@ -933,9 +932,9 @@ include './sidebar.php';
                 <table>
                     <thead>
                         <tr class="bg-[#fafafa]">
-                            <th class="text-xs">ID</th>
+                            <th class="text-xs hidden md:table-cell">ID</th>
                             <th class="text-xs">Newspaper</th>
-                            <th class="text-xs">Issue #</th>
+                            <th class="text-xs hidden md:table-cell">Issue #</th>
                             <th class="text-xs">Category</th>
                             <th class="text-xs">Date Received</th>
                             <th class="text-xs">Status</th>
@@ -950,9 +949,9 @@ include './sidebar.php';
                                     data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
                                     data-category="<?php echo (int) ($paper['category_id'] ?? 0); ?>"
                                     data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
-                                    <td class="text-sm text-[#6e6e6e]"><?php echo $paper['id']; ?></td>
+                                    <td class="text-sm text-[#6e6e6e] hidden md:table-cell"><?php echo $paper['id']; ?></td>
                                     <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($paper['newspaper_name']); ?></td>
-                                    <td class="text-sm font-mono text-[#1e1e1e] issue-number"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
+                                    <td class="text-sm font-mono text-[#1e1e1e] issue-number hidden md:table-cell"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
                                     <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
                                     <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
                                     <td class="text-sm">

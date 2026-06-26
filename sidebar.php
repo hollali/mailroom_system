@@ -3,95 +3,181 @@
 // Get current script path for active link detection
 $current_page = basename($_SERVER['SCRIPT_NAME']);
 ?>
-<!DOCTYPE html>
-<html lang="en">
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mail Room</title>
-    <link rel="icon" type="image/png" href="images/logo.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+    /* Sidebar slide transition */
+    .sidebar {
+        transition: transform 0.3s ease-in-out;
+    }
 
-        /* Sidebar slide transition */
-        .sidebar {
-            transition: transform 0.3s ease-in-out;
-        }
+    /* Active link styling */
+    .nav-link.active {
+        background-color: #f0f0f0;
+        color: #1e1e1e;
+    }
 
-        /* Active link styling */
-        .nav-link.active {
-            background-color: #f0f0f0;
-            color: #1e1e1e;
-        }
+    .nav-link {
+        color: #6e6e6e;
+    }
 
-        .nav-link {
-            color: #6e6e6e;
-        }
+    .nav-link:hover {
+        background-color: #f5f5f4;
+        color: #1e1e1e;
+    }
 
-        .nav-link:hover {
-            background-color: #f5f5f4;
-            color: #1e1e1e;
-        }
+    /* Enable vertical scrolling for sidebar */
+    .sidebar {
+        overflow-y: auto;
+        max-height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
 
-        /* Enable vertical scrolling for sidebar */
-        .sidebar {
-            overflow-y: auto;
-            max-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+    /* Make navigation section scrollable */
+    .sidebar nav {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding-bottom: 20px;
+    }
 
-        /* Make navigation section scrollable */
-        .sidebar nav {
-            flex: 1 1 auto;
-            overflow-y: auto;
-            padding-bottom: 20px;
-            /* Add some space before user info */
-        }
+    /* Keep user info fixed at bottom */
+    .user-info-container {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        border-top: 1px solid #e5e5e5;
+        margin-top: auto;
+        width: 100%;
+    }
 
-        /* Keep user info fixed at bottom */
-        .user-info-container {
-            position: sticky;
-            bottom: 0;
-            background: white;
-            border-top: 1px solid #e5e5e5;
-            margin-top: auto;
-            width: 100%;
-        }
+    /* Custom scrollbar styling */
+    .sidebar::-webkit-scrollbar {
+        width: 4px;
+    }
 
-        /* Custom scrollbar styling (optional) */
-        .sidebar::-webkit-scrollbar {
-            width: 4px;
-        }
+    .sidebar::-webkit-scrollbar-track {
+        background: #f1f1f1;
+    }
 
-        .sidebar::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
+    .sidebar::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+    }
 
-        .sidebar::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 4px;
-        }
+    .sidebar::-webkit-scrollbar-thumb:hover {
+        background: #a1a1a1;
+    }
 
-        .sidebar::-webkit-scrollbar-thumb:hover {
-            background: #a1a1a1;
-        }
-    </style>
-</head>
-
-<body class="bg-[#f5f5f4] text-[#1e1e1e]">
+    /* Shared component styles */
+    .stat-box {
+        background: white;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        padding: 20px;
+    }
+    .stat-box .stat-label {
+        font-size: 0.75rem;
+        color: #9e9e9e;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+    }
+    .stat-box .stat-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1e1e1e;
+    }
+    .panel {
+        background: white;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .panel-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    .panel-body {
+        padding: 20px;
+    }
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 1px solid #e5e5e5;
+        background: white;
+        color: #1e1e1e;
+    }
+    .btn:hover { background: #f5f5f4; border-color: #cfcfcd; }
+    .btn-primary {
+        background: #1e1e1e;
+        color: white;
+        border-color: #1e1e1e;
+    }
+    .btn-primary:hover { background: #2d2d2d; }
+    .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+    .status-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .status-picked {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+    .status-pending {
+        background: #fff8e1;
+        color: #f57f17;
+    }
+</style>
 
     <!-- Sidebar -->
-    <div id="sidebar" class="sidebar w-60 lg:w-60 bg-white border-r border-[#e5e5e5] min-h-screen fixed left-0 top-0 overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-all duration-300 z-40">
+    <style>
+    :root { --sidebar-width: 240px; }
+    .sidebar {
+        width: 240px; transition: width 0.25s ease, transform 0.3s ease-in-out;
+    }
+    .sidebar-toggle-btn {
+        width: 28px; height: 28px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #e5e5e5; background: #fff; color: #9e9e9e;
+        border-radius: 6px; cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .sidebar-toggle-btn:hover { background: #f5f5f4; color: #1e1e1e; }
+    html[data-sidebar-collapsed="true"] { --sidebar-width: 60px; }
+    html[data-sidebar-collapsed="true"] .sidebar {
+        width: 60px; transform: translateX(0) !important;
+    }
+    html[data-sidebar-collapsed="true"] .sidebar-text { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar .nav-link { justify-content: center; gap: 0; padding-left: 0; padding-right: 0; }
+    html[data-sidebar-collapsed="true"] .sidebar .user-info-container { justify-content: center; }
+    html[data-sidebar-collapsed="true"] .sidebar nav { padding-left: 8px; padding-right: 8px; }
+    html[data-sidebar-collapsed="true"] .sidebar .logo-section { justify-content: center; gap: 0; padding: 6px 0; }
+    html[data-sidebar-collapsed="true"] .sidebar .logo-section img { display: none; }
+    html[data-sidebar-collapsed="true"] .sidebar .logo-section .sidebar-toggle-btn { width: 16px; height: 16px; font-size: 10px; border: none; box-shadow: none; background: transparent; color: #6e6e6e; }
+    .lg\:ml-\[var\(--sidebar-width\)\] { transition: margin-left 0.25s ease; }
+</style>
+<script>if(localStorage.getItem('sidebarCollapsed')==='true'){if(window.innerWidth>=1024)document.documentElement.setAttribute('data-sidebar-collapsed','true');else localStorage.setItem('sidebarCollapsed','false');}</script>
+
+<div id="sidebar" class="sidebar w-60 lg:w-60 bg-white border-r border-[#e5e5e5] min-h-screen fixed left-0 top-0 overflow-y-auto transform -translate-x-full lg:translate-x-0 transition-all duration-300 z-40">
         <!-- Logo (always visible) -->
-        <div class="px-4 py-5 flex items-center gap-2 sticky top-0 bg-white z-10">
-            <img src="images/logo.png" alt="Mail Room" class="w-6 h-6">
+        <div class="px-4 py-5 flex items-center gap-2 sticky top-0 bg-white z-10 logo-section">
+            <img src="images/logo.png" alt="Mail Room" class="w-6 h-6 shrink-0">
             <span class="text-[#1e1e1e] text-base font-medium sidebar-text">LIBRARY</span>
+            <button id="sidebarToggle" class="sidebar-toggle-btn ml-auto" title="Toggle sidebar" aria-label="Toggle sidebar">
+                <i class="fa-solid fa-bars-staggered"></i>
+            </button>
         </div>
 
         <!-- Navigation (scrollable area) -->
@@ -163,6 +249,14 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
                 <i class="fa-solid fa-box w-4"></i>
                 <span class="sidebar-text">Parcel Management</span>
             </a>
+
+            <!-- Settings -->
+            <div class="text-xs text-[#9e9e9e] px-3 pt-5 pb-1 sidebar-text">SYSTEM</div>
+            <a href="settings.php"
+                class="nav-link flex items-center gap-3 px-3 py-2 text-sm rounded-md mb-1 <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
+                <i class="fa-solid fa-gear w-4"></i>
+                <span class="sidebar-text">Settings</span>
+            </a>
         </nav>
 
         <!-- User info (fixed at bottom) -->
@@ -177,60 +271,52 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
         </div>
     </div>
 
-    <!-- Mobile Menu Button -->
-    <button id="mobileMenuBtn" class="lg:hidden fixed top-4 left-4 z-50 bg-white border border-[#e5e5e5] text-[#1e1e1e] p-2 rounded-md shadow-md">
-        <i class="fa-solid fa-bars"></i>
-    </button>
-
     <!-- Overlay for mobile -->
     <div id="sidebarOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-30 lg:hidden"></div>
 
     <script>
         const sidebar = document.getElementById('sidebar');
-        const mobileBtn = document.getElementById('mobileMenuBtn');
         const overlay = document.getElementById('sidebarOverlay');
 
-        // Function to close sidebar
         function closeSidebar() {
             sidebar.classList.add('-translate-x-full');
             overlay.classList.add('hidden');
         }
 
-        // Function to open sidebar
         function openSidebar() {
             sidebar.classList.remove('-translate-x-full');
             overlay.classList.remove('hidden');
         }
 
-        // Mobile toggle
-        if (mobileBtn) {
-            mobileBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (sidebar.classList.contains('-translate-x-full')) {
-                    openSidebar();
-                } else {
-                    closeSidebar();
-                }
-            });
-        }
-
-        // Close sidebar when clicking overlay
         if (overlay) {
             overlay.addEventListener('click', closeSidebar);
         }
 
-        // Close sidebar on window resize if in desktop mode
         window.addEventListener('resize', function() {
-            if (window.innerWidth >= 1024) { // lg breakpoint
+            if (window.innerWidth >= 1024) {
                 sidebar.classList.remove('-translate-x-full');
                 if (overlay) overlay.classList.add('hidden');
             }
         });
 
-        // Prevent closing when clicking inside sidebar
-        sidebar.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (window.innerWidth < 1024) {
+                    sidebar.classList.contains('-translate-x-full') ? openSidebar() : closeSidebar();
+                } else {
+                    const collapsed = document.documentElement.getAttribute('data-sidebar-collapsed') === 'true';
+                    if (collapsed) {
+                        document.documentElement.removeAttribute('data-sidebar-collapsed');
+                        localStorage.setItem('sidebarCollapsed', 'false');
+                    } else {
+                        document.documentElement.setAttribute('data-sidebar-collapsed', 'true');
+                        localStorage.setItem('sidebarCollapsed', 'true');
+                    }
+                }
+            });
+        }
 
         // Highlight current page in navigation
         document.addEventListener('DOMContentLoaded', function() {
@@ -254,6 +340,3 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
             });
         });
     </script>
-</body>
-
-</html>

@@ -491,7 +491,7 @@ if (isset($_SESSION['toast'])) {
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="flex">
-        <main class="flex-1 lg:ml-60">
+        <main class="flex-1 lg:ml-[var(--sidebar-width)]">
             <div class="p-6">
                 <div class="flex justify-between items-center mb-6">
                     <div>

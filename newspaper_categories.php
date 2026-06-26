@@ -209,7 +209,7 @@ if ($export_res) {
 <body class="bg-[#f5f5f4]">
     <?php include './sidebar.php'; ?>
 
-    <main class="lg:ml-60 min-h-screen">
+    <main class="lg:ml-[var(--sidebar-width)] min-h-screen">
         <!-- Header -->
         <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
@@ -248,7 +248,7 @@ if ($export_res) {
                 <table>
                     <thead>
                         <tr class="bg-[#fafafa]">
-                            <th class="text-xs">ID</th>
+                            <th class="text-xs hidden md:table-cell">ID</th>
                             <th class="text-xs">Category Name</th>
                             <th class="text-xs">Created</th>
                             <th class="text-xs">Actions</th>
@@ -258,7 +258,7 @@ if ($export_res) {
                         <?php if ($result && $result->num_rows > 0): ?>
                             <?php while ($row = $result->fetch_assoc()): ?>
                                 <tr class="hover:bg-[#fafafa] category-row">
-                                    <td class="text-sm text-[#6e6e6e]"><?php echo $row['id']; ?></td>
+                                    <td class="text-sm text-[#6e6e6e] hidden md:table-cell"><?php echo $row['id']; ?></td>
                                     <td class="text-sm font-medium text-[#1e1e1e]">
                                         <?php echo htmlspecialchars($row['category_name']); ?>
                                     </td>

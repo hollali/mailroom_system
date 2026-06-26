@@ -729,7 +729,7 @@ if (isset($_SESSION['toast'])) {
 
     <div id="toastContainer" class="toast-container"></div>
 
-    <main class="lg:ml-60 min-h-screen">
+    <main class="lg:ml-[var(--sidebar-width)] min-h-screen">
         <div class="history-header px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
@@ -846,10 +846,10 @@ if (isset($_SESSION['toast'])) {
                             <tr>
                                 <th onclick="sortTable(0)">Reference <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th onclick="sortTable(1)">Document <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th onclick="sortTable(2)">Type <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th class="hidden md:table-cell" onclick="sortTable(2)">Type <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th onclick="sortTable(3)">Copies Distributed <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th onclick="sortTable(4)">Date <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th onclick="sortTable(5)">Recorded At <i class="fa-solid fa-sort sort-icon"></i></th>
+                                <th class="hidden md:table-cell" onclick="sortTable(5)">Recorded At <i class="fa-solid fa-sort sort-icon"></i></th>
                                 <th>Status</th>
                                 <th class="no-print"></th>
                             </tr>
@@ -866,7 +866,7 @@ if (isset($_SESSION['toast'])) {
                                                 <?php echo htmlspecialchars($row['document_name']); ?>
                                             </a>
                                         </td>
-                                        <td>
+                                        <td class="hidden md:table-cell">
                                             <?php if (!empty($row['document_type'])): ?>
                                                 <span class="badge badge-type">
                                                     <i class="fa-solid fa-tag mr-1" style="font-size:10px"></i>
@@ -880,7 +880,7 @@ if (isset($_SESSION['toast'])) {
                                             <span class="badge badge-count"><?php echo (int)$row['number_distributed']; ?></span>
                                         </td>
                                         <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
-                                        <td class="text-[#78716c] text-sm whitespace-nowrap">
+                                        <td class="text-[#78716c] text-sm whitespace-nowrap hidden md:table-cell">
                                             <?php echo formatTimestampDisplay($row['created_at']); ?>
                                         </td>
                                         <td>

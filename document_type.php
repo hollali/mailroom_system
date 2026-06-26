@@ -374,9 +374,6 @@ if (isset($_SESSION['flash'])) {
     unset($_SESSION['flash']);
 }
 
-// Include sidebar
-include './sidebar.php';
-
 // Get all document types for list view
 $typesData = ['data' => [], 'total' => 0];
 $types = [];
@@ -616,7 +613,9 @@ if ($action == 'list') {
 </head>
 
 <body class="bg-[#f5f5f4]">
-    <main class="lg:ml-60 min-h-screen">
+    <div class="flex">
+        <?php include './sidebar.php'; ?>
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
         <!-- Header -->
         <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
@@ -698,7 +697,7 @@ if ($action == 'list') {
                     <table id="typesTable">
                         <thead>
                             <tr class="bg-[#fafafa]">
-                                <th onclick="sortTable('id')" class="<?php echo $sort_by == 'id' ? 'active-sort' : ''; ?>">
+                                <th onclick="sortTable('id')" class="hidden md:table-cell <?php echo $sort_by == 'id' ? 'active-sort' : ''; ?>">
                                     ID
                                     <?php if ($sort_by == 'id'): ?>
                                         <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
@@ -710,7 +709,7 @@ if ($action == 'list') {
                                         <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
                                     <?php endif; ?>
                                 </th>
-                                <th onclick="sortTable('description')" class="<?php echo $sort_by == 'description' ? 'active-sort' : ''; ?>">
+                                <th onclick="sortTable('description')" class="hidden md:table-cell <?php echo $sort_by == 'description' ? 'active-sort' : ''; ?>">
                                     Description
                                     <?php if ($sort_by == 'description'): ?>
                                         <i class="fa-solid fa-chevron-<?php echo $sort_order == 'ASC' ? 'up' : 'down'; ?> sort-icon"></i>
@@ -737,9 +736,9 @@ if ($action == 'list') {
                                 <?php foreach ($types as $type): ?>
                                     <tr class="hover:bg-[#fafafa] type-row" id="row-<?php echo $type['id']; ?>"
                                         data-search="<?php echo strtolower(htmlspecialchars(trim($type['id'] . ' ' . ($type['type_name'] ?? '') . ' ' . ($type['description'] ?? '') . ' ' . date('M j, Y', strtotime($type['created_at']))))); ?>">
-                                        <td class="text-sm text-[#6e6e6e]"><?php echo $type['id']; ?></td>
+                                        <td class="text-sm text-[#6e6e6e] hidden md:table-cell"><?php echo $type['id']; ?></td>
                                         <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($type['type_name']); ?></td>
-                                        <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
+                                        <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo htmlspecialchars($type['description'] ?? '-'); ?></td>
                                         <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($type['created_at'])); ?></td>
                                         <td class="text-sm">
                                             <div class="flex gap-2">
@@ -1377,6 +1376,7 @@ if ($action == 'list') {
             }
         });
     </script>
+    </div>
 </body>
 
 </html>

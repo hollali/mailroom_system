@@ -239,7 +239,6 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
-include './sidebar.php';
 ?>
 
 <!DOCTYPE html>
@@ -521,15 +520,14 @@ include './sidebar.php';
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-60">
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h1 class="text-xl font-medium">Distribution History</h1>
-                        <p class="text-sm text-gray-500 mt-1">View and manage distribution records</p>
-                    </div>
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
+            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
+                <div>
+                    <h1 class="text-2xl font-medium text-[#1e1e1e]">Distribution History</h1>
+                    <p class="text-sm text-[#6e6e6e] mt-1">View and manage distribution records</p>
                 </div>
-
+            </div>
+            <div class="p-4 lg:p-8">
                 <?php if ($last_distribution): ?>
                     <div class="notification" id="lastDistributionNotification">
                         <div>
@@ -599,9 +597,9 @@ include './sidebar.php';
                                     <th>Reference No.</th>
                                     <th>Date</th>
                                     <th>Recipient</th>
-                                    <th>Department</th>
+                                    <th class="hidden md:table-cell">Department</th>
                                     <th>Count</th>
-                                    <th>Distributed By</th>
+                                    <th class="hidden md:table-cell">Distributed By</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -613,9 +611,9 @@ include './sidebar.php';
                                             <td class="text-gray-500 font-mono"><?php echo htmlspecialchars($distribution_reference); ?></td>
                                             <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
                                             <td class="font-medium"><?php echo htmlspecialchars($row['distributed_to']); ?></td>
-                                            <td><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
+                                            <td class="hidden md:table-cell"><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
                                             <td><?php echo (int)$row['copies']; ?></td>
-                                            <td><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
+                                            <td class="hidden md:table-cell"><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
                                             <td class="whitespace-nowrap">
                                                 <button onclick="viewDistribution(<?php echo $row['id']; ?>)"
                                                     class="action-btn" title="View">

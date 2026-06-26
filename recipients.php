@@ -268,8 +268,6 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
-// Include sidebar
-include './sidebar.php';
 ?>
 
 <!DOCTYPE html>
@@ -521,7 +519,8 @@ include './sidebar.php';
 
 <body class="bg-[#f5f5f4]">
     <div class="flex">
-        <main class="flex-1 lg:ml-60 min-h-screen">
+        <?php include './sidebar.php'; ?>
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
             <!-- Header -->
             <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
@@ -644,7 +643,7 @@ include './sidebar.php';
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">#</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Recipient Name</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Status</th>
-                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Created</th>
+                                        <th class="text-left p-3 text-xs font-medium text-[#6e6e6e] hidden md:table-cell">Created</th>
                                         <th class="text-left p-3 text-xs font-medium text-[#6e6e6e]">Actions</th>
                                     </tr>
                                 </thead>
@@ -671,7 +670,7 @@ include './sidebar.php';
                                                     </span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td class="p-3 text-sm text-[#6e6e6e]">
+                                            <td class="p-3 text-sm text-[#6e6e6e] hidden md:table-cell">
                                                 <?php echo date('M j, Y', strtotime($recipient['created_at'])); ?>
                                             </td>
                                             <td class="p-3">

@@ -547,7 +547,7 @@ $recent_parcels = $conn->query("
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-60 min-h-screen">
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
             <!-- Simple header -->
             <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
                 <div class="flex justify-between items-center">
@@ -682,11 +682,11 @@ $recent_parcels = $conn->query("
                                 <thead>
                                     <tr class="bg-[#fafafa]">
                                         <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs">Description</th>
+                                        <th class="text-xs hidden md:table-cell">Description</th>
                                         <th class="text-xs">Sender</th>
                                         <th class="text-xs">Recipient</th>
                                         <th class="text-xs">Received Timestamp</th>
-                                        <th class="text-xs">Received By</th>
+                                        <th class="text-xs hidden md:table-cell">Received By</th>
                                         <th class="text-xs">Status</th>
                                         <th class="text-xs">Actions</th>
                                     </tr>
@@ -698,11 +698,11 @@ $recent_parcels = $conn->query("
                                                 data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>"
                                                 data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
                                                 <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                                <td class="text-sm text-[#1e1e1e]"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
+                                                <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                                 <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
                                                 <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
-                                                <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['received_by']; ?></td>
+                                                <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo $parcel['received_by']; ?></td>
                                                 <td class="text-sm">
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
                                                         <span class="badge badge-warning">Pending</span>
@@ -823,11 +823,11 @@ $recent_parcels = $conn->query("
                                 <thead>
                                     <tr class="bg-[#fafafa]">
                                         <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs">Description</th>
+                                        <th class="text-xs hidden md:table-cell">Description</th>
                                         <th class="text-xs">Sender</th>
                                         <th class="text-xs">Recipient</th>
                                         <th class="text-xs">Received Timestamp</th>
-                                        <th class="text-xs">Picked Up Timestamp</th>
+                                        <th class="text-xs hidden md:table-cell">Picked Up Timestamp</th>
                                         <th class="text-xs">Status</th>
                                         <th class="text-xs">Actions</th>
                                     </tr>
@@ -841,11 +841,11 @@ $recent_parcels = $conn->query("
                                             data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
                                             data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
                                             <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
+                                            <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
                                             <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></td>
+                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap hidden md:table-cell"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></td>
                                             <td class="text-sm">
                                                 <?php if ($parcel['status'] == 'Pending'): ?>
                                                     <span class="badge badge-warning">Pending</span>
@@ -977,12 +977,12 @@ $recent_parcels = $conn->query("
                                 <thead>
                                     <tr class="bg-[#fafafa]">
                                         <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs">Description</th>
+                                        <th class="text-xs hidden md:table-cell">Description</th>
                                         <th class="text-xs">Sender</th>
                                         <th class="text-xs">Recipient</th>
                                         <th class="text-xs">Received</th>
                                         <th class="text-xs">Status</th>
-                                        <th class="text-xs">Pickup Info</th>
+                                        <th class="text-xs hidden md:table-cell">Pickup Info</th>
                                         <th class="text-xs">Actions</th>
                                     </tr>
                                 </thead>
@@ -1000,7 +1000,7 @@ $recent_parcels = $conn->query("
                                             data-picker="<?php echo strtolower($parcel['picked_by'] ?? ''); ?>"
                                             data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>">
                                             <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] max-w-[200px] truncate"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
+                                            <td class="text-sm text-[#1e1e1e] max-w-[200px] truncate hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
                                             <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
                                             <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
@@ -1011,7 +1011,7 @@ $recent_parcels = $conn->query("
                                                     <span class="badge badge-success">Picked Up</span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td class="text-sm text-[#1e1e1e]">
+                                            <td class="text-sm text-[#1e1e1e] hidden md:table-cell">
                                                 <?php if ($parcel['picked_by']): ?>
                                                     <div class="text-xs">
                                                         <span class="font-medium"><?php echo $parcel['picked_by']; ?></span>

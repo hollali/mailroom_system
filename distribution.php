@@ -752,7 +752,7 @@ if (isset($_SESSION['toast'])) {
                 display: block !important;
             }
 
-            .lg\:ml-60 {
+            .lg\:ml-\[var\(--sidebar-width\)\] {
                 margin-left: 0 !important;
             }
 
@@ -821,12 +821,12 @@ if (isset($_SESSION['toast'])) {
 </head>
 
 <body class="bg-[#f5f5f4]">
-    <?php include 'sidebar.php'; ?>
-
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <div class="lg:ml-60 min-h-screen">
+    <div class="flex">
+        <?php include 'sidebar.php'; ?>
+        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
         <!-- Header -->
         <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
             <div class="flex justify-between items-center">
@@ -879,7 +879,7 @@ if (isset($_SESSION['toast'])) {
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(0)">
                                     Document <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(1)">
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0] hidden md:table-cell" onclick="sortTable(1)">
                                     Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(2)">
@@ -888,7 +888,7 @@ if (isset($_SESSION['toast'])) {
                                 <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
                                     Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(4)">
+                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0] hidden md:table-cell" onclick="sortTable(4)">
                                     Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
                                 </th>
                                 <th class="p-3">Status</th>
@@ -909,7 +909,7 @@ if (isset($_SESSION['toast'])) {
                                                 <?php echo htmlspecialchars($row['document_name']); ?>
                                             </a>
                                         </td>
-                                        <td class="p-3">
+                                        <td class="p-3 hidden md:table-cell">
                                             <?php if (!empty($row['document_type'])): ?>
                                                 <span class="badge badge-info">
                                                     <i class="fa-solid fa-tag mr-1"></i>
@@ -921,7 +921,7 @@ if (isset($_SESSION['toast'])) {
                                         </td>
                                         <td class="p-3 font-mono"><?php echo $row['number_distributed'] ?? 0; ?></td>
                                         <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
-                                        <td class="p-3 whitespace-nowrap"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
+                                        <td class="p-3 whitespace-nowrap hidden md:table-cell"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
                                         <td class="p-3">
                                             <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
                                             <span class="badge <?php echo $status === 'withdrawn' ? 'badge-danger' : 'badge-success'; ?>">
@@ -1262,8 +1262,10 @@ if (isset($_SESSION['toast'])) {
             </div>
         </div>
     </div>
+</main>
+</div>
 
-    <script>
+<script>
         // Show toast notification from PHP session
         <?php if ($toast): ?>
                 (function() {
