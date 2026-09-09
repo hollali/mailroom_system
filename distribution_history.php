@@ -1,36 +1,15 @@
 <?php
 // distribution_history.php - View all distribution records
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 session_start();
 
-// Helper function to format categories list for display
-function formatCategoriesList($categories_list, $newspapers_list = null)
-{
-    $list = $newspapers_list ? $newspapers_list : $categories_list;
-    if (empty($list)) {
-        return '—';
-    }
-
-    $items = explode(', ', $list);
-    $html = '';
-    foreach ($items as $item) {
-        $html .= '<span class="category-badge">' . htmlspecialchars(trim($item)) . '</span>';
-    }
-    return $html;
-}
-
-function generateDistributionReference($id, $date_distributed = null)
-{
-    $date_part = date('Ymd', strtotime($date_distributed ?: 'now'));
-    return 'DIST-' . $date_part . '-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
-}
-
 // Handle Delete Distribution
-if (isset($_GET['delete_distribution'])) {
-    $id = (int)$_GET['delete_distribution'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution'])) {
+    csrf_check_post();
+    $id = (int)$_POST['delete_distribution'];
 
     $conn->begin_transaction();
 
@@ -119,6 +98,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_distribution' && isset($_GET[
 
 // AJAX: Dismiss last distribution notification
 if (isset($_POST['ajax']) && $_POST['ajax'] === 'dismiss_last_distribution') {
+    csrf_check_post();
     unset($_SESSION['last_distribution']);
     echo json_encode(['success' => true]);
     exit();
@@ -134,6 +114,9 @@ $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $department_filter = isset($_GET['department']) ? trim($_GET['department']) : '';
 $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+
+$has_active_filters = $search !== '' || $department_filter !== ''
+    || $date_from !== '' || $date_to !== '';
 
 // Build where clause
 $where_clauses = [];
@@ -182,7 +165,7 @@ $count_stmt->execute();
 $total_distributions = $count_stmt->get_result()->fetch_assoc()['total'];
 $count_stmt->close();
 
-$total_pages = ceil($total_distributions / $limit);
+$total_pages = $total_distributions > 0 ? ceil($total_distributions / $limit) : 1;
 
 // Get all distribution records for export (matching filters, without pagination limit)
 $all_distributions_export = [];
@@ -232,6 +215,29 @@ while ($department_row = $departments_result->fetch_assoc()) {
 // Get last distribution notification
 $last_distribution = $_SESSION['last_distribution'] ?? null;
 
+// ─── Summary statistics ───────────────────────────────────────────────────────
+$summary = $conn->query("
+    SELECT
+        COUNT(id)                           AS total_distributions,
+        COALESCE(SUM(copies), 0)            AS total_copies,
+        COUNT(DISTINCT distributed_to)       AS unique_recipients
+    FROM distribution
+")->fetch_assoc();
+
+// ─── Build a pagination URL preserving current filters ────────────────────────
+function buildDistHistUrl($overrides = [])
+{
+    $params = $_GET;
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
+        }
+    }
+    return 'distribution_history.php' . (!empty($params) ? '?' . http_build_query($params) : '');
+}
+
 // Get toast message
 $toast = null;
 if (isset($_SESSION['toast'])) {
@@ -248,350 +254,148 @@ if (isset($_SESSION['toast'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Distribution History - Mailroom</title>
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: #f5f5f4;
-            color: #1c1917;
-        }
-
-        .category-badge {
-            display: inline-block;
-            background: #f0f0f0;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin: 2px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 12px 16px;
-            background: #fafaf9;
-            border-bottom: 1px solid #e5e5e5;
-            font-weight: 500;
-            font-size: 13px;
-            color: #57534e;
-        }
-
-        td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #e5e5e5;
-            font-size: 14px;
-            color: #1c1917;
-        }
-
-        tr:hover td {
-            background: #fafaf9;
-        }
-
-        .action-btn {
-            color: #9e9e9e;
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 4px 8px;
-            font-size: 14px;
-        }
-
-        .action-btn:hover {
-            color: #1c1917;
-        }
-
-        .delete-btn:hover {
-            color: #dc2626;
-        }
-
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: white;
-            max-width: 500px;
-            width: 90%;
-        }
-
-        .modal-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h3 {
-            font-size: 16px;
-            font-weight: 500;
-        }
-
-        .modal-body {
-            padding: 20px;
-        }
-
-        .modal-footer {
-            padding: 12px 20px;
-            border-top: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-        }
-
-        .detail-row {
-            display: flex;
-            padding: 8px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .detail-label {
-            width: 120px;
-            font-weight: 500;
-            font-size: 13px;
-            color: #78716c;
-        }
-
-        .detail-value {
-            flex: 1;
-            font-size: 14px;
-            color: #1c1917;
-        }
-
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 2000;
-        }
-
-        .toast {
-            background: white;
-            border: 1px solid #e5e5e5;
-            padding: 10px 16px;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            min-width: 260px;
-        }
-
-        .toast-success {
-            border-left: 3px solid #10b981;
-        }
-
-        .toast-error {
-            border-left: 3px solid #ef4444;
-        }
-
-        .notification {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .pagination {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-
-        .page-link {
-            padding: 6px 12px;
-            border: 1px solid #e5e5e5;
-            background: white;
-            font-size: 13px;
-            text-decoration: none;
-            color: #1c1917;
-        }
-
-        .page-link:hover {
-            background: #fafaf9;
-        }
-
-        .page-link.active {
-            background: #1c1917;
-            color: white;
-            border-color: #1c1917;
-        }
-
-        .filter-input {
-            padding: 6px 10px;
-            border: 1px solid #e5e5e5;
-            font-size: 13px;
-            background: white;
-        }
-
-        .btn-primary {
-            background: #1c1917;
-            color: white;
-            padding: 6px 12px;
-            border: none;
-            font-size: 13px;
-            cursor: pointer;
-            display: inline-block;
-            text-decoration: none;
-        }
-
-        .btn-primary:hover {
-            background: #292524;
-        }
-
-        .btn-secondary {
-            background: white;
-            color: #1c1917;
-            padding: 6px 12px;
-            border: 1px solid #e5e5e5;
-            font-size: 13px;
-            cursor: pointer;
-            display: inline-block;
-            text-decoration: none;
-        }
-
-        .btn-secondary:hover {
-            background: #fafaf9;
-        }
-
-        .btn-danger {
-            background: #dc2626;
-            color: white;
-            padding: 6px 12px;
-            border: none;
-            font-size: 13px;
-            cursor: pointer;
-        }
-
-        .btn-danger:hover {
-            background: #b91c1c;
-        }
-
-        @media print {
-
-            #toastContainer,
-            #sidebar,
-            #mobileMenuBtn,
-            #sidebarOverlay,
-            .modal,
-            .notification,
-            .no-print {
-                display: none !important;
-            }
-
-            main {
-                margin-left: 0 !important;
-            }
-
-            th:last-child,
-            td:last-child {
-                display: none !important;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
 <body>
-    <div id="toastContainer" class="toast-container"></div>
-
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
-            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                    <h1 class="text-2xl font-medium text-[#1e1e1e]">Distribution History</h1>
-                    <p class="text-sm text-[#6e6e6e] mt-1">View and manage distribution records</p>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Newspaper Distribution History</span>
+                    </div>
+                    <h1 class="page-header-title">Distribution History</h1>
+                    <p class="page-header-subtitle">View and manage newspaper distribution records.</p>
+                </div>
+                <div class="header-actions flex items-center gap-2 no-print">
+                    <button type="button" onclick="printDistributionHistory()" class="btn btn-soft">
+                        <i class="fa-solid fa-print"></i>
+                        <span class="hidden sm:inline">Print</span>
+                    </button>
+                    <button type="button" onclick="exportDistributionHistory()" class="btn btn-soft">
+                        <i class="fa-regular fa-file-excel"></i>
+                        <span class="hidden sm:inline">Export CSV</span>
+                    </button>
+                    <a href="newspaper_distribution.php" class="btn btn-primary">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">New Distribution</span>
+                    </a>
                 </div>
             </div>
-            <div class="p-4 lg:p-8">
+
+            <div class="page-body">
+                <?php if ($toast): ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
+                        });
+                    </script>
+                <?php endif; ?>
+
                 <?php if ($last_distribution): ?>
-                    <div class="notification" id="lastDistributionNotification">
-                        <div>
-                            <i class="fa-regular fa-circle-check text-green-600 mr-2"></i>
-                            <span class="text-sm">
+                    <div class="alert alert-green no-print" id="lastDistributionNotification" style="justify-content:space-between;align-items:center;">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-regular fa-circle-check"></i>
+                            <span style="font-size:13px;font-weight:500;">
                                 <?php echo $last_distribution['count']; ?> subscription(s) distributed to
                                 <?php echo htmlspecialchars($last_distribution['individual']); ?>
                             </span>
-                            <span class="text-xs text-gray-500 ml-2">
+                            <span style="font-size:11px;opacity:.75;margin-left:6px;">
                                 <?php echo date('M j, Y', strtotime($last_distribution['date'])); ?>
                             </span>
                         </div>
-                        <button onclick="dismissLastDistribution()" class="text-gray-400 hover:text-gray-600">
+                        <button onclick="dismissLastDistribution()" style="background:none;border:none;cursor:pointer;color:inherit;font-size:14px;line-height:1;padding:2px;">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                 <?php endif; ?>
 
-                <div class="bg-white border border-gray-200">
-                    <div class="p-4 border-b border-gray-200 bg-gray-50 no-print">
-                        <form method="GET" id="filterForm" class="flex flex-wrap gap-3 items-end">
-                            <div class="flex-1 min-w-[180px]">
-                                <label class="block text-xs text-gray-600 mb-1">Search</label>
-                                <input type="text" id="searchInput" name="search" class="filter-input w-full"
-                                    autocomplete="off"
+                <div class="print-only mb-5">
+                    <h1 class="text-xl font-semibold text-[#1b2a4a]">Newspaper Distribution History Statement</h1>
+                    <p class="text-sm text-[#4b5570] mt-1">Generated on <?php echo date('F j, Y g:i A'); ?></p>
+                    <p class="text-sm text-[#4b5570]">Total records: <?php echo number_format($summary['total_distributions']); ?> | Total copies distributed: <?php echo number_format($summary['total_copies']); ?></p>
+                </div>
+
+                <!-- Stat Cards -->
+                <div class="stat-grid mb-6">
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-regular fa-rectangle-list"></i></div>
+                        <div class="stat-label">Total Distributions</div>
+                        <div class="stat-value"><?php echo number_format($summary['total_distributions']); ?></div>
+                        <div class="stat-hint">Distribution records</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon gold"><i class="fa-solid fa-copy"></i></div>
+                        <div class="stat-label">Subscriptions Distributed</div>
+                        <div class="stat-value"><?php echo number_format($summary['total_copies']); ?></div>
+                        <div class="stat-hint">Total copies issued</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-regular fa-user"></i></div>
+                        <div class="stat-label">Unique Recipients</div>
+                        <div class="stat-value"><?php echo number_format($summary['unique_recipients']); ?></div>
+                        <div class="stat-hint">Recipients on record</div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="card mb-6 no-print">
+                    <div class="card-body">
+                        <form method="GET" id="filterForm" class="filter-bar" style="margin-bottom:0;">
+                            <div class="search-wrap">
+                                <i class="fa-solid fa-magnifying-glass icon"></i>
+                                <input type="text" id="searchInput" name="search"
+                                    class="input" autocomplete="off"
                                     placeholder="Reference, recipient, department, subscriptions..."
                                     value="<?php echo htmlspecialchars($search); ?>">
                             </div>
-                            <div class="w-[180px]">
-                                <label class="block text-xs text-gray-600 mb-1">Department</label>
-                                <select id="departmentFilter" name="department" class="filter-input w-full">
-                                    <option value="">All Departments</option>
-                                    <?php foreach ($departments as $department): ?>
-                                        <option value="<?php echo htmlspecialchars($department); ?>" <?php echo $department_filter === $department ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($department); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="w-[140px]">
-                                <label class="block text-xs text-gray-600 mb-1">From Date</label>
-                                <input type="date" name="date_from" class="filter-input w-full"
-                                    value="<?php echo htmlspecialchars($date_from); ?>">
-                            </div>
-                            <div class="w-[140px]">
-                                <label class="block text-xs text-gray-600 mb-1">To Date</label>
-                                <input type="date" name="date_to" class="filter-input w-full"
-                                    value="<?php echo htmlspecialchars($date_to); ?>">
-                            </div>
-                            <div>
-                                <button type="submit" class="btn-primary">Filter</button>
-                                <button type="button" onclick="printDistributionHistory()" class="btn-secondary ml-2 no-print">
-                                    <i class="fa-solid fa-print mr-1"></i> Print
-                                </button>
-                                <button type="button" onclick="exportToCSV()" class="btn-secondary ml-2 no-print inline-flex items-center">
-                                    <i class="fa-regular fa-file-excel mr-1"></i> Export CSV
-                                </button>
-                                <a href="distribution_history.php" class="btn-secondary ml-2">Reset</a>
-                            </div>
+                            <select id="departmentFilter" name="department" class="select">
+                                <option value="">All Departments</option>
+                                <?php foreach ($departments as $department): ?>
+                                    <option value="<?php echo htmlspecialchars($department); ?>" <?php echo $department_filter === $department ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($department); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="date" name="date_from" class="input" value="<?php echo htmlspecialchars($date_from); ?>">
+                            <input type="date" name="date_to" class="input" value="<?php echo htmlspecialchars($date_to); ?>">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-filter"></i> Filter
+                            </button>
+                            <a href="distribution_history.php" class="btn btn-soft">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </a>
                         </form>
                     </div>
+                </div>
 
-                    <div class="overflow-x-auto">
-                        <table>
+                <!-- Records Table -->
+                <div class="card">
+                    <div class="card-header" style="padding:14px 20px;">
+                        <div>
+                            <div class="card-title">Distribution Records</div>
+                            <div class="card-subtitle">
+                                <?php if ($total_distributions > 0): ?>
+                                    Showing <?php echo $offset + 1; ?>–<?php echo min($offset + $limit, $total_distributions); ?> of <?php echo number_format($total_distributions); ?>
+                                <?php else: ?>
+                                    No records to display
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="table">
                             <thead>
                                 <tr>
                                     <th>Reference No.</th>
@@ -600,7 +404,7 @@ if (isset($_SESSION['toast'])) {
                                     <th class="hidden md:table-cell">Department</th>
                                     <th>Count</th>
                                     <th class="hidden md:table-cell">Distributed By</th>
-                                    <th></th>
+                                    <th class="no-print text-right" style="width:92px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -608,32 +412,47 @@ if (isset($_SESSION['toast'])) {
                                     <?php while ($row = $distribution_history->fetch_assoc()): ?>
                                         <?php $distribution_reference = generateDistributionReference($row['id'], $row['date_distributed']); ?>
                                         <tr>
-                                            <td class="text-gray-500 font-mono"><?php echo htmlspecialchars($distribution_reference); ?></td>
+                                            <td><span class="pill table-cell-mono"><?php echo htmlspecialchars($distribution_reference); ?></span></td>
                                             <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
-                                            <td class="font-medium"><?php echo htmlspecialchars($row['distributed_to']); ?></td>
+                                            <td><span class="table-cell-title"><?php echo htmlspecialchars($row['distributed_to']); ?></span></td>
                                             <td class="hidden md:table-cell"><?php echo htmlspecialchars($row['department'] ?? '—'); ?></td>
-                                            <td><?php echo (int)$row['copies']; ?></td>
-                                            <td class="hidden md:table-cell"><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
-                                            <td class="whitespace-nowrap">
-                                                <button onclick="viewDistribution(<?php echo $row['id']; ?>)"
-                                                    class="action-btn" title="View">
-                                                    <i class="fa-regular fa-eye"></i>
-                                                </button>
-                                                <button onclick="confirmDelete(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['distributed_to']); ?>')"
-                                                    class="action-btn delete-btn" title="Delete">
-                                                    <i class="fa-regular fa-trash-can"></i>
-                                                </button>
+                                            <td><span class="table-cell-mono"><?php echo (int)$row['copies']; ?></span></td>
+                                            <td class="hidden md:table-cell table-cell-subtitle"><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
+                                            <td class="no-print">
+                                                <div class="row-actions" style="justify-content:flex-end;">
+                                                    <button class="icon-btn primary" onclick="viewDistribution(<?php echo $row['id']; ?>)" title="View">
+                                                        <i class="fa-regular fa-eye"></i>
+                                                    </button>
+                                                    <button class="icon-btn danger"
+                                                        onclick="confirmDelete(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['distributed_to'])); ?>')"
+                                                        title="Delete">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="7" class="text-center py-12 text-gray-500">
-                                            <i class="fa-regular fa-inbox text-3xl mb-2 block"></i>
-                                            <p>No distribution records found</p>
-                                            <a href="newspaper_distribution.php" class="text-blue-600 hover:underline text-sm mt-2 inline-block">
-                                                Start distributing
-                                            </a>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon"><i class="fa-regular fa-inbox"></i></div>
+                                                <div class="empty-state-title">No distribution records found</div>
+                                                <div class="empty-state-text">
+                                                    <?php if ($has_active_filters): ?>
+                                                        Try adjusting your search or filter criteria.
+                                                    <?php else: ?>
+                                                        Newspaper distributions will appear here once created.
+                                                    <?php endif; ?>
+                                                </div>
+                                                <?php if ($has_active_filters): ?>
+                                                    <a href="distribution_history.php" class="btn btn-soft btn-sm" style="margin-top:16px;">Clear filters</a>
+                                                <?php else: ?>
+                                                    <a href="newspaper_distribution.php" class="btn btn-primary btn-sm" style="margin-top:16px;">
+                                                        <i class="fa-solid fa-plus"></i> New Distribution
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endif; ?>
@@ -641,99 +460,130 @@ if (isset($_SESSION['toast'])) {
                         </table>
                     </div>
 
-                    <?php if ($total_pages > 1): ?>
-                        <div class="p-4 border-t border-gray-200 flex justify-between items-center">
-                            <div class="text-sm text-gray-500">
-                                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $limit, $total_distributions); ?> of <?php echo $total_distributions; ?>
-                            </div>
+                    <!-- Table Footer -->
+                    <div class="pagination-shell no-print">
+                        <div class="pagination-meta"><?php echo number_format($total_distributions); ?> total record(s)</div>
+                        <div class="pagination-meta">Total subscriptions distributed: <strong><?php echo number_format($summary['total_copies']); ?></strong></div>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <?php if ($total_pages > 1): ?>
+                    <div class="pagination-shell mt-4 no-print">
+                        <div class="pagination-meta">
+                            <div class="pagination-title">Showing <?php echo min($limit, $total_distributions - ($page - 1) * $limit); ?> record(s) on this page</div>
+                            <span>Records <?php echo ($page - 1) * $limit + 1; ?>–<?php echo min($page * $limit, $total_distributions); ?> of <?php echo number_format($total_distributions); ?> total</span>
+                        </div>
+                        <div class="pagination-controls">
+                            <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                             <div class="pagination">
-                                <a href="?page=1<?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
-                                    class="page-link">First</a>
-                                <a href="?page=<?php echo max(1, $page - 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
-                                    class="page-link">Previous</a>
+                                <?php if ($page > 1): ?>
+                                    <a href="<?php echo htmlspecialchars(buildDistHistUrl(['page' => 1])); ?>" class="pagination-item compact" aria-label="First page">
+                                        <i class="fa-solid fa-chevrons-left"></i>
+                                    </a>
+                                    <a href="<?php echo htmlspecialchars(buildDistHistUrl(['page' => $page - 1])); ?>" class="pagination-item compact" aria-label="Previous page">
+                                        <i class="fa-solid fa-chevron-left"></i>
+                                    </a>
+                                <?php endif; ?>
 
                                 <?php
-                                $start_page = max(1, $page - 2);
-                                $end_page = min($total_pages, $page + 2);
-                                for ($i = $start_page; $i <= $end_page; $i++):
-                                ?>
-                                    <a href="?page=<?php echo $i; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
-                                        class="page-link <?php echo $i == $page ? 'active' : ''; ?>"><?php echo $i; ?></a>
-                                <?php endfor; ?>
+                                $start = max(1, $page - 2);
+                                $end = min($total_pages, $page + 2);
 
-                                <a href="?page=<?php echo min($total_pages, $page + 1); ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
-                                    class="page-link">Next</a>
-                                <a href="?page=<?php echo $total_pages; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $department_filter ? '&department=' . urlencode($department_filter) : ''; ?><?php echo $date_from ? '&date_from=' . urlencode($date_from) : ''; ?><?php echo $date_to ? '&date_to=' . urlencode($date_to) : ''; ?>"
-                                    class="page-link">Last</a>
+                                if ($start > 1) {
+                                    echo '<a href="' . htmlspecialchars(buildDistHistUrl(['page' => 1])) . '" class="pagination-item">1</a>';
+                                    if ($start > 2) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
+                                }
+
+                                for ($i = $start; $i <= $end; $i++) {
+                                    $active_class = ($i == $page) ? 'active' : '';
+                                    echo '<a href="' . htmlspecialchars(buildDistHistUrl(['page' => $i])) . '" class="pagination-item ' . $active_class . '">' . $i . '</a>';
+                                }
+
+                                if ($end < $total_pages) {
+                                    if ($end < $total_pages - 1) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
+                                    echo '<a href="' . htmlspecialchars(buildDistHistUrl(['page' => $total_pages])) . '" class="pagination-item">' . $total_pages . '</a>';
+                                }
+                                ?>
+
+                                <?php if ($page < $total_pages): ?>
+                                    <a href="<?php echo htmlspecialchars(buildDistHistUrl(['page' => $page + 1])); ?>" class="pagination-item compact" aria-label="Next page">
+                                        <i class="fa-solid fa-chevron-right"></i>
+                                    </a>
+                                    <a href="<?php echo htmlspecialchars(buildDistHistUrl(['page' => $total_pages])); ?>" class="pagination-item compact" aria-label="Last page">
+                                        <i class="fa-solid fa-chevrons-right"></i>
+                                    </a>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endif; ?>
-                </div>
+                    </div>
+                <?php endif; ?>
             </div>
         </main>
     </div>
 
     <!-- View Modal -->
-    <div id="viewModal" class="modal">
-        <div class="modal-content">
+    <div id="viewModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
             <div class="modal-header">
-                <h3>Distribution Details</h3>
-                <button onclick="closeModal('viewModal')" class="text-gray-400 hover:text-gray-600">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <h2 class="modal-title">Distribution Details</h2>
+                <button type="button" onclick="MailroomModal.close('viewModal')" class="modal-close"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <div class="modal-body" id="viewModalBody">
-                <div class="text-center py-8">
-                    <i class="fa-solid fa-spinner fa-spin text-gray-400"></i>
-                    <p class="text-gray-500 mt-2">Loading...</p>
+            <div class="modal-body">
+                <div id="viewModalBody">
+                    <div class="text-center py-10">
+                        <i class="fa-solid fa-spinner fa-spin text-[#9aa0b5] text-2xl"></i>
+                        <p class="text-[#7d8398] mt-3 text-sm">Loading...</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button onclick="closeModal('viewModal')" class="btn-secondary">Close</button>
+                <button onclick="MailroomModal.close('viewModal')" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Modal -->
-    <div id="deleteModal" class="modal">
-        <div class="modal-content">
+    <div id="deleteModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
             <div class="modal-header">
-                <h3>Confirm Delete</h3>
-                <button onclick="closeModal('deleteModal')" class="text-gray-400 hover:text-gray-600">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <h2 class="modal-title">Confirm Delete</h2>
+                <button type="button" onclick="MailroomModal.close('deleteModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <p class="text-gray-700 mb-4">Delete this distribution record?</p>
-                <div class="bg-red-50 border border-red-200 p-3">
-                    <p class="font-medium text-red-800" id="deleteRecipientName"></p>
-                    <p class="text-sm text-red-600 mt-1">This action cannot be undone.</p>
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:14px;">Are you sure you want to delete this distribution record?</p>
+                <div class="alert alert-red" style="margin-bottom:0;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div>
+                        <p class="font-medium text-sm" id="deleteRecipientName"></p>
+                        <p class="text-xs mt-2" style="opacity:.85;">Newspaper stock will be restored and the record removed. This action cannot be undone.</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button onclick="closeModal('deleteModal')" class="btn-secondary">Cancel</button>
-                <a href="#" id="confirmDeleteBtn" class="btn-danger">Delete</a>
+                <button onclick="MailroomModal.close('deleteModal')" class="btn btn-soft">Cancel</button>
+                <button id="confirmDeleteBtn" class="btn btn-danger">
+                    <i class="fa-regular fa-trash-can"></i> Delete Record
+                </button>
             </div>
         </div>
     </div>
 
     <script>
-        function showToast(type, message) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fa-regular ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i>
-                <span class="flex-1 text-sm">${message}</span>
-                <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-gray-600">×</button>
-            `;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '—';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
         }
 
         <?php if ($toast): ?>
             document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
+                MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
             });
         <?php endif; ?>
 
@@ -741,12 +591,17 @@ if (isset($_SESSION['toast'])) {
             const notification = document.getElementById('lastDistributionNotification');
             if (notification) notification.remove();
 
+            const formData = new FormData();
+            formData.append('ajax', 'dismiss_last_distribution');
+            formData.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
+
             fetch('distribution_history.php', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: 'ajax=dismiss_last_distribution'
+                body: formData
             });
         }
 
@@ -755,7 +610,7 @@ if (isset($_SESSION['toast'])) {
             if (lastDistributionNotification) {
                 setTimeout(() => {
                     dismissLastDistribution();
-                }, 3000);
+                }, 8000);
             }
 
             const filterForm = document.getElementById('filterForm');
@@ -764,12 +619,11 @@ if (isset($_SESSION['toast'])) {
 
             if (filterForm && searchInput) {
                 let searchDebounceTimer;
-
                 searchInput.addEventListener('input', function() {
                     clearTimeout(searchDebounceTimer);
                     searchDebounceTimer = setTimeout(() => {
                         filterForm.submit();
-                    }, 350);
+                    }, 380);
                 });
             }
 
@@ -780,157 +634,113 @@ if (isset($_SESSION['toast'])) {
             }
         });
 
-        function openModal(id) {
-            document.getElementById(id).style.display = 'flex';
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).style.display = 'none';
-        }
-
+        // ── View Distribution ─────────────────────────────────────────────────
         function viewDistribution(id) {
-            openModal('viewModal');
+            MailroomModal.open('viewModal');
+            document.getElementById('viewModalBody').innerHTML = `
+                <div class="text-center py-10">
+                    <i class="fa-solid fa-spinner fa-spin text-[#9aa0b5] text-2xl"></i>
+                    <p class="text-[#7d8398] mt-3 text-sm">Loading...</p>
+                </div>`;
 
             fetch(`distribution_history.php?ajax=get_distribution&id=${id}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
                         const dist = data.distribution;
-                        const dateStr = new Date(dist.date_distributed).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                        });
-                        const distributionRef = `DIST-${new Date(dist.date_distributed).toISOString().slice(0, 10).replace(/-/g, '')}-${String(dist.id).padStart(4, '0')}`;
+                        const dateStr = dist.date_distributed ?
+                            new Date(dist.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                        const distributionRef = `DIST-${String(dist.date_distributed).replace(/-/g, '').slice(0, 8)}-${String(dist.id).padStart(4, '0')}`;
 
                         let categoriesHtml = '';
                         const activeList = dist.newspapers_list || dist.categories_list;
                         if (activeList) {
-                            const categories = activeList.split(', ');
+                            const categories = String(activeList).split(', ');
                             categories.forEach(cat => {
-                                categoriesHtml += `<span class="category-badge">${escapeHtml(cat)}</span>`;
+                                categoriesHtml += `<span class="pill">${escapeHtml(cat)}</span> `;
                             });
                         } else {
                             categoriesHtml = '—';
                         }
 
                         document.getElementById('viewModalBody').innerHTML = `
-                            <div class="detail-row">
-                                <div class="detail-label">ID</div>
-                                <div class="detail-value">${distributionRef}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Date</div>
-                                <div class="detail-value">${dateStr}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Recipient</div>
-                                <div class="detail-value">${escapeHtml(dist.distributed_to)}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Department</div>
-                                <div class="detail-value">${escapeHtml(dist.department || '—')}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Subscriptions</div>
-                                <div class="detail-value">${categoriesHtml}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Total Subscriptions</div>
-                                <div class="detail-value">${dist.copies}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Distributed By</div>
-                                <div class="detail-value">${escapeHtml(dist.distributed_by || '—')}</div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="col-span-2">
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Reference</p>
+                                    <p><span class="pill table-cell-mono">${escapeHtml(distributionRef)}</span></p>
+                                </div>
+                                <div>
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Date</p>
+                                    <p class="text-sm" style="color:var(--text-secondary);">${escapeHtml(dateStr)}</p>
+                                </div>
+                                <div>
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Distributed By</p>
+                                    <p class="text-sm" style="color:var(--text-secondary);">${escapeHtml(dist.distributed_by || '—')}</p>
+                                </div>
+                                <div class="col-span-2">
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Recipient</p>
+                                    <p class="text-sm font-medium" style="color:var(--text);">${escapeHtml(dist.distributed_to)}</p>
+                                </div>
+                                <div>
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Department</p>
+                                    <p class="text-sm" style="color:var(--text-secondary);">${escapeHtml(dist.department || '—')}</p>
+                                </div>
+                                <div>
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Total Subscriptions</p>
+                                    <p class="text-sm font-mono" style="color:var(--text);">${Number(dist.copies) || 0}</p>
+                                </div>
+                                <div class="col-span-2">
+                                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Subscriptions</p>
+                                    <p class="text-sm" style="color:var(--text-secondary);">${categoriesHtml}</p>
+                                </div>
                             </div>
                         `;
                     } else {
                         document.getElementById('viewModalBody').innerHTML = `
-                            <div class="text-center py-8">
-                                <i class="fa-regular fa-circle-exclamation text-red-500 text-3xl mb-2 block"></i>
-                                <p class="text-gray-500">${data.message || 'Record not found'}</p>
+                            <div class="text-center py-10 text-[#7d8398]">
+                                <i class="fa-regular fa-circle-exclamation text-red-400 text-3xl mb-3 block"></i>
+                                <p>${escapeHtml(data.message || 'Record not found')}</p>
                             </div>
                         `;
                     }
                 })
-                .catch(error => {
+                .catch(() => {
                     document.getElementById('viewModalBody').innerHTML = `
-                        <div class="text-center py-8">
-                            <i class="fa-regular fa-circle-exclamation text-red-500 text-3xl mb-2 block"></i>
-                            <p class="text-gray-500">Error loading details</p>
+                        <div class="text-center py-10 text-[#7d8398]">
+                            <i class="fa-regular fa-circle-exclamation text-red-400 text-3xl mb-3 block"></i>
+                            <p>Error loading details</p>
                         </div>
                     `;
                 });
         }
 
-        let deleteId = null;
-
+        // ── Delete ─────────────────────────────────────────────────────────────
         function confirmDelete(id, recipientName) {
-            deleteId = id;
-            document.getElementById('deleteRecipientName').innerHTML = `<i class="fa-regular fa-user mr-2"></i> ${escapeHtml(recipientName)}`;
-            document.getElementById('confirmDeleteBtn').href = `?delete_distribution=${id}`;
-            openModal('deleteModal');
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '—';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            document.getElementById('deleteRecipientName').innerHTML =
+                `<i class="fa-regular fa-user mr-2"></i> ${escapeHtml(recipientName)}`;
+            document.getElementById('confirmDeleteBtn').onclick = function(e) {
+                e.preventDefault();
+                submitPostForm('distribution_history.php', { delete_distribution: id });
+            };
+            MailroomModal.open('deleteModal');
         }
 
         function printDistributionHistory() {
             window.print();
         }
 
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-            }
-        }
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                document.querySelectorAll('.modal').forEach(modal => {
-                    modal.style.display = 'none';
-                });
-            }
-        });
-
         // Export distribution history to CSV
-        function exportToCSV() {
+        function exportDistributionHistory() {
             const data = <?php echo json_encode($all_distributions_export); ?>;
-            const headers = ['Reference No.', 'Date Distributed', 'Recipient Name', 'Department', 'Copies Count', 'Distributed By', 'Newspapers List'];
-            const rows = [headers.join(',')];
-            
-            data.forEach(item => {
-                const row = [
-                    `"${item.reference}"`,
-                    `"${item.date_distributed}"`,
-                    `"${item.distributed_to.replace(/"/g, '""')}"`,
-                    `"${item.department.replace(/"/g, '""')}"`,
-                    item.copies,
-                    `"${item.distributed_by.replace(/"/g, '""')}"`,
-                    `"${item.newspapers.replace(/"/g, '""')}"`
-                ];
-                rows.push(row.join(','));
-            });
-            
-            const csv = rows.join('\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `distribution_history_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            if (typeof showToast === 'function') {
-                showToast('success', 'Export completed successfully!');
+            if (!data || data.length === 0) {
+                MailroomToast.info('No records to export.');
+                return;
             }
+            exportToCSV(data, 'distribution_history_' + new Date().toISOString().split('T')[0] + '.csv');
+            MailroomToast.success('Export completed successfully!');
         }
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

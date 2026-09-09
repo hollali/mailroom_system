@@ -1,27 +1,12 @@
 <?php
 // documents_distribution_history.php - View all document distribution records
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
-}
-
-// ─── Helper Functions ────────────────────────────────────────────────────────
-
-function generateDocDistRef($id, $date_distributed = null)
-{
-    $date_part = date('Ymd', strtotime($date_distributed ?: 'now'));
-    return 'DDIST-' . $date_part . '-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
-}
-
-function formatTimestampDisplay($value)
-{
-    if (empty($value)) return 'N/A';
-    $ts = strtotime($value);
-    return $ts === false ? htmlspecialchars($value) : date('M j, Y g:i A', $ts);
 }
 
 // ─── AJAX: Get single record for View modal ───────────────────────────────────
@@ -50,8 +35,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_record' && isset($_GET['id'])
 }
 
 // ─── Handle Delete ────────────────────────────────────────────────────────────
-if (isset($_GET['delete_record'])) {
-    $id = (int)$_GET['delete_record'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_record'])) {
+    csrf_check_post();
+    $id = (int)$_POST['delete_record'];
 
     $conn->begin_transaction();
     try {
@@ -96,6 +82,9 @@ $type_filter  = isset($_GET['type'])        ? trim($_GET['type'])        : '';
 $status_filter = isset($_GET['status'])     ? trim($_GET['status'])      : '';
 $date_from    = isset($_GET['date_from'])   ? trim($_GET['date_from'])   : '';
 $date_to      = isset($_GET['date_to'])     ? trim($_GET['date_to'])     : '';
+
+$has_active_filters = $search !== '' || $type_filter !== '' || $status_filter !== ''
+    || $date_from !== '' || $date_to !== '';
 
 // Build WHERE clause
 $where_clauses = [];
@@ -197,6 +186,20 @@ $summary = $conn->query("
     FROM document_distribution dd
 ")->fetch_assoc();
 
+// ─── Build a pagination URL preserving current filters ────────────────────────
+function buildDocDistUrl($overrides = [])
+{
+    $params = $_GET;
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
+        }
+    }
+    return 'documents_distribution_history.php' . (!empty($params) ? '?' . http_build_query($params) : '');
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 $toast = null;
 if (isset($_SESSION['toast'])) {
@@ -212,932 +215,410 @@ if (isset($_SESSION['toast'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document Distribution History - Mailroom</title>
     <meta name="description" content="View and manage all document distribution records in the mailroom system.">
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: #f5f5f4;
-            color: #1c1917;
-        }
-
-        /* ── Table ── */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 11px 16px;
-            background: #fafaf9;
-            border-bottom: 1px solid #e5e5e5;
-            font-weight: 500;
-            font-size: 12px;
-            color: #57534e;
-            text-transform: uppercase;
-            letter-spacing: .04em;
-            white-space: nowrap;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        th:hover {
-            background: #f4f4f3;
-        }
-
-        th .sort-icon {
-            color: #d6d3d1;
-            margin-left: 4px;
-            font-size: 10px;
-        }
-
-        td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #e5e5e5;
-            font-size: 14px;
-            color: #1c1917;
-            vertical-align: middle;
-        }
-
-        tr:hover td {
-            background: #fafaf9;
-        }
-
-        /* ── Badges ── */
-        .badge {
-            display: inline-block;
-            padding: 3px 9px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .badge-type {
-            background: #e3f2fd;
-            color: #0b5e8a;
-        }
-
-        .badge-count {
-            background: #f0fdf4;
-            color: #166534;
-            font-family: monospace;
-            font-size: 13px;
-        }
-
-        .badge-withdrawn {
-            background: #fef2f2;
-            color: #991b1b;
-            font-family: monospace;
-            font-size: 13px;
-        }
-
-        /* ── Action buttons ── */
-        .action-btn {
-            color: #a8a29e;
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 5px 7px;
-            font-size: 14px;
-            border-radius: 4px;
-            transition: all .15s;
-        }
-
-        .action-btn:hover {
-            color: #1c1917;
-            background: #f5f5f4;
-        }
-
-        .delete-btn:hover {
-            color: #dc2626;
-            background: #fef2f2;
-        }
-
-        /* ── Stat cards ── */
-        .stat-card {
-            background: white;
-            border: 1px solid #e7e5e4;
-            border-radius: 8px;
-            padding: 16px 20px;
-            transition: all .2s;
-        }
-
-        .stat-card:hover {
-            border-color: #a8a29e;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
-        }
-
-        .stat-number {
-            font-size: 28px;
-            font-weight: 600;
-            color: #1c1917;
-            line-height: 1;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: #78716c;
-            margin-top: 4px;
-        }
-
-        .stat-icon {
-            font-size: 20px;
-            color: #d6d3d1;
-        }
-
-        /* ── Filters ── */
-        .filter-input {
-            padding: 7px 10px;
-            border: 1px solid #e5e5e5;
-            border-radius: 6px;
-            font-size: 13px;
-            background: white;
-            outline: none;
-            transition: border-color .15s;
-        }
-
-        .filter-input:focus {
-            border-color: #a8a29e;
-        }
-
-        .btn-primary {
-            background: #1c1917;
-            color: white;
-            padding: 7px 14px;
-            border: none;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            text-decoration: none;
-            transition: background .15s;
-        }
-
-        .btn-primary:hover {
-            background: #292524;
-        }
-
-        .btn-secondary {
-            background: white;
-            color: #1c1917;
-            padding: 7px 14px;
-            border: 1px solid #e5e5e5;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            text-decoration: none;
-            transition: background .15s;
-        }
-
-        .btn-secondary:hover {
-            background: #fafaf9;
-        }
-
-        .btn-danger {
-            background: #dc2626;
-            color: white;
-            padding: 7px 14px;
-            border: none;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background .15s;
-        }
-
-        .btn-danger:hover {
-            background: #b91c1c;
-        }
-
-        /* ── Modal ── */
-        .modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .35);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 16px;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 10px;
-            width: 100%;
-            max-width: 540px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, .15);
-            overflow: hidden;
-        }
-
-        .modal-header {
-            padding: 18px 22px;
-            border-bottom: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h3 {
-            font-size: 15px;
-            font-weight: 600;
-        }
-
-        .modal-body {
-            padding: 20px 22px;
-        }
-
-        .modal-footer {
-            padding: 14px 22px;
-            border-top: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-        }
-
-        .detail-row {
-            display: flex;
-            padding: 9px 0;
-            border-bottom: 1px solid #f0f0f0;
-            align-items: baseline;
-            gap: 12px;
-        }
-
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-
-        .detail-label {
-            width: 150px;
-            min-width: 150px;
-            font-size: 12px;
-            font-weight: 500;
-            color: #78716c;
-            text-transform: uppercase;
-            letter-spacing: .04em;
-        }
-
-        .detail-value {
-            flex: 1;
-            font-size: 14px;
-            color: #1c1917;
-        }
-
-        /* ── Pagination ── */
-        .pagination {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .page-link {
-            padding: 6px 12px;
-            border: 1px solid #e5e5e5;
-            border-radius: 6px;
-            background: white;
-            font-size: 13px;
-            text-decoration: none;
-            color: #1c1917;
-            transition: all .15s;
-        }
-
-        .page-link:hover {
-            background: #fafaf9;
-            border-color: #d6d3d1;
-        }
-
-        .page-link.active {
-            background: #1c1917;
-            color: white;
-            border-color: #1c1917;
-        }
-
-        .page-link.disabled {
-            opacity: .45;
-            pointer-events: none;
-        }
-
-        /* ── Toast ── */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .toast {
-            background: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 8px;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            min-width: 280px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, .1);
-            animation: slideIn .25s ease;
-        }
-
-        .toast-success {
-            border-left: 3px solid #10b981;
-        }
-
-        .toast-error {
-            border-left: 3px solid #ef4444;
-        }
-
-        .toast-warning {
-            border-left: 3px solid #f59e0b;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(40px);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        /* ── Ref badge ── */
-        .ref-badge {
-            font-family: monospace;
-            font-size: 12px;
-            background: #f5f5f4;
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
-            padding: 2px 8px;
-            color: #57534e;
-            white-space: nowrap;
-        }
-
-        /* ── Empty state ── */
-        .empty-state {
-            text-align: center;
-            padding: 56px 24px;
-            color: #78716c;
-        }
-
-        .empty-state i {
-            font-size: 40px;
-            color: #d6d3d1;
-            margin-bottom: 12px;
-            display: block;
-        }
-
-        .empty-state p {
-            font-size: 15px;
-        }
-
-        @media (max-width: 1023px) {
-            .history-header {
-                align-items: flex-start;
-                flex-direction: column;
-                gap: 14px;
-            }
-
-            .history-actions {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-
-            .history-actions .btn-primary,
-            .history-actions .btn-secondary {
-                justify-content: center;
-            }
-
-            .history-filter-form {
-                align-items: stretch;
-            }
-
-            .history-filter-form>div {
-                width: 100%;
-                min-width: 0;
-            }
-        }
-
-        @media (max-width: 767px) {
-
-            .history-table-header,
-            .history-table-footer,
-            .history-pagination {
-                align-items: flex-start;
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .history-table-header>*,
-            .history-table-footer>*,
-            .history-pagination>* {
-                width: 100%;
-            }
-
-            .history-pagination .pagination {
-                justify-content: flex-start;
-                width: 100%;
-            }
-
-            .modal {
-                align-items: flex-start;
-                overflow-y: auto;
-            }
-
-            .modal-content {
-                max-height: calc(100vh - 32px);
-                overflow-y: auto;
-            }
-
-            .modal-footer {
-                flex-direction: column-reverse;
-            }
-
-            .modal-footer .btn-secondary,
-            .modal-footer .btn-danger {
-                justify-content: center;
-                text-align: center;
-                width: 100%;
-            }
-
-            .detail-row {
-                align-items: flex-start;
-                flex-direction: column;
-                gap: 4px;
-            }
-
-            .detail-label {
-                width: auto;
-                min-width: 0;
-            }
-
-            .toast-container {
-                left: 12px;
-                right: 12px;
-                top: 12px;
-            }
-
-            .toast {
-                min-width: 0;
-                width: 100%;
-            }
-        }
-
-        /* ── Print ── */
-        @media print {
-
-            #toastContainer,
-            #sidebar,
-            #mobileMenuBtn,
-            #sidebarOverlay,
-            .modal,
-            .no-print {
-                display: none !important;
-            }
-
-            main {
-                margin-left: 0 !important;
-            }
-
-            th:last-child,
-            td:last-child {
-                display: none !important;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
 <body>
-    <?php include './sidebar.php'; ?>
+    <div class="flex">
+        <?php include './sidebar.php'; ?>
 
-    <div id="toastContainer" class="toast-container"></div>
-
-    <main class="lg:ml-[var(--sidebar-width)] min-h-screen">
-        <div class="history-header px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white flex justify-between items-center">
-            <div>
-                <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution History</h1>
-                <p class="text-sm text-[#6e6e6e] mt-1">View and manage all document distribution records</p>
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Document Distribution History</span>
+                    </div>
+                    <h1 class="page-header-title">Document Distribution History</h1>
+                    <p class="page-header-subtitle">View and manage all document distribution records.</p>
+                </div>
+                <div class="header-actions flex items-center gap-2 no-print">
+                    <button onclick="window.print()" class="btn btn-soft">
+                        <i class="fa-solid fa-print"></i>
+                        <span class="hidden sm:inline">Print</span>
+                    </button>
+                    <a href="distribution.php" class="btn btn-primary">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">New Distribution</span>
+                    </a>
+                </div>
             </div>
-            <div class="history-actions no-print flex gap-2">
-                <a href="distribution.php" class="btn-primary">
-                    <i class="fa-regular fa-plus"></i> New Distribution
-                </a>
-                <button onclick="window.print()" class="btn-secondary">
-                    <i class="fa-solid fa-print"></i> Print
-                </button>
-            </div>
-        </div>
 
-        <div class="p-4 lg:p-8">
+            <div class="page-body">
+                <?php if ($toast): ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
+                        });
+                    </script>
+                <?php endif; ?>
 
-            <!-- ── Summary Cards ── -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 no-print">
-                <div class="stat-card flex items-center justify-between">
-                    <div>
-                        <div class="stat-number"><?php echo number_format($summary['total_distributions']); ?></div>
+                <div class="print-only mb-5">
+                    <h1 class="text-xl font-semibold text-[#1b2a4a]">Document Distribution History Statement</h1>
+                    <p class="text-sm text-[#4b5570] mt-1">Generated on <?php echo date('F j, Y g:i A'); ?></p>
+                    <p class="text-sm text-[#4b5570]">Total records: <?php echo number_format($total_records); ?> | Total copies distributed: <?php echo number_format($summary['total_copies_distributed']); ?></p>
+                </div>
+
+                <!-- Stat Cards -->
+                <div class="stat-grid mb-6">
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-regular fa-file-export"></i></div>
                         <div class="stat-label">Total Distributions</div>
+                        <div class="stat-value"><?php echo number_format($summary['total_distributions']); ?></div>
+                        <div class="stat-hint">Distribution records</div>
                     </div>
-                    <i class="fa-solid fa-file-export stat-icon"></i>
-                </div>
-                <div class="stat-card flex items-center justify-between">
-                    <div>
-                        <div class="stat-number"><?php echo number_format($summary['total_copies_distributed']); ?></div>
+                    <div class="stat-card">
+                        <div class="stat-icon gold"><i class="fa-solid fa-copy"></i></div>
                         <div class="stat-label">Copies Distributed</div>
+                        <div class="stat-value"><?php echo number_format($summary['total_copies_distributed']); ?></div>
+                        <div class="stat-hint">Total copies issued</div>
                     </div>
-                    <i class="fa-solid fa-copy stat-icon"></i>
-                </div>
-                <div class="stat-card flex items-center justify-between">
-                    <div>
-                        <div class="stat-number"><?php echo number_format($summary['unique_documents']); ?></div>
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-regular fa-file-lines"></i></div>
                         <div class="stat-label">Unique Documents</div>
+                        <div class="stat-value"><?php echo number_format($summary['unique_documents']); ?></div>
+                        <div class="stat-hint">Documents with records</div>
                     </div>
-                    <i class="fa-regular fa-file-lines stat-icon"></i>
                 </div>
-            </div>
 
-            <!-- ── Filter Bar ── -->
-            <div class="bg-white border border-[#e5e5e5] rounded-lg mb-4 no-print">
-                <form method="GET" id="filterForm" class="history-filter-form p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_180px_145px_145px_145px_auto] gap-3 items-end">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Search</label>
-                        <div class="relative">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-[#9e9e9e]"></i>
-                            <input type="text" id="searchInput" name="search"
-                                class="filter-input w-full pl-8"
-                                autocomplete="off"
-                                placeholder="Document name, reference, type, origin…"
-                                value="<?php echo htmlspecialchars($search); ?>">
+                <!-- Filters -->
+                <div class="card mb-6 no-print">
+                    <div class="card-body">
+                        <form method="GET" id="filterForm" class="filter-bar" style="margin-bottom:0;">
+                            <div class="search-wrap">
+                                <i class="fa-solid fa-magnifying-glass icon"></i>
+                                <input type="text" id="searchInput" name="search"
+                                    class="input" autocomplete="off"
+                                    placeholder="Document, reference, type, origin..."
+                                    value="<?php echo htmlspecialchars($search); ?>">
+                            </div>
+                            <select id="typeFilter" name="type" class="select">
+                                <option value="">All Types</option>
+                                <?php foreach ($doc_types as $dt): ?>
+                                    <option value="<?php echo htmlspecialchars($dt); ?>"
+                                        <?php echo $type_filter === $dt ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($dt); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <select id="statusFilter" name="status" class="select">
+                                <option value="">All Statuses</option>
+                                <option value="distributed" <?php echo $status_filter === 'distributed' ? 'selected' : ''; ?>>Distributed</option>
+                                <option value="withdrawn" <?php echo $status_filter === 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
+                            </select>
+                            <input type="date" name="date_from" class="input" value="<?php echo htmlspecialchars($date_from); ?>">
+                            <input type="date" name="date_to" class="input" value="<?php echo htmlspecialchars($date_to); ?>">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-filter"></i> Filter
+                            </button>
+                            <a href="documents_distribution_history.php" class="btn btn-soft">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </a>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Records Table -->
+                <div class="card">
+                    <div class="card-header" style="padding:14px 20px;">
+                        <div>
+                            <div class="card-title">Distribution Records</div>
+                            <div class="card-subtitle">
+                                <?php if ($total_records > 0): ?>
+                                    Showing <?php echo $offset + 1; ?>–<?php echo min($offset + $limit, $total_records); ?> of <?php echo number_format($total_records); ?>
+                                <?php else: ?>
+                                    No records to display
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Document Type</label>
-                        <select id="typeFilter" name="type" class="filter-input w-full">
-                            <option value="">All Types</option>
-                            <?php foreach ($doc_types as $dt): ?>
-                                <option value="<?php echo htmlspecialchars($dt); ?>"
-                                    <?php echo $type_filter === $dt ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($dt); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">Status</label>
-                        <select id="statusFilter" name="status" class="filter-input w-full">
-                            <option value="">All Statuses</option>
-                            <option value="distributed" <?php echo $status_filter === 'distributed' ? 'selected' : ''; ?>>Distributed</option>
-                            <option value="withdrawn" <?php echo $status_filter === 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">From Date</label>
-                        <input type="date" name="date_from" class="filter-input w-full"
-                            value="<?php echo htmlspecialchars($date_from); ?>">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] mb-1 font-medium">To Date</label>
-                        <input type="date" name="date_to" class="filter-input w-full"
-                            value="<?php echo htmlspecialchars($date_to); ?>">
-                    </div>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="submit" class="btn-primary justify-center">
-                            <i class="fa-solid fa-filter"></i> Filter
-                        </button>
-                        <a href="documents_distribution_history.php" class="btn-secondary justify-center">
-                            <i class="fa-solid fa-rotate-left"></i> Reset
-                        </a>
-                    </div>
-                </form>
-            </div>
 
-            <!-- ── Records Table ── -->
-            <div class="bg-white border border-[#e5e5e5] rounded-lg overflow-hidden">
-                <div class="history-table-header px-5 py-3 border-b border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center">
-                    <h2 class="text-sm font-medium text-[#1c1917]">Distribution Records</h2>
-                    <span class="text-xs text-[#78716c]">
-                        <?php if ($total_records > 0): ?>
-                            Showing <?php echo $offset + 1; ?>–<?php echo min($offset + $limit, $total_records); ?> of <?php echo number_format($total_records); ?>
-                        <?php else: ?>
-                            No records
-                        <?php endif; ?>
-                    </span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table id="historyTable">
-                        <thead>
-                            <tr>
-                                <th onclick="sortTable(0)">Reference <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th onclick="sortTable(1)">Document <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th class="hidden md:table-cell" onclick="sortTable(2)">Type <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th onclick="sortTable(3)">Copies Distributed <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th onclick="sortTable(4)">Date <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th class="hidden md:table-cell" onclick="sortTable(5)">Recorded At <i class="fa-solid fa-sort sort-icon"></i></th>
-                                <th>Status</th>
-                                <th class="no-print"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody">
-                            <?php if ($records && $records->num_rows > 0): ?>
-                                <?php while ($row = $records->fetch_assoc()): ?>
-                                    <?php $ref = generateDocDistRef($row['id'], $row['date_distributed']); ?>
-                                    <tr>
-                                        <td><span class="ref-badge"><?php echo htmlspecialchars($ref); ?></span></td>
-                                        <td class="font-medium">
-                                            <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
-                                                class="hover:underline text-[#1c1917]">
-                                                <?php echo htmlspecialchars($row['document_name']); ?>
-                                            </a>
-                                        </td>
-                                        <td class="hidden md:table-cell">
-                                            <?php if (!empty($row['document_type'])): ?>
-                                                <span class="badge badge-type">
-                                                    <i class="fa-solid fa-tag mr-1" style="font-size:10px"></i>
-                                                    <?php echo htmlspecialchars($row['document_type']); ?>
+                    <div class="table-wrap">
+                        <table class="table" id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th class="table-sortable" onclick="sortTable(0)">Reference <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable" onclick="sortTable(1)">Document <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable hidden md:table-cell" onclick="sortTable(2)">Type <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable" onclick="sortTable(3)">Copies Distributed <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable" onclick="sortTable(4)">Date <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable hidden md:table-cell" onclick="sortTable(5)">Recorded At <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th>Status</th>
+                                    <th class="no-print text-right" style="width:92px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <?php if ($records && $records->num_rows > 0): ?>
+                                    <?php while ($row = $records->fetch_assoc()): ?>
+                                        <?php $ref = generateDocDistRef($row['id'], $row['date_distributed']); ?>
+                                        <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
+                                        <tr>
+                                            <td><span class="pill table-cell-mono"><?php echo htmlspecialchars($ref); ?></span></td>
+                                            <td>
+                                                <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
+                                                    class="table-cell-title" style="text-decoration:none;">
+                                                    <?php echo htmlspecialchars($row['document_name']); ?>
+                                                </a>
+                                            </td>
+                                            <td class="hidden md:table-cell">
+                                                <?php if (!empty($row['document_type'])): ?>
+                                                    <span class="badge badge-blue"><i class="fa-solid fa-tag"></i> <?php echo htmlspecialchars($row['document_type']); ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-[#7d8398]">—</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><span class="table-cell-mono"><?php echo (int)$row['number_distributed']; ?></span></td>
+                                            <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
+                                            <td class="whitespace-nowrap hidden md:table-cell table-cell-subtitle">
+                                                <?php echo formatTimestampDisplay($row['created_at']); ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge <?php echo $status === 'withdrawn' ? 'badge-red' : 'badge-green'; ?>">
+                                                    <?php echo ucfirst($status); ?>
                                                 </span>
-                                            <?php else: ?>
-                                                <span class="text-[#a8a29e]">—</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-count"><?php echo (int)$row['number_distributed']; ?></span>
-                                        </td>
-                                        <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
-                                        <td class="text-[#78716c] text-sm whitespace-nowrap hidden md:table-cell">
-                                            <?php echo formatTimestampDisplay($row['created_at']); ?>
-                                        </td>
-                                        <td>
-                                            <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
-                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-withdrawn' : 'badge-count'; ?>">
-                                                <?php echo ucfirst($status); ?>
-                                            </span>
-                                        </td>
-                                        <td class="whitespace-nowrap no-print">
-                                            <button onclick="viewRecord(<?php echo $row['id']; ?>)"
-                                                class="action-btn" title="View details">
-                                                <i class="fa-regular fa-eye"></i>
-                                            </button>
-                                            <button onclick="confirmDelete(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo (int)$row['number_distributed']; ?>)"
-                                                class="action-btn delete-btn" title="Delete">
-                                                <i class="fa-regular fa-trash-can"></i>
-                                            </button>
+                                            </td>
+                                            <td class="no-print">
+                                                <div class="row-actions" style="justify-content:flex-end;">
+                                                    <button class="icon-btn primary" onclick="viewRecord(<?php echo $row['id']; ?>)" title="View details">
+                                                        <i class="fa-regular fa-eye"></i>
+                                                    </button>
+                                                    <button class="icon-btn danger"
+                                                        onclick="confirmDelete(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo (int)$row['number_distributed']; ?>)"
+                                                        title="Delete">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="8">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon"><i class="fa-regular fa-folder-open"></i></div>
+                                                <div class="empty-state-title">No distribution records found</div>
+                                                <div class="empty-state-text">
+                                                    <?php if ($has_active_filters): ?>
+                                                        Try adjusting your search or filter criteria.
+                                                    <?php else: ?>
+                                                        Document distributions will appear here once created.
+                                                    <?php endif; ?>
+                                                </div>
+                                                <?php if ($has_active_filters): ?>
+                                                    <a href="documents_distribution_history.php" class="btn btn-soft btn-sm" style="margin-top:16px;">Clear filters</a>
+                                                <?php else: ?>
+                                                    <a href="distribution.php" class="btn btn-primary btn-sm" style="margin-top:16px;">
+                                                        <i class="fa-solid fa-plus"></i> New Distribution
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
-                                <?php endwhile; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="8">
-                                        <div class="empty-state">
-                                            <i class="fa-regular fa-folder-open"></i>
-                                            <p>No distribution records found.</p>
-                                            <?php if (!empty($search) || !empty($type_filter) || !empty($status_filter) || !empty($date_from) || !empty($date_to)): ?>
-                                                <a href="documents_distribution_history.php"
-                                                    class="text-sm text-[#1c1917] underline mt-2 inline-block">
-                                                    Clear filters
-                                                </a>
-                                            <?php else: ?>
-                                                <a href="distribution.php"
-                                                    class="text-sm text-[#1c1917] underline mt-2 inline-block">
-                                                    Start distributing documents
-                                                </a>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Table Footer -->
+                    <div class="pagination-shell no-print">
+                        <div class="pagination-meta"><?php echo number_format($total_records); ?> total record(s)</div>
+                        <div class="pagination-meta">Total copies distributed: <strong><?php echo number_format($summary['total_copies_distributed']); ?></strong></div>
+                    </div>
                 </div>
 
-                <!-- Table Footer -->
-                <div class="history-table-footer px-5 py-3 border-t border-[#e5e5e5] bg-[#fafaf9] flex justify-between items-center text-xs text-[#78716c]">
-                    <span><?php echo number_format($total_records); ?> total record(s)</span>
-                    <span>Total copies distributed: <strong><?php echo number_format($summary['total_copies_distributed']); ?></strong></span>
-                </div>
+                <!-- Pagination -->
+                <?php if ($total_pages > 1): ?>
+                    <div class="pagination-shell mt-4 no-print">
+                        <div class="pagination-meta">
+                            <div class="pagination-title">Showing <?php echo min($limit, $total_records - ($page - 1) * $limit); ?> record(s) on this page</div>
+                            <span>Records <?php echo ($page - 1) * $limit + 1; ?>–<?php echo min($page * $limit, $total_records); ?> of <?php echo number_format($total_records); ?> total</span>
+                        </div>
+                        <div class="pagination-controls">
+                            <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                            <div class="pagination">
+                                <?php if ($page > 1): ?>
+                                    <a href="<?php echo htmlspecialchars(buildDocDistUrl(['page' => 1])); ?>" class="pagination-item compact" aria-label="First page">
+                                        <i class="fa-solid fa-chevrons-left"></i>
+                                    </a>
+                                    <a href="<?php echo htmlspecialchars(buildDocDistUrl(['page' => $page - 1])); ?>" class="pagination-item compact" aria-label="Previous page">
+                                        <i class="fa-solid fa-chevron-left"></i>
+                                    </a>
+                                <?php endif; ?>
+
+                                <?php
+                                $start = max(1, $page - 2);
+                                $end = min($total_pages, $page + 2);
+
+                                if ($start > 1) {
+                                    echo '<a href="' . htmlspecialchars(buildDocDistUrl(['page' => 1])) . '" class="pagination-item">1</a>';
+                                    if ($start > 2) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
+                                }
+
+                                for ($i = $start; $i <= $end; $i++) {
+                                    $active_class = ($i == $page) ? 'active' : '';
+                                    echo '<a href="' . htmlspecialchars(buildDocDistUrl(['page' => $i])) . '" class="pagination-item ' . $active_class . '">' . $i . '</a>';
+                                }
+
+                                if ($end < $total_pages) {
+                                    if ($end < $total_pages - 1) {
+                                        echo '<span class="pagination-ellipsis">...</span>';
+                                    }
+                                    echo '<a href="' . htmlspecialchars(buildDocDistUrl(['page' => $total_pages])) . '" class="pagination-item">' . $total_pages . '</a>';
+                                }
+                                ?>
+
+                                <?php if ($page < $total_pages): ?>
+                                    <a href="<?php echo htmlspecialchars(buildDocDistUrl(['page' => $page + 1])); ?>" class="pagination-item compact" aria-label="Next page">
+                                        <i class="fa-solid fa-chevron-right"></i>
+                                    </a>
+                                    <a href="<?php echo htmlspecialchars(buildDocDistUrl(['page' => $total_pages])); ?>" class="pagination-item compact" aria-label="Last page">
+                                        <i class="fa-solid fa-chevrons-right"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </div>
-
-            <!-- ── Pagination ── -->
-            <?php if ($total_pages > 1): ?>
-                <?php
-                $qs_base = http_build_query(array_filter([
-                    'search'    => $search,
-                    'type'      => $type_filter,
-                    'status'    => $status_filter,
-                    'date_from' => $date_from,
-                    'date_to'   => $date_to,
-                ]));
-                $qs = $qs_base ? "&$qs_base" : '';
-                ?>
-                <div class="history-pagination mt-4 flex justify-between items-center">
-                    <div class="text-sm text-[#78716c]">
-                        Page <?php echo $page; ?> of <?php echo $total_pages; ?>
-                    </div>
-                    <div class="pagination">
-                        <a href="?page=1<?php echo $qs; ?>" class="page-link <?php echo $page == 1 ? 'disabled' : ''; ?>">
-                            <i class="fa-solid fa-angles-left text-xs"></i>
-                        </a>
-                        <a href="?page=<?php echo max(1, $page - 1); ?><?php echo $qs; ?>" class="page-link <?php echo $page == 1 ? 'disabled' : ''; ?>">
-                            <i class="fa-solid fa-angle-left text-xs"></i>
-                        </a>
-
-                        <?php
-                        $start = max(1, $page - 2);
-                        $end   = min($total_pages, $page + 2);
-                        if ($start > 1) echo '<span class="page-link" style="pointer-events:none;border:none;background:none">…</span>';
-                        for ($i = $start; $i <= $end; $i++):
-                        ?>
-                            <a href="?page=<?php echo $i; ?><?php echo $qs; ?>"
-                                class="page-link <?php echo $i == $page ? 'active' : ''; ?>">
-                                <?php echo $i; ?>
-                            </a>
-                        <?php endfor;
-                        if ($end < $total_pages) echo '<span class="page-link" style="pointer-events:none;border:none;background:none">…</span>';
-                        ?>
-
-                        <a href="?page=<?php echo min($total_pages, $page + 1); ?><?php echo $qs; ?>" class="page-link <?php echo $page == $total_pages ? 'disabled' : ''; ?>">
-                            <i class="fa-solid fa-angle-right text-xs"></i>
-                        </a>
-                        <a href="?page=<?php echo $total_pages; ?><?php echo $qs; ?>" class="page-link <?php echo $page == $total_pages ? 'disabled' : ''; ?>">
-                            <i class="fa-solid fa-angles-right text-xs"></i>
-                        </a>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-        </div>
-    </main>
+        </main>
+    </div>
 
     <!-- ── View Modal ── -->
-    <div id="viewModal" class="modal">
-        <div class="modal-content">
+    <div id="viewModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
             <div class="modal-header">
-                <h3>Distribution Details</h3>
-                <button onclick="closeModal('viewModal')" class="text-[#a8a29e] hover:text-[#1c1917]">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
+                <h2 class="modal-title">Distribution Details</h2>
+                <button type="button" onclick="MailroomModal.close('viewModal')" class="modal-close"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <div class="modal-body" id="viewModalBody">
-                <div class="text-center py-10">
-                    <i class="fa-solid fa-spinner fa-spin text-[#a8a29e] text-2xl"></i>
-                    <p class="text-[#78716c] mt-3 text-sm">Loading…</p>
+            <div class="modal-body">
+                <div id="viewModalContent">
+                    <div class="text-center py-10">
+                        <i class="fa-solid fa-spinner fa-spin text-[#9aa0b5] text-2xl"></i>
+                        <p class="text-[#7d8398] mt-3 text-sm">Loading...</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button onclick="closeModal('viewModal')" class="btn-secondary">Close</button>
+                <button onclick="MailroomModal.close('viewModal')" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <!-- ── Delete Confirmation Modal ── -->
-    <div id="deleteModal" class="modal">
-        <div class="modal-content">
+    <div id="deleteModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
             <div class="modal-header">
-                <h3>Confirm Delete</h3>
-                <button onclick="closeModal('deleteModal')" class="text-[#a8a29e] hover:text-[#1c1917]">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
+                <h2 class="modal-title">Confirm Delete</h2>
+                <button type="button" onclick="MailroomModal.close('deleteModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <p class="text-[#44403c] mb-4">Are you sure you want to delete this distribution record?</p>
-                <div class="bg-red-50 border border-red-200 rounded-md p-4">
-                    <p class="font-medium text-red-800" id="deleteDocName"></p>
-                    <p class="text-sm text-red-600 mt-1" id="deleteDocCopies"></p>
-                    <p class="text-xs text-red-500 mt-2">
-                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                        The distributed copies will be restored to the document's available stock.
-                        This action cannot be undone.
-                    </p>
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:14px;">Are you sure you want to delete this distribution record?</p>
+                <div class="alert alert-red" style="margin-bottom:0;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div>
+                        <p class="font-medium text-sm" id="deleteDocName"></p>
+                        <p class="text-xs mt-1" id="deleteDocCopies"></p>
+                        <p class="text-xs mt-2" style="opacity:.85;">The distributed copies will be restored to the document's available stock. This action cannot be undone.</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button onclick="closeModal('deleteModal')" class="btn-secondary">Cancel</button>
-                <a href="#" id="confirmDeleteBtn" class="btn-danger">
-                    <i class="fa-regular fa-trash-can mr-1"></i> Delete Record
-                </a>
+                <button onclick="MailroomModal.close('deleteModal')" class="btn btn-soft">Cancel</button>
+                <button id="confirmDeleteBtn" class="btn btn-danger">
+                    <i class="fa-regular fa-trash-can"></i> Delete Record
+                </button>
             </div>
         </div>
     </div>
 
     <script>
-        // ── Toast ──────────────────────────────────────────────────────────────
-        function showToast(type, message) {
-            const container = document.getElementById('toastContainer');
-            const icons = {
-                success: 'fa-circle-check',
-                error: 'fa-circle-xmark',
-                warning: 'fa-triangle-exclamation'
-            };
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fa-regular ${icons[type] || icons.success} text-${type === 'success' ? 'green' : type === 'error' ? 'red' : 'yellow'}-500"></i>
-                <span class="flex-1 text-sm">${escapeHtml(message)}</span>
-                <button onclick="this.parentElement.remove()" class="text-[#a8a29e] hover:text-[#1c1917] text-lg leading-none">&times;</button>
-            `;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
-        }
-
         function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
             const d = document.createElement('div');
-            d.appendChild(document.createTextNode(str));
+            d.appendChild(document.createTextNode(String(str)));
             return d.innerHTML;
         }
-
-        <?php if ($toast): ?>
-            document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
-            });
-        <?php endif; ?>
-
-        // ── Modal helpers ──────────────────────────────────────────────────────
-        function openModal(id) {
-            document.getElementById(id).style.display = 'flex';
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).style.display = 'none';
-        }
-
-        // Close on backdrop click
-        document.querySelectorAll('.modal').forEach(m => {
-            m.addEventListener('click', e => {
-                if (e.target === m) closeModal(m.id);
-            });
-        });
+        // app.js provides a global esc() helper; do not redeclare it here.
 
         // ── View Record ────────────────────────────────────────────────────────
         function viewRecord(id) {
-            openModal('viewModal');
-            document.getElementById('viewModalBody').innerHTML = `
+            MailroomModal.open('viewModal');
+            document.getElementById('viewModalContent').innerHTML = `
                 <div class="text-center py-10">
-                    <i class="fa-solid fa-spinner fa-spin text-[#a8a29e] text-2xl"></i>
-                    <p class="text-[#78716c] mt-3 text-sm">Loading…</p>
+                    <i class="fa-solid fa-spinner fa-spin text-[#9aa0b5] text-2xl"></i>
+                    <p class="text-[#7d8398] mt-3 text-sm">Loading...</p>
                 </div>`;
 
             fetch(`documents_distribution_history.php?ajax=get_record&id=${id}`)
                 .then(r => r.json())
                 .then(data => {
                     if (!data.success) {
-                        document.getElementById('viewModalBody').innerHTML =
-                            `<div class="text-center py-10 text-[#78716c]">
+                        document.getElementById('viewModalContent').innerHTML =
+                            `<div class="text-center py-10 text-[#7d8398]">
                                 <i class="fa-regular fa-circle-exclamation text-red-400 text-3xl mb-3 block"></i>
-                                <p>${escapeHtml(data.message || 'Record not found')}</p>
+                                <p>${esc(data.message || 'Record not found')}</p>
                             </div>`;
                         return;
                     }
                     const r = data.record;
-                    const ref = `DDIST-${r.date_distributed.replace(/-/g,'').slice(0,8)}-${String(r.id).padStart(4,'0')}`;
-                    const distDate = new Date(r.date_distributed).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    });
+                    const ref = `DDIST-${String(r.date_distributed).replace(/-/g, '').slice(0, 8)}-${String(r.id).padStart(4, '0')}`;
+                    const distDate = r.date_distributed ?
+                        new Date(r.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
                     const createdAt = r.created_at ?
-                        new Date(r.created_at).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        }) :
-                        'N/A';
+                        new Date(r.created_at.replace(' ', 'T')).toLocaleDateString('en-US', {
+                            year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        }) : 'N/A';
+                    const status = r.distribution_status === 'withdrawn' ? 'withdrawn' : 'distributed';
+                    const statusClass = status === 'withdrawn' ? 'badge-red' : 'badge-green';
 
-                    document.getElementById('viewModalBody').innerHTML = `
-                        <div class="detail-row"><div class="detail-label">Reference</div><div class="detail-value"><span class="ref-badge">${escapeHtml(ref)}</span></div></div>
-                        <div class="detail-row"><div class="detail-label">Document</div><div class="detail-value font-medium">${escapeHtml(r.document_name)}</div></div>
-                        <div class="detail-row"><div class="detail-label">Type</div><div class="detail-value">${r.document_type ? `<span class="badge badge-type"><i class="fa-solid fa-tag mr-1" style="font-size:9px"></i>${escapeHtml(r.document_type)}</span>` : '—'}</div></div>
-                        <div class="detail-row"><div class="detail-label">Origin</div><div class="detail-value">${escapeHtml(r.origin || '—')}</div></div>
-                        <div class="detail-row"><div class="detail-label">Copies Distributed</div><div class="detail-value"><span class="badge badge-count">${r.number_distributed}</span></div></div>
-                        <div class="detail-row"><div class="detail-label">Date Distributed</div><div class="detail-value">${distDate}</div></div>
-                        <div class="detail-row"><div class="detail-label">Recorded At</div><div class="detail-value text-[#78716c] text-sm">${createdAt}</div></div>
-                        <div class="detail-row"><div class="detail-label">Status</div><div class="detail-value">
-                            <span class="badge ${r.distribution_status === 'withdrawn' ? 'badge-withdrawn' : 'badge-count'}">
-                                ${escapeHtml(r.distribution_status.charAt(0).toUpperCase() + r.distribution_status.slice(1))}
-                            </span>
-                        </div></div>
+                    document.getElementById('viewModalContent').innerHTML = `
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2">
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Reference</p>
+                                <p><span class="pill table-cell-mono">${esc(ref)}</span></p>
+                            </div>
+                            <div class="col-span-2">
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Document</p>
+                                <p class="text-sm font-medium" style="color:var(--text);">${esc(r.document_name)}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Document Type</p>
+                                <p class="text-sm" style="color:var(--text-secondary);">${r.document_type ? `<span class="badge badge-blue"><i class="fa-solid fa-tag"></i> ${esc(r.document_type)}</span>` : '—'}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Origin</p>
+                                <p class="text-sm" style="color:var(--text-secondary);">${esc(r.origin || '—')}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Copies Distributed</p>
+                                <p class="text-sm font-mono" style="color:var(--text);">${Number(r.number_distributed) || 0}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Date Distributed</p>
+                                <p class="text-sm" style="color:var(--text-secondary);">${esc(distDate)}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Recorded At</p>
+                                <p class="text-sm" style="color:var(--text-secondary);">${esc(createdAt)}</p>
+                            </div>
+                            <div>
+                                <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Status</p>
+                                <p><span class="badge ${statusClass}">${esc(status.charAt(0).toUpperCase() + status.slice(1))}</span></p>
+                            </div>
+                        </div>
                     `;
                 })
                 .catch(() => {
-                    document.getElementById('viewModalBody').innerHTML =
-                        `<div class="text-center py-10 text-[#78716c]">
+                    document.getElementById('viewModalContent').innerHTML =
+                        `<div class="text-center py-10 text-[#7d8398]">
                             <i class="fa-regular fa-circle-exclamation text-red-400 text-3xl mb-3 block"></i>
                             <p>Error loading record details.</p>
                         </div>`;
@@ -1145,14 +626,14 @@ if (isset($_SESSION['toast'])) {
         }
 
         // ── Delete ─────────────────────────────────────────────────────────────
-        let deleteId = null;
-
         function confirmDelete(id, docName, copies) {
-            deleteId = id;
             document.getElementById('deleteDocName').textContent = docName;
             document.getElementById('deleteDocCopies').textContent = copies + ' cop' + (copies === 1 ? 'y' : 'ies') + ' will be restored to the document.';
-            document.getElementById('confirmDeleteBtn').href = `documents_distribution_history.php?delete_record=${id}`;
-            openModal('deleteModal');
+            document.getElementById('confirmDeleteBtn').onclick = function(e) {
+                e.preventDefault();
+                submitPostForm('documents_distribution_history.php', { delete_record: id });
+            };
+            MailroomModal.open('deleteModal');
         }
 
         // ── Live search debounce ───────────────────────────────────────────────
@@ -1192,17 +673,17 @@ if (isset($_SESSION['toast'])) {
 
             rows.forEach(r => tbody.appendChild(r));
 
-            // Update sort icons
-            document.querySelectorAll('th .sort-icon').forEach(ic => {
-                ic.className = 'fa-solid fa-sort sort-icon';
+            document.querySelectorAll('#historyTable thead th .sort-ic').forEach(ic => {
+                ic.className = 'fa-solid fa-sort sort-ic';
             });
             const ths = document.querySelectorAll('#historyTable thead th');
             if (ths[colIndex]) {
-                const icon = ths[colIndex].querySelector('.sort-icon');
-                if (icon) icon.className = `fa-solid fa-sort-${asc ? 'up' : 'down'} sort-icon`;
+                const icon = ths[colIndex].querySelector('.sort-ic');
+                if (icon) icon.className = `fa-solid fa-sort-${asc ? 'up' : 'down'} sort-ic`;
             }
         }
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

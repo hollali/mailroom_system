@@ -1,37 +1,16 @@
 <?php
 require_once './config/db.php';
-
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 
 // Start session for toast messages
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-// Ensure the document_distribution table has a status column for distribution states
-$statusCheck = $conn->query("SHOW COLUMNS FROM document_distribution LIKE 'status'");
-if ($statusCheck && $statusCheck->num_rows === 0) {
-    $conn->query("ALTER TABLE document_distribution ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'distributed'");
-}
-
-function formatTimestampDisplay($value)
-{
-    if (empty($value)) {
-        return 'N/A';
-    }
-
-    $timestamp = strtotime($value);
-    if ($timestamp === false) {
-        return htmlspecialchars($value);
-    }
-
-    return date('M j, Y g:i A', $timestamp);
-}
-
 // Handle form submission
 if (isset($_POST['submit'])) {
+    csrf_check_post();
     $document_id = $_POST['document_id'];
     $date_distributed = $_POST['date_distributed'];
     $numbers = $_POST['number_distributed'] ?? [];
@@ -127,8 +106,9 @@ if (isset($_POST['submit'])) {
 }
 
 // Handle Withdraw Distribution
-if (isset($_GET['withdraw'])) {
-    $id = (int)$_GET['withdraw'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['withdraw_distribution'])) {
+    csrf_check_post();
+    $id = (int)$_POST['withdraw_distribution'];
 
     // Begin transaction
     $conn->begin_transaction();
@@ -179,15 +159,16 @@ if (isset($_GET['withdraw'])) {
 
     // Preserve any query parameters
     $query_params = $_GET;
-    unset($query_params['withdraw']);
+    unset($query_params['withdraw_distribution']);
     $redirect_url = 'distribution.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
     header('Location: ' . $redirect_url);
     exit();
 }
 
 // Handle Delete Distribution
-if (isset($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution'])) {
+    csrf_check_post();
+    $id = (int)$_POST['delete_distribution'];
 
     // Begin transaction
     $conn->begin_transaction();
@@ -238,7 +219,7 @@ if (isset($_GET['delete'])) {
 
     // Preserve any query parameters
     $query_params = $_GET;
-    unset($query_params['delete']);
+    unset($query_params['delete_distribution']);
     $redirect_url = 'distribution.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
     header('Location: ' . $redirect_url);
     exit();
@@ -305,9 +286,12 @@ $stats = $conn->query("
 $total_distributions = $stats['total_distributions'] ?? 0;
 $total_copies_distributed = $stats['total_copies_distributed'] ?? 0;
 $available_copies = $stats['available_copies'] ?? 0;
+$documents_in_stock = $stats['documents_in_stock'] ?? 0;
+$documents_out_of_stock = $stats['documents_out_of_stock'] ?? 0;
 
 $today = date('Y-m-d');
 $today_distributions = 0;
+$today_copies = 0;
 $today_result = $conn->query("SELECT COUNT(*) as count, COALESCE(SUM(number_distributed), 0) as total FROM document_distribution WHERE date_distributed = '$today'");
 if ($today_result) {
     $today_data = $today_result->fetch_assoc();
@@ -331,797 +315,332 @@ if (isset($_SESSION['toast'])) {
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>Document Distribution - Mailroom</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Distribution - Mailroom Ops</title>
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
+    <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="icon" type="image/png" href="./images/logo.png">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
-        }
-
-        .stat-card {
-            transition: all 0.2s ease;
-        }
-
-        .stat-card:hover {
-            border-color: #9e9e9e;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.7rem;
-            border-radius: 3px;
-            background-color: #f5f5f4;
-            color: #4a4a4a;
-        }
-
-        .badge-info {
-            background-color: #e3f2fd;
-            color: #0b5e8a;
-        }
-
-        .badge-success {
-            background-color: #e8f0e8;
-            color: #2c5e2c;
-        }
-
-        .badge-warning {
-            background-color: #fff3e0;
-            color: #b45b0b;
-        }
-
-        .badge-danger {
-            background-color: #fee9e7;
-            color: #c73b2b;
-        }
-
-        .stock-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 4px;
-        }
-
-        .stock-high {
-            background-color: #10b981;
-        }
-
-        .stock-medium {
-            background-color: #f59e0b;
-        }
-
-        .stock-low {
-            background-color: #ef4444;
-        }
-
-        .stock-out {
-            background-color: #9e9e9e;
-        }
-
-        .option-group {
-            font-weight: 600;
-            background-color: #f5f5f4;
-        }
-
-        /* Toast notification styles */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            min-width: 300px;
-            max-width: 400px;
-            margin-bottom: 10px;
-            padding: 15px 20px;
-            background: white;
-            border-left: 4px solid;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            animation: slideIn 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .toast.success {
-            border-left-color: #10b981;
-        }
-
-        .toast.error {
-            border-left-color: #ef4444;
-        }
-
-        .toast.warning {
-            border-left-color: #f59e0b;
-        }
-
-        .toast.info {
-            border-left-color: #3b82f6;
-        }
-
-        .toast-content {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex: 1;
-        }
-
-        .toast-close {
-            cursor: pointer;
-            color: #9e9e9e;
-            font-size: 18px;
-            padding: 0 5px;
-        }
-
-        .toast-close:hover {
-            color: #1e1e1e;
-        }
-
-        .toast-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 3px;
-            background-color: rgba(0, 0, 0, 0.1);
-            width: 100%;
-            animation: progress 5s linear forwards;
-        }
-
-        .toast.success .toast-progress {
-            background-color: #10b981;
-        }
-
-        .toast.error .toast-progress {
-            background-color: #ef4444;
-        }
-
-        .toast.warning .toast-progress {
-            background-color: #f59e0b;
-        }
-
-        .toast.info .toast-progress {
-            background-color: #3b82f6;
-        }
-
-        /* Modal styles */
-        .modal {
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-content {
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .action-btn {
-            color: #9e9e9e;
-            transition: color 0.2s;
-            margin: 0 0.25rem;
-            background: none;
-            border: none;
-            cursor: pointer;
-        }
-
-        .action-btn:hover {
-            color: #1e1e1e;
-        }
-
-        .action-btn.redistribute-btn {
-            color: #047857;
-        }
-
-        .action-btn.withdraw-btn {
-            color: #b91c1c;
-        }
-
-        .action-btn.redistribute-btn:hover {
-            color: #065f46;
-        }
-
-        .action-btn.withdraw-btn:hover {
-            color: #991b1b;
-        }
-
-        .delete-btn:hover {
-            color: #dc2626;
-        }
-
-        .pagination-shell {
-            padding: 1rem 1.25rem;
-            border: 1px solid #e7e5e4;
-            border-radius: 1rem;
-            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-        }
-
-        .pagination-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .pagination-title {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: #1c1917;
-        }
-
-        .pagination-subtitle {
-            font-size: 0.82rem;
-            color: #78716c;
-        }
-
-        .pagination-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.75rem;
-        }
-
-        .pagination-page-indicator {
-            padding: 0.45rem 0.85rem;
-            border-radius: 9999px;
-            background-color: #f5f5f4;
-            color: #44403c;
-            font-size: 0.82rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .pagination {
-            display: flex;
-            gap: 0.4rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .pagination-item {
-            min-width: 2.5rem;
-            height: 2.5rem;
-            padding: 0 0.85rem;
-            border: 1px solid #e7e5e4;
-            border-radius: 0.8rem;
-            background-color: white;
-            color: #292524;
-            font-size: 0.875rem;
-            font-weight: 500;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
-            transition: all 0.2s ease;
-        }
-
-        .pagination-item:hover:not(.disabled):not(.active) {
-            background-color: #f5f5f4;
-            border-color: #d6d3d1;
-            transform: translateY(-1px);
-        }
-
-        .pagination-item.active {
-            background-color: #1c1917;
-            color: white;
-            border-color: #1c1917;
-            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
-        }
-
-        .pagination-item.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .pagination-item.compact {
-            min-width: auto;
-            padding: 0 0.9rem;
-        }
-
-        .pagination-ellipsis {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 2.5rem;
-            height: 2.5rem;
-            color: #a8a29e;
-            font-size: 0.95rem;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        @keyframes progress {
-            from {
-                width: 100%;
-            }
-
-            to {
-                width: 0%;
-            }
-        }
-
-        .new-distribution-btn {
-            background-color: #1e1e1e;
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: none;
-            font-size: 0.875rem;
-        }
-
-        .new-distribution-btn:hover {
-            background-color: #2d2d2d;
-        }
-
-        .print-button {
-            background-color: white;
-            color: #1e1e1e;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            border: 1px solid #e5e5e5;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 0.875rem;
-        }
-
-        .print-button:hover {
-            background-color: #f5f5f4;
-            border-color: #cfcfcd;
-        }
-
-        .warning-message {
-            background-color: #fff3e0;
-            border-left: 4px solid #f59e0b;
-            color: #b45b0b;
-        }
-
-        .print-only {
-            display: none;
-        }
-
-        @media print {
-            @page {
-                margin: 0.55in;
-            }
-
-            body {
-                background: white !important;
-                color: #111827 !important;
-            }
-
-            #sidebar,
-            #mobileMenuBtn,
-            #sidebarOverlay,
-            #toastContainer,
-            .modal,
-            .no-print,
-            .pagination-shell,
-            .action-btn,
-            .new-distribution-btn,
-            .print-button {
-                display: none !important;
-            }
-
-            .print-only {
-                display: block !important;
-            }
-
-            .lg\:ml-\[var\(--sidebar-width\)\] {
-                margin-left: 0 !important;
-            }
-
-            .min-h-screen {
-                min-height: 0 !important;
-            }
-
-            .p-4,
-            .lg\:p-8,
-            .px-4,
-            .lg\:px-8 {
-                padding: 0 !important;
-            }
-
-            .bg-white,
-            .bg-\[\#fafafa\],
-            .bg-\[\#f5f5f4\] {
-                background: white !important;
-            }
-
-            .border,
-            .border-t,
-            .border-b {
-                border-color: #d1d5db !important;
-            }
-
-            .rounded-md {
-                border-radius: 0 !important;
-            }
-
-            table {
-                width: 100% !important;
-                min-width: 0 !important;
-                font-size: 11px !important;
-                border-collapse: collapse !important;
-            }
-
-            th,
-            td {
-                padding: 7px 8px !important;
-                border: 1px solid #d1d5db !important;
-            }
-
-            th {
-                background: #f3f4f6 !important;
-                color: #111827 !important;
-            }
-
-            th:last-child,
-            td:last-child {
-                display: none !important;
-            }
-
-            .badge {
-                border: 1px solid #d1d5db !important;
-                background: white !important;
-                color: #111827 !important;
-            }
-
-            a {
-                color: #111827 !important;
-                text-decoration: none !important;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
-<body class="bg-[#f5f5f4]">
-    <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
-
+<body>
     <div class="flex">
         <?php include 'sidebar.php'; ?>
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
-        <!-- Header -->
-        <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
-            <div class="flex justify-between items-center">
+
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                    <h1 class="text-2xl font-medium text-[#1e1e1e]">Document Distribution</h1>
-                    <p class="text-sm text-[#6e6e6e] mt-1">Track document distribution across the organization</p>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Document Distribution</span>
+                    </div>
+                    <h1 class="page-header-title">Document Distribution</h1>
+                    <p class="page-header-subtitle">Track document distribution across the organization.</p>
                 </div>
-                <div class="flex gap-2 no-print">
-                    <button type="button" onclick="printDistributionStatement()" class="print-button">
+                <div class="header-actions flex items-center gap-2 no-print">
+                    <button type="button" onclick="printDistributionStatement()" class="btn btn-soft">
                         <i class="fa-solid fa-print"></i>
-                        <span>Print Statement</span>
+                        <span class="hidden sm:inline">Print Statement</span>
                     </button>
-                    <button onclick="openDistributionModal()" class="new-distribution-btn">
+                    <button onclick="openDistributionModal()" class="btn btn-primary">
                         <i class="fa-regular fa-plus"></i>
-                        <span>New Distribution</span>
+                        <span class="hidden sm:inline">New Distribution</span>
                     </button>
                 </div>
             </div>
-        </div>
 
-        <div class="p-4 lg:p-8">
-            <div class="print-only mb-5">
-                <h1 class="text-xl font-semibold">Document Distribution Statement</h1>
-                <p class="text-sm text-[#4b5563] mt-1">Generated on <?php echo date('F j, Y g:i A'); ?></p>
-                <p class="text-sm text-[#4b5563]">Total records: <?php echo number_format($total_distributions); ?> | Total copies distributed: <?php echo number_format($total_copies_distributed); ?></p>
-            </div>
+            <div class="page-body">
+                <?php if ($toast): ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
+                        });
+                    </script>
+                <?php endif; ?>
 
-            <!-- DISTRIBUTION TABLE -->
-            <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
-                    <h2 class="text-sm font-medium text-[#1e1e1e]">Distribution History</h2>
-                    <div class="flex items-center gap-3 no-print">
-                        <div class="relative flex items-center gap-2">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
-                            <input type="text" id="tableSearch" placeholder="Search records..."
-                                class="pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] w-64"
-                                autocomplete="off">
-                            <button onclick="filterDistributionTable(true)" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
-                                Search
-                            </button>
-                        </div>
-                        <span class="text-xs text-[#6e6e6e]">Total: <?php echo $total_distributions; ?> records</span>
+                <!-- Stat Cards -->
+                <div class="stat-grid mb-6">
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-regular fa-file-lines"></i></div>
+                        <div class="stat-label">Total Distributions</div>
+                        <div class="stat-value"><?php echo number_format($total_distributions); ?></div>
+                        <div class="stat-hint">Across all documents</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon gold"><i class="fa-solid fa-copy"></i></div>
+                        <div class="stat-label">Copies Distributed</div>
+                        <div class="stat-value"><?php echo number_format($total_copies_distributed); ?></div>
+                        <div class="stat-hint">Total copies issued</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-boxes-stacked"></i></div>
+                        <div class="stat-label">Available Copies</div>
+                        <div class="stat-value"><?php echo number_format($available_copies); ?></div>
+                        <div class="stat-hint"><?php echo $documents_in_stock; ?> in stock &middot; <?php echo $documents_out_of_stock; ?> out</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange"><i class="fa-solid fa-calendar-day"></i></div>
+                        <div class="stat-label">Today's Distributions</div>
+                        <div class="stat-value"><?php echo number_format($today_distributions); ?></div>
+                        <div class="stat-hint"><?php echo number_format($today_copies); ?> copies today</div>
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full" id="distributionTable">
-                        <thead class="bg-[#fafafa]">
-                            <tr class="text-left text-xs text-[#4a4a4a]">
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(0)">
-                                    Document <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0] hidden md:table-cell" onclick="sortTable(1)">
-                                    Type <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(2)">
-                                    Copies Distributed <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0]" onclick="sortTable(3)">
-                                    Date <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3 cursor-pointer hover:bg-[#f0f0f0] hidden md:table-cell" onclick="sortTable(4)">
-                                    Timestamp <i class="fa-solid fa-sort ml-1 text-[#9e9e9e]"></i>
-                                </th>
-                                <th class="p-3">Status</th>
-                                <th class="p-3 no-print">Actions</th>
-                            </tr>
-                        </thead>
+                <div class="print-only mb-5">
+                    <h1 class="text-xl font-semibold text-[#1b2a4a]">Document Distribution Statement</h1>
+                    <p class="text-sm text-[#4b5570] mt-1">Generated on <?php echo date('F j, Y g:i A'); ?></p>
+                    <p class="text-sm text-[#4b5570]">Total records: <?php echo number_format($total_distributions); ?> | Total copies distributed: <?php echo number_format($total_copies_distributed); ?></p>
+                </div>
 
-                        <tbody id="tableBody">
-                            <?php
-                            if ($result && $result->num_rows > 0):
-                                while ($row = $result->fetch_assoc()):
-                            ?>
-                                    <tr class="border-t text-sm hover:bg-[#fafafa] distribution-row" id="row-<?php echo $row['id']; ?>"
-                                        data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
-                                        <td class="p-3">
-                                            <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
-                                                class="text-[#1e1e1e] hover:underline font-medium">
-                                                <?php echo htmlspecialchars($row['document_name']); ?>
-                                            </a>
-                                        </td>
-                                        <td class="p-3 hidden md:table-cell">
-                                            <?php if (!empty($row['document_type'])): ?>
-                                                <span class="badge badge-info">
-                                                    <i class="fa-solid fa-tag mr-1"></i>
-                                                    <?php echo htmlspecialchars($row['document_type']); ?>
-                                                </span>
-                                            <?php else: ?>
-                                                <span class="text-[#9e9e9e]">—</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td class="p-3 font-mono"><?php echo $row['number_distributed'] ?? 0; ?></td>
-                                        <td class="p-3"><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
-                                        <td class="p-3 whitespace-nowrap hidden md:table-cell"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
-                                        <td class="p-3">
-                                            <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
-                                            <span class="badge <?php echo $status === 'withdrawn' ? 'badge-danger' : 'badge-success'; ?>">
-                                                <?php echo ucfirst($status); ?>
-                                            </span>
-                                        </td>
-                                        <td class="p-3 no-print">
-                                            <div class="flex gap-2">
-                                                <button onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)"
-                                                    class="action-btn" title="View Details">
-                                                    <i class="fa-regular fa-eye"></i>
-                                                </button>
-                                                <?php if ($status === 'withdrawn'): ?>
-                                                    <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
-                                                        class="action-btn redistribute-btn" title="Redistribute document">
-                                                        <i class="fa-solid fa-arrow-rotate-right"></i>
-                                                    </button>
+                <!-- DISTRIBUTION TABLE -->
+                <div class="card">
+                    <div class="card-header" style="padding:12px 16px;">
+                        <div>
+                            <div class="card-title">Distribution History</div>
+                            <div class="card-subtitle">Records of all document distributions.</div>
+                        </div>
+                        <div class="flex items-center gap-3 no-print flex-wrap">
+                            <div class="search-wrap">
+                                <i class="fa-solid fa-magnifying-glass icon"></i>
+                                <input type="text" id="tableSearch" placeholder="Search records..."
+                                    class="input" style="width:240px;" autocomplete="off">
+                            </div>
+                            <button onclick="filterDistributionTable(true)" class="btn btn-soft">
+                                Search
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="table" id="distributionTable">
+                            <thead>
+                                <tr>
+                                    <th class="table-sortable" onclick="sortTable(0)">Document <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable hidden md:table-cell" onclick="sortTable(1)">Type <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable" onclick="sortTable(2)">Copies Distributed <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable" onclick="sortTable(3)">Date <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th class="table-sortable hidden md:table-cell" onclick="sortTable(4)">Timestamp <i class="fa-solid fa-sort sort-ic"></i></th>
+                                    <th>Status</th>
+                                    <th class="no-print text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <?php
+                                if ($result && $result->num_rows > 0):
+                                    while ($row = $result->fetch_assoc()):
+                                ?>
+                                        <tr class="distribution-row" id="row-<?php echo $row['id']; ?>"
+                                            data-search="<?php echo strtolower(htmlspecialchars(trim(($row['document_name'] ?? '') . ' ' . ($row['document_type'] ?? '') . ' ' . ($row['number_distributed'] ?? 0) . ' ' . ($row['date_distributed'] ?? '') . ' ' . ($row['created_at'] ?? '')))); ?>">
+                                            <td>
+                                                <a href="list.php?search=<?php echo urlencode($row['document_name']); ?>"
+                                                    class="table-cell-title" style="text-decoration:none;">
+                                                    <?php echo htmlspecialchars($row['document_name']); ?>
+                                                </a>
+                                            </td>
+                                            <td class="hidden md:table-cell">
+                                                <?php if (!empty($row['document_type'])): ?>
+                                                    <span class="badge badge-blue"><i class="fa-solid fa-tag"></i> <?php echo htmlspecialchars($row['document_type']); ?></span>
                                                 <?php else: ?>
-                                                    <button type="button" onclick="withdrawDistribution(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
-                                                        class="action-btn withdraw-btn" title="Withdraw distribution">
-                                                        <i class="fa-solid fa-rotate-left"></i>
-                                                    </button>
+                                                    <span class="text-[#7d8398]">—</span>
                                                 <?php endif; ?>
-                                                <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
-                                                    class="action-btn delete-btn" title="Delete">
-                                                    <i class="fa-regular fa-trash-can"></i>
-                                                </button>
+                                            </td>
+                                            <td><span class="table-cell-mono"><?php echo $row['number_distributed'] ?? 0; ?></span></td>
+                                            <td><?php echo date('M j, Y', strtotime($row['date_distributed'])); ?></td>
+                                            <td class="whitespace-nowrap hidden md:table-cell table-cell-subtitle"><?php echo formatTimestampDisplay($row['created_at'] ?? null); ?></td>
+                                            <td>
+                                                <?php $status = $row['distribution_status'] ?? 'distributed'; ?>
+                                                <span class="badge <?php echo $status === 'withdrawn' ? 'badge-red' : 'badge-green'; ?>">
+                                                    <?php echo ucfirst($status); ?>
+                                                </span>
+                                            </td>
+                                            <td class="no-print">
+                                                <div class="row-actions justify-content-end" style="justify-content:flex-end;">
+                                                    <button class="icon-btn primary" onclick="viewDistribution(<?php echo htmlspecialchars(json_encode($row)); ?>)" title="View Details">
+                                                        <i class="fa-regular fa-eye"></i>
+                                                    </button>
+                                                    <?php if ($status === 'withdrawn'): ?>
+                                                        <button type="button" onclick="continueDistribution(<?php echo $row['document_id']; ?>)"
+                                                            class="icon-btn green" title="Redistribute document">
+                                                            <i class="fa-solid fa-arrow-rotate-right"></i>
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <button type="button" onclick="openWithdrawModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
+                                                            class="icon-btn primary" title="Withdraw distribution">
+                                                            <i class="fa-solid fa-rotate-left"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    <button onclick="openDeleteModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars(addslashes($row['document_name'])); ?>', <?php echo $row['number_distributed']; ?>)"
+                                                        class="icon-btn danger" title="Delete">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php
+                                    endwhile;
+                                else:
+                                    ?>
+                                    <tr>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon"><i class="fa-regular fa-file-lines"></i></div>
+                                                <div class="empty-state-title">No distribution records</div>
+                                                <div class="empty-state-text">Click "New Distribution" to get started.</div>
                                             </div>
                                         </td>
                                     </tr>
-                                <?php
-                                endwhile;
-                            else:
-                                ?>
-                                <tr>
-                                    <td colspan="6" class="p-4 lg:p-8 text-center text-sm text-[#6e6e6e]">
-                                        No distribution records found. Click "New Distribution" to get started.
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
-                <!-- Table Footer with Record Count -->
-                <div class="px-5 py-3 border-t border-[#e5e5e5] bg-[#fafafa] text-xs text-[#6e6e6e] flex justify-between items-center">
-                    <span>Showing <span id="visibleCount"><?php echo $total_distributions; ?></span> records</span>
-                    <span>Total Copies Distributed: <?php echo $total_copies_distributed; ?></span>
+                    <!-- Table Footer with Record Count -->
+                    <div class="pagination-shell print-hide" style="justify-content:space-between;border-top:1px solid var(--border);">
+                        <div class="pagination-meta">Showing <span id="visibleCount"><?php echo $total_distributions; ?></span> records</div>
+                        <div class="pagination-meta">Total Copies Distributed: <?php echo $total_copies_distributed; ?></div>
+                    </div>
+                </div>
+                <div id="distributionPagination" class="pagination-shell mt-4 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?> print-hide">
+                    <div class="pagination-meta">
+                        <div id="distributionPaginationTitle" class="pagination-title"></div>
+                        <div id="distributionPaginationInfo"></div>
+                    </div>
+                    <div class="pagination-controls">
+                        <div id="distributionPaginationPage" class="pagination-page-indicator"></div>
+                        <div class="pagination" id="distributionPaginationControls"></div>
+                    </div>
                 </div>
             </div>
-            <div id="distributionPagination" class="pagination-shell mt-4 <?php echo (!$result || $result->num_rows === 0) ? 'hidden' : ''; ?>">
-                <div class="pagination-meta">
-                    <div id="distributionPaginationTitle" class="pagination-title"></div>
-                    <div id="distributionPaginationInfo" class="pagination-subtitle"></div>
-                </div>
-                <div class="pagination-controls">
-                    <div id="distributionPaginationPage" class="pagination-page-indicator"></div>
-                    <div class="pagination" id="distributionPaginationControls"></div>
-                </div>
-            </div>
-        </div>
+        </main>
     </div>
 
-    <!-- Distribution Modal - Simplified (No department/recipient fields) -->
-    <div id="distributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6 modal-content">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">New Distribution</h2>
-                <button type="button" onclick="closeDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <!-- Distribution Modal -->
+    <div id="distributionModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
+            <div class="modal-header">
+                <h2 class="modal-title">New Distribution</h2>
+                <button type="button" class="modal-close" onclick="closeDistributionModal()"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
 
-            <div id="stockWarning" class="hidden mb-4 p-3 warning-message rounded-md text-sm">
-                <i class="fa-regular fa-triangle-exclamation mr-2"></i>
+            <div id="stockWarning" class="alert alert-orange hidden" style="margin:0 22px;margin-top:18px;">
+                <i class="fa-regular fa-triangle-exclamation"></i>
                 <span id="warningMessage"></span>
             </div>
 
             <form method="POST" action="distribution.php" id="distributionForm" onsubmit="return validateForm()">
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
-                            Document <span class="text-red-400">*</span>
-                        </label>
-                        <select name="document_id" id="modalDocumentSelect" required onchange="updateAvailableCopies()" class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                            <option value="">-- Select Document --</option>
-                            <?php
-                            // Group documents by type and show available copies
-                            $documents->data_seek(0);
-                            $grouped_documents = [];
-                            while ($doc = $documents->fetch_assoc()) {
-                                $type_name = $doc['document_type'] ?? 'Uncategorized';
-                                if (!isset($grouped_documents[$type_name])) {
-                                    $grouped_documents[$type_name] = [];
-                                }
-                                $grouped_documents[$type_name][] = $doc;
-                            }
-
-                            // Display documents grouped by type
-                            foreach ($grouped_documents as $type_name => $docs):
-                                $has_available = false;
-                                foreach ($docs as $doc) {
-                                    if ($doc['available_copies'] > 0) {
-                                        $has_available = true;
-                                        break;
+                <?php csrf_field(); ?>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label class="label">Document <span class="req">*</span></label>
+                            <select name="document_id" id="modalDocumentSelect" required onchange="updateAvailableCopies()" class="select">
+                                <option value="">-- Select Document --</option>
+                                <?php
+                                // Group documents by type and show available copies
+                                $documents->data_seek(0);
+                                $grouped_documents = [];
+                                while ($doc = $documents->fetch_assoc()) {
+                                    $type_name = $doc['document_type'] ?? 'Uncategorized';
+                                    if (!isset($grouped_documents[$type_name])) {
+                                        $grouped_documents[$type_name] = [];
                                     }
+                                    $grouped_documents[$type_name][] = $doc;
                                 }
-                            ?>
-                                <optgroup label="<?php echo htmlspecialchars($type_name); ?>" class="font-semibold bg-gray-50">
-                                    <?php foreach ($docs as $doc):
-                                        $available = $doc['available_copies'];
-                                    ?>
-                                        <option value="<?php echo $doc['id']; ?>"
-                                            data-available="<?php echo $available; ?>"
-                                            data-total="<?php echo $doc['copies_received']; ?>"
-                                            <?php echo $available <= 0 ? 'disabled class="text-gray-400"' : ''; ?>>
-                                            <?php echo htmlspecialchars($doc['document_name']); ?>
-                                            (<?php echo $available; ?> of <?php echo $doc['copies_received']; ?> available)
-                                            <?php echo $available <= 0 ? ' - OUT OF STOCK' : ''; ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </optgroup>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
 
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">
-                            Date Distributed <span class="text-red-400">*</span>
-                        </label>
-                        <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                    </div>
-                </div>
-
-                <!-- Distribution Summary -->
-                <div id="distributionSummary" class="hidden mb-4 p-3 bg-[#f5f5f4] rounded-md text-sm">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[#6e6e6e]">Total copies to distribute:</span>
-                        <span class="font-medium" id="totalCopiesToDistribute">0</span>
-                    </div>
-                    <div class="flex justify-between items-center mt-1">
-                        <span class="text-[#6e6e6e]">Available copies:</span>
-                        <span class="font-medium" id="availableCopiesDisplay">0</span>
-                    </div>
-                    <div class="flex justify-between items-center mt-1 text-xs" id="balanceWarning">
-                        <!-- Will show warning if exceeding available -->
-                    </div>
-                </div>
-
-                <!-- MULTIPLE DISTRIBUTION ROWS (Only copy count needed) -->
-                <div class="mb-3">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-2">
-                        Distribution Entries
-                    </label>
-                    <p class="text-xs text-[#6e6e6e] mb-2">Add multiple distribution entries if distributing to multiple recipients</p>
-                </div>
-
-                <div id="modalDistributionRows">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                        <div class="flex gap-2">
-                            <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
-                                class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
-                                onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
-                            <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
-                                <i class="fa-regular fa-trash-can"></i>
-                            </button>
+                                // Display documents grouped by type
+                                foreach ($grouped_documents as $type_name => $docs):
+                                    $has_available = false;
+                                    foreach ($docs as $doc) {
+                                        if ($doc['available_copies'] > 0) {
+                                            $has_available = true;
+                                            break;
+                                        }
+                                    }
+                                ?>
+                                    <optgroup label="<?php echo htmlspecialchars($type_name); ?>">
+                                        <?php foreach ($docs as $doc):
+                                            $available = $doc['available_copies'];
+                                        ?>
+                                            <option value="<?php echo $doc['id']; ?>"
+                                                data-available="<?php echo $available; ?>"
+                                                data-total="<?php echo $doc['copies_received']; ?>"
+                                                <?php echo $available <= 0 ? 'disabled class="text-[#9aa0b5]"' : ''; ?>>
+                                                <?php echo htmlspecialchars($doc['document_name']); ?>
+                                                (<?php echo $available; ?> of <?php echo $doc['copies_received']; ?> available)
+                                                <?php echo $available <= 0 ? ' - OUT OF STOCK' : ''; ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
-                        <div class="text-xs text-[#6e6e6e] flex items-center">
-                            <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+
+                        <div class="form-field">
+                            <label class="label">Date Distributed <span class="req">*</span></label>
+                            <input type="date" name="date_distributed" id="modalDateDistributed" required value="<?php echo date('Y-m-d'); ?>"
+                                class="input" autocomplete="off">
                         </div>
                     </div>
+
+                    <!-- Distribution Summary -->
+                    <div id="distributionSummary" class="hidden" style="margin-top:16px;padding:12px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;font-size:13px;">
+                        <div class="flex justify-between items-center">
+                            <span style="color:var(--text-secondary);">Total copies to distribute:</span>
+                            <span class="font-medium" id="totalCopiesToDistribute">0</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1">
+                            <span style="color:var(--text-secondary);">Available copies:</span>
+                            <span class="font-medium" id="availableCopiesDisplay">0</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1 text-xs" id="balanceWarning"></div>
+                    </div>
+
+                    <!-- MULTIPLE DISTRIBUTION ROWS -->
+                    <div style="margin-top:20px;">
+                        <label class="label">Distribution Entries</label>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Add multiple distribution entries if distributing to multiple recipients</p>
+                    </div>
+
+                    <div id="modalDistributionRows">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <div class="flex gap-2">
+                                <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
+                                    class="input flex-1 distribution-copies"
+                                    onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
+                                <button type="button" onclick="removeModalRow(this)" class="icon-btn danger">
+                                    <i class="fa-regular fa-trash-can"></i>
+                                </button>
+                            </div>
+                            <div class="flex items-center text-xs" style="color:var(--text-muted);">
+                                <i class="fa-regular fa-circle-info mr-1"></i> Enter number of copies to distribute
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 flex-wrap" style="margin-top:4px;">
+                        <button type="button" onclick="addModalRow()" class="btn btn-soft">
+                            <i class="fa-regular fa-plus"></i> Add Another Entry
+                        </button>
+                        <button type="button" onclick="addModalBulkRows()" class="btn btn-soft">
+                            <i class="fa-solid fa-layer-group"></i> Add 5 Entries
+                        </button>
+                        <button type="button" onclick="setMaxDistribution()" class="btn btn-soft">
+                            <i class="fa-solid fa-gauge-high"></i> Use All Available Copies
+                        </button>
+                    </div>
                 </div>
 
-                <div class="flex gap-3 mb-4">
-                    <button type="button" onclick="addModalRow()"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-regular fa-plus mr-1 text-[#6e6e6e]"></i> Add Another Entry
-                    </button>
-
-                    <button type="button" onclick="addModalBulkRows()"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-solid fa-layer-group mr-1 text-[#6e6e6e]"></i> Add 5 Entries
-                    </button>
-
-                    <button type="button" onclick="setMaxDistribution()"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                        <i class="fa-solid fa-gauge-high mr-1 text-[#6e6e6e]"></i> Use All Available Copies
-                    </button>
-                </div>
-
-                <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-[#e5e5e5]">
-                    <button type="button" onclick="closeDistributionModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit" name="submit" id="submitBtn"
-                        class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                        <i class="fa-regular fa-floppy-disk mr-1"></i>
-                        Save Distribution
+                <div class="modal-footer">
+                    <button type="button" onclick="closeDistributionModal()" class="btn btn-soft">Cancel</button>
+                    <button type="submit" name="submit" id="submitBtn" class="btn btn-primary">
+                        <i class="fa-regular fa-floppy-disk"></i> Save Distribution
                     </button>
                 </div>
             </form>
@@ -1129,203 +648,121 @@ if (isset($_SESSION['toast'])) {
     </div>
 
     <!-- View Distribution Modal -->
-    <div id="viewModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Distribution Details</h3>
-                <button onclick="closeViewModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="viewModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h3 class="modal-title">Distribution Details</h3>
+                <button class="modal-close" onclick="closeViewModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <div id="viewContent" class="space-y-3">
-                <!-- Filled by JavaScript -->
+            <div class="modal-body">
+                <div id="viewContent" class="space-y-3">
+                    <!-- Filled by JavaScript -->
+                </div>
             </div>
-
-            <div class="flex justify-end gap-2 mt-4">
-                <button onclick="closeViewModal()"
-                    class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Close
-                </button>
+            <div class="modal-footer">
+                <button onclick="closeViewModal()" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Delete</h2>
-                <button type="button" onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="deleteModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Confirm Delete</h2>
+                <button type="button" class="modal-close" onclick="closeDeleteModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this distribution record?</p>
-                <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p class="text-sm font-medium text-red-800" id="deleteDocumentName"></p>
-                    <p class="text-xs text-red-600 mt-1" id="deleteCopiesCount"></p>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Are you sure you want to delete this distribution record?</p>
+                <div style="margin-top:14px;padding:12px 14px;background:var(--red-soft);border:1px solid var(--red-border);border-radius:8px;">
+                    <p class="text-sm font-medium" style="color:var(--red);" id="deleteDocumentName"></p>
+                    <p class="text-xs mt-1" style="color:var(--red);opacity:.8;" id="deleteCopiesCount"></p>
                 </div>
-                <p class="text-xs text-[#9e9e9e] mt-3">
+                <p class="text-xs mt-3" style="color:var(--text-muted);">
                     <i class="fa-solid fa-circle-info mr-1"></i>
                     This will restore the copies back to the document inventory.
                 </p>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="closeDeleteModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <a href="#" id="confirmDeleteBtn"
-                    class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
-                    Delete & Restore Copies
-                </a>
+            <div class="modal-footer">
+                <button onclick="closeDeleteModal()" class="btn btn-soft">Cancel</button>
+                <a href="#" id="confirmDeleteBtn" class="btn btn-danger">Delete &amp; Restore Copies</a>
             </div>
         </div>
     </div>
 
     <!-- Withdraw Confirmation Modal -->
-    <div id="withdrawModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Withdraw</h2>
-                <button type="button" onclick="closeWithdrawModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="withdrawModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Confirm Withdraw</h2>
+                <button type="button" class="modal-close" onclick="closeWithdrawModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]">Do you want to withdraw this distribution and restore the copies to inventory?</p>
-                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <p class="text-sm font-medium text-yellow-800" id="withdrawDocumentName"></p>
-                    <p class="text-xs text-yellow-600 mt-1" id="withdrawCopiesCount"></p>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Do you want to withdraw this distribution and restore the copies to inventory?</p>
+                <div style="margin-top:14px;padding:12px 14px;background:var(--orange-soft);border:1px solid var(--orange-border);border-radius:8px;">
+                    <p class="text-sm font-medium" style="color:var(--orange);" id="withdrawDocumentName"></p>
+                    <p class="text-xs mt-1" style="color:var(--orange);opacity:.85;" id="withdrawCopiesCount"></p>
                 </div>
-                <p class="text-xs text-[#9e9e9e] mt-3">
+                <p class="text-xs mt-3" style="color:var(--text-muted);">
                     <i class="fa-solid fa-circle-info mr-1"></i>
                     This will mark the distribution as withdrawn and restore the copies back to the document inventory.
                 </p>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="closeWithdrawModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <a href="#" id="confirmWithdrawBtn"
-                    class="px-4 py-2 text-sm bg-yellow-600 text-white rounded-md hover:bg-yellow-700">
-                    Withdraw Distribution
-                </a>
+            <div class="modal-footer">
+                <button onclick="closeWithdrawModal()" class="btn btn-soft">Cancel</button>
+                <a href="#" id="confirmWithdrawBtn" class="btn btn-danger"><i class="fa-solid fa-rotate-left"></i> Withdraw Distribution</a>
             </div>
         </div>
     </div>
 
     <!-- Confirm Distribution Modal -->
-    <div id="confirmDistributionModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-[60] modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Distribution</h2>
-                <button type="button" onclick="closeConfirmDistributionModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="confirmDistributionModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Confirm Distribution</h2>
+                <button type="button" class="modal-close" onclick="closeConfirmDistributionModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]">Please confirm the following distribution details:</p>
-                <div class="mt-4 space-y-3 p-4 bg-[#f5f5f4] rounded-md">
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Please confirm the following distribution details:</p>
+                <div style="margin-top:14px;padding:8px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;">
                     <div class="flex justify-between">
-                        <span class="text-xs text-[#6e6e6e] uppercase">Document</span>
+                        <span class="text-xs" style="color:var(--text-muted);">Document</span>
                         <span class="text-sm font-medium text-right" id="confirmDocName">-</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-xs text-[#6e6e6e] uppercase">Date Distributed</span>
+                    <div class="flex justify-between mt-2">
+                        <span class="text-xs" style="color:var(--text-muted);">Date Distributed</span>
                         <span class="text-sm font-medium" id="confirmDate">-</span>
                     </div>
-                    <div class="flex justify-between border-t border-[#e5e5e5] pt-2">
-                        <span class="text-xs text-[#6e6e6e] uppercase">Total Copies</span>
-                        <span class="text-sm font-bold" id="confirmTotalCopies">-</span>
+                    <div class="flex justify-between border-t pt-2 mt-2" style="border-color:var(--border);">
+                        <span class="text-xs" style="color:var(--text-muted);">Total Copies</span>
+                        <span class="text-sm font-bold" style="color:var(--accent);" id="confirmTotalCopies">-</span>
                     </div>
                 </div>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="closeConfirmDistributionModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Edit Details
-                </button>
-                <button onclick="finalSubmitDistribution()" id="finalConfirmBtn"
-                    class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] flex items-center gap-2 transition-all">
-                    <i class="fa-regular fa-circle-check"></i>
-                    Confirm & Save
+            <div class="modal-footer">
+                <button onclick="closeConfirmDistributionModal()" class="btn btn-soft">Edit Details</button>
+                <button onclick="finalSubmitDistribution()" id="finalConfirmBtn" class="btn btn-primary">
+                    <i class="fa-regular fa-circle-check"></i> Confirm &amp; Save
                 </button>
             </div>
         </div>
     </div>
-</main>
-</div>
 
-<script>
-        // Show toast notification from PHP session
-        <?php if ($toast): ?>
-                (function() {
-                    const showQueuedToast = () => showToast('<?php echo addslashes($toast['message']); ?>', '<?php echo $toast['type']; ?>');
-                    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                        showQueuedToast();
-                    } else {
-                        document.addEventListener('DOMContentLoaded', showQueuedToast);
-                    }
-                })();
-        <?php endif; ?>
-
-        // Toast notification function
+    <script>
+        // Toast notification function - delegates to shared MailroomToast
         function showToast(message, type = 'info', duration = 5000) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-
-            let icon = 'fa-circle-check';
-            if (type === 'error') icon = 'fa-circle-exclamation';
-            if (type === 'warning') icon = 'fa-triangle-exclamation';
-            if (type === 'info') icon = 'fa-circle-info';
-
-            let iconColor = '#10b981';
-            if (type === 'error') iconColor = '#ef4444';
-            if (type === 'warning') iconColor = '#f59e0b';
-            if (type === 'info') iconColor = '#3b82f6';
-
-            toast.innerHTML = `
-                <div class="toast-content">
-                    <i class="fa-regular ${icon}" style="color: ${iconColor};"></i>
-                    <span class="text-sm">${message}</span>
-                </div>
-                <span class="toast-close" onclick="this.parentElement.remove()">&times;</span>
-                <div class="toast-progress"></div>
-            `;
-
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                if (toast.parentElement) {
-                    toast.style.animation = 'slideOut 0.3s ease';
-                    setTimeout(() => {
-                        if (toast.parentElement) {
-                            toast.remove();
-                        }
-                    }, 300);
-                }
-            }, duration);
+            MailroomToast.show(message, type, duration);
         }
 
         // ========== MODAL FUNCTIONS ==========
         function openDistributionModal() {
             resetModalForm();
-            document.getElementById('distributionModal').style.display = 'flex';
+            MailroomModal.open('distributionModal');
             updateAvailableCopies();
         }
 
         function closeDistributionModal() {
-            document.getElementById('distributionModal').style.display = 'none';
+            MailroomModal.close('distributionModal');
         }
 
         function resetModalForm() {
@@ -1388,15 +825,15 @@ if (isset($_SESSION['toast'])) {
             const warningMessage = document.getElementById('warningMessage');
 
             if (total > available) {
-                balanceWarning.innerHTML = `<span class="text-red-600"><i class="fa-regular fa-circle-exclamation mr-1"></i>Exceeds available by ${total - available} copies</span>`;
+                balanceWarning.innerHTML = `<span style="color:var(--red);"><i class="fa-regular fa-circle-exclamation mr-1"></i>Exceeds available by ${total - available} copies</span>`;
                 submitBtn.disabled = true;
-                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                submitBtn.classList.add('disabled');
                 stockWarning.classList.remove('hidden');
                 warningMessage.textContent = `Warning: You are trying to distribute ${total} copies but only ${available} are available.`;
             } else {
                 balanceWarning.innerHTML = '';
                 submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                submitBtn.classList.remove('disabled');
                 stockWarning.classList.add('hidden');
             }
         }
@@ -1433,17 +870,17 @@ if (isset($_SESSION['toast'])) {
         function addModalRow() {
             const container = document.getElementById('modalDistributionRows');
             const row = `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                     <div class="flex gap-2">
                         <input type="number" name="number_distributed[]" placeholder="Number of Copies" min="1" value="1"
-                            class="flex-1 px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] distribution-copies"
+                            class="input flex-1 distribution-copies"
                             onchange="updateDistributionSummary()" onkeyup="updateDistributionSummary()" autocomplete="off">
-                        <button type="button" onclick="removeModalRow(this)" class="px-2 text-[#9e9e9e] hover:text-[#dc2626]">
+                        <button type="button" onclick="removeModalRow(this)" class="icon-btn danger">
                             <i class="fa-regular fa-trash-can"></i>
                         </button>
                     </div>
-                    <div class="text-xs text-[#6e6e6e] flex items-center">
-                        <i class="fa-regular fa-info-circle mr-1"></i> Enter number of copies to distribute
+                    <div class="flex items-center text-xs" style="color:var(--text-muted);">
+                        <i class="fa-regular fa-circle-info mr-1"></i> Enter number of copies to distribute
                     </div>
                 </div>
             `;
@@ -1508,7 +945,7 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('confirmDate').textContent = document.getElementById('modalDateDistributed').value;
             document.getElementById('confirmTotalCopies').textContent = totalCopies;
 
-            document.getElementById('confirmDistributionModal').style.display = 'flex';
+            MailroomModal.open('confirmDistributionModal');
             return false; // Prevent immediate submission
         }
 
@@ -1521,10 +958,10 @@ if (isset($_SESSION['toast'])) {
         }
 
         function closeConfirmDistributionModal() {
-            document.getElementById('confirmDistributionModal').style.display = 'none';
+            MailroomModal.close('confirmDistributionModal');
         }
 
-        // ========== DELETE MODAL FUNCTIONS ==========
+        // ========== DELETE / WITHDRAW MODAL FUNCTIONS ==========
         let currentDeleteId = null;
 
         function openDeleteModal(id, documentName, copies) {
@@ -1532,11 +969,12 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('deleteDocumentName').textContent = documentName;
             document.getElementById('deleteCopiesCount').textContent = `Copies: ${copies}`;
 
-            const urlParams = new URLSearchParams(window.location.search);
-            urlParams.set('delete', id);
-            document.getElementById('confirmDeleteBtn').href = '?' + urlParams.toString();
+            document.getElementById('confirmDeleteBtn').onclick = function(e) {
+                e.preventDefault();
+                submitPostForm('distribution.php', { delete_distribution: id });
+            };
 
-            document.getElementById('deleteModal').style.display = 'flex';
+            MailroomModal.open('deleteModal');
         }
 
         let currentWithdrawId = null;
@@ -1546,15 +984,12 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('withdrawDocumentName').textContent = documentName;
             document.getElementById('withdrawCopiesCount').textContent = `Copies: ${copies}`;
 
-            const urlParams = new URLSearchParams(window.location.search);
-            urlParams.set('withdraw', id);
-            document.getElementById('confirmWithdrawBtn').href = '?' + urlParams.toString();
+            document.getElementById('confirmWithdrawBtn').onclick = function(e) {
+                e.preventDefault();
+                submitPostForm('distribution.php', { withdraw_distribution: id });
+            };
 
-            document.getElementById('withdrawModal').style.display = 'flex';
-        }
-
-        function withdrawDistribution(id, documentName, copies) {
-            openWithdrawModal(id, documentName, copies);
+            MailroomModal.open('withdrawModal');
         }
 
         function continueDistribution(documentId) {
@@ -1583,12 +1018,12 @@ if (isset($_SESSION['toast'])) {
         }
 
         function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
+            MailroomModal.close('deleteModal');
             currentDeleteId = null;
         }
 
         function closeWithdrawModal() {
-            document.getElementById('withdrawModal').style.display = 'none';
+            MailroomModal.close('withdrawModal');
             currentWithdrawId = null;
         }
 
@@ -1598,36 +1033,36 @@ if (isset($_SESSION['toast'])) {
             content.innerHTML = `
                 <div class="grid grid-cols-2 gap-3">
                     <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Document</p>
-                        <p class="text-sm font-medium">${escapeHtml(data.document_name || '')}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Document</p>
+                        <p class="text-sm font-medium" style="color:var(--text);">${esc(data.document_name || '')}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Document Type</p>
-                        <p class="text-sm">${escapeHtml(data.document_type || 'Not specified')}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Document Type</p>
+                        <p class="text-sm" style="color:var(--text-secondary);">${esc(data.document_type || 'Not specified')}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Copies Distributed</p>
-                        <p class="text-sm font-mono">${data.number_distributed || 0}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Copies Distributed</p>
+                        <p class="text-sm font-mono" style="color:var(--text);">${data.number_distributed || 0}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Distributed</p>
-                        <p class="text-sm">${data.date_distributed ? new Date(data.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Date Distributed</p>
+                        <p class="text-sm" style="color:var(--text-secondary);">${data.date_distributed ? new Date(data.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Timestamp</p>
-                        <p class="text-sm">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString() : 'N/A'}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Timestamp</p>
+                        <p class="text-sm" style="color:var(--text-secondary);">${data.created_at ? new Date(data.created_at.replace(' ', 'T')).toLocaleString() : 'N/A'}</p>
                     </div>
                     <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Available Copies of Document</p>
-                        <p class="text-sm">${data.available_copies || 0}</p>
+                        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Available Copies of Document</p>
+                        <p class="text-sm" style="color:var(--text-secondary);">${data.available_copies || 0}</p>
                     </div>
                 </div>
             `;
-            document.getElementById('viewModal').style.display = 'flex';
+            MailroomModal.open('viewModal');
         }
 
         function closeViewModal() {
-            document.getElementById('viewModal').style.display = 'none';
+            MailroomModal.close('viewModal');
         }
 
         function escapeHtml(text) {
@@ -1636,6 +1071,7 @@ if (isset($_SESSION['toast'])) {
             div.textContent = text;
             return div.innerHTML;
         }
+        // app.js provides a global esc() helper; do not redeclare it here.
 
         // Table search functionality
         const distributionPageSize = 10;
@@ -1670,6 +1106,9 @@ if (isset($_SESSION['toast'])) {
             visibleRows.forEach((row, index) => {
                 row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
             });
+
+            const visibleCountEl = document.getElementById('visibleCount');
+            if (visibleCountEl) visibleCountEl.textContent = totalRows;
 
             if (totalRows === 0) {
                 if (title) title.textContent = '';
@@ -1745,8 +1184,6 @@ if (isset($_SESSION['toast'])) {
                 if (matches) visibleCount++;
             });
 
-            const countEl = document.getElementById('visibleCount');
-            if (countEl) countEl.textContent = visibleCount;
             distributionCurrentPage = 1;
             renderDistributionPagination();
 
@@ -1815,33 +1252,8 @@ if (isset($_SESSION['toast'])) {
             });
             renderDistributionPagination();
         });
-
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            const distributionModal = document.getElementById('distributionModal');
-            const viewModal = document.getElementById('viewModal');
-            const deleteModal = document.getElementById('deleteModal');
-            const confirmModal = document.getElementById('confirmDistributionModal');
-            const withdrawModal = document.getElementById('withdrawModal');
-
-            if (event.target == distributionModal) closeDistributionModal();
-            if (event.target == viewModal) closeViewModal();
-            if (event.target == deleteModal) closeDeleteModal();
-            if (event.target == confirmModal) closeConfirmDistributionModal();
-            if (event.target == withdrawModal) closeWithdrawModal();
-        }
-
-        // ESC key to close modals
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeDistributionModal();
-                closeViewModal();
-                closeDeleteModal();
-                closeConfirmDistributionModal();
-                closeWithdrawModal();
-            }
-        });
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

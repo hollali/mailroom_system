@@ -1,40 +1,11 @@
 <?php
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 session_start();
 
 $message = '';
 $error = '';
-
-function tableHasColumn($conn, $table, $column)
-{
-    $table = $conn->real_escape_string($table);
-    $column = $conn->real_escape_string($column);
-    $result = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
-    return $result && $result->num_rows > 0;
-}
-
-function normalizeDateTimeInput($value)
-{
-    if (!$value) {
-        return null;
-    }
-
-    return str_replace('T', ' ', trim($value));
-}
-
-function formatTimestampDisplay($value)
-{
-    if (empty($value)) {
-        return 'N/A';
-    }
-
-    $timestamp = strtotime($value);
-    if ($timestamp === false) {
-        return htmlspecialchars($value);
-    }
-
-    return date('M j, Y g:i A', $timestamp);
-}
 
 $parcels_received_has_timestamp = tableHasColumn($conn, 'parcels_received', 'received_at');
 $parcels_pickup_has_timestamp = tableHasColumn($conn, 'parcels_pickup', 'picked_at');
@@ -43,6 +14,7 @@ $picked_timestamp_select = $parcels_pickup_has_timestamp ? "COALESCE(pp.picked_a
 
 // Handle new parcel receipt
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'receive') {
+    csrf_check_post();
     // Generate unique tracking ID
     $tracking_id = 'PRCL-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
 
@@ -72,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'edit_received') {
+    csrf_check_post();
     header('Content-Type: application/json');
 
     $parcel_id = isset($_POST['parcel_id']) ? (int)$_POST['parcel_id'] : 0;
@@ -119,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'delete_received') {
+    csrf_check_post();
     header('Content-Type: application/json');
 
     $parcel_id = isset($_POST['parcel_id']) ? (int)$_POST['parcel_id'] : 0;
@@ -168,7 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 
 // Handle pickup
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
-    $parcel_id = $_POST['parcel_id'];
+    csrf_check_post();
+    $parcel_id = (int)$_POST['parcel_id'];
     $picked_by = $_POST['picked_by'];
     $phone_number = $_POST['phone_number'];
     $designation = $_POST['designation'];
@@ -176,9 +151,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
     $date_picked = date('Y-m-d');
 
     // Check if parcel exists and not picked up
-    $check = $conn->query("SELECT * FROM parcels_received WHERE id = $parcel_id");
+    $get_stmt = $conn->prepare("SELECT * FROM parcels_received WHERE id = ?");
+    $get_stmt->bind_param("i", $parcel_id);
+    $get_stmt->execute();
+    $check = $get_stmt->get_result();
     if ($check->num_rows > 0) {
-        $check_pickup = $conn->query("SELECT * FROM parcels_pickup WHERE parcel_id = $parcel_id");
+        $get_stmt2 = $conn->prepare("SELECT * FROM parcels_pickup WHERE parcel_id = ?");
+        $get_stmt2->bind_param("i", $parcel_id);
+        $get_stmt2->execute();
+        $check_pickup = $get_stmt2->get_result();
         if ($check_pickup->num_rows == 0) {
             if ($parcels_pickup_has_timestamp) {
                 $stmt = $conn->prepare("INSERT INTO parcels_pickup (parcel_id, picked_by, phone_number, designation, date_picked, picked_at) VALUES (?, ?, ?, ?, ?, ?)");
@@ -278,467 +259,208 @@ $recent_parcels = $conn->query("
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parcel Management System - Mailroom</title>
+    <title>Parcels - Mailroom Ops</title>
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 0.75rem 1rem;
-            border-bottom: 2px solid #e5e5e5;
-            font-weight: 500;
-            color: #4a4a4a;
-        }
-
-        td {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #e5e5e5;
-        }
-
-        .tab-button.active {
-            background-color: white;
-            border-bottom: 2px solid #1e1e1e;
-            color: #1e1e1e;
-        }
-
-        .stat-card {
-            transition: all 0.2s ease;
-        }
-
-        .stat-card:hover {
-            border-color: #9e9e9e;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.7rem;
-            border-radius: 3px;
-            background-color: #f5f5f4;
-            color: #4a4a4a;
-        }
-
-        .badge-success {
-            background-color: #e8f0e8;
-            color: #2c5e2c;
-        }
-
-        .badge-warning {
-            background-color: #fef7e0;
-            color: #9e6b0b;
-        }
-
-        .badge-info {
-            background-color: #e3f2fd;
-            color: #0b5e8a;
-        }
-
-        /* Toast notification styles */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            min-width: 300px;
-            margin-bottom: 10px;
-            padding: 15px 20px;
-            background: white;
-            border-left: 4px solid;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            animation: slideIn 0.3s ease;
-        }
-
-        .toast.success {
-            border-left-color: #2c5e2c;
-        }
-
-        .toast.error {
-            border-left-color: #dc2626;
-        }
-
-        .toast.info {
-            border-left-color: #2563eb;
-        }
-
-        .toast.warning {
-            border-left-color: #d97706;
-        }
-
-        .toast-content {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .toast-close {
-            cursor: pointer;
-            color: #9e9e9e;
-            font-size: 18px;
-        }
-
-        .toast-close:hover {
-            color: #1e1e1e;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        /* Pagination styles */
-        .pagination-shell {
-            padding: 1rem 1.25rem;
-            border-top: 1px solid #e5e5e5;
-            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-        }
-
-        .pagination-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .pagination-title {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: #1c1917;
-        }
-
-        .pagination-subtitle {
-            font-size: 0.82rem;
-            color: #78716c;
-        }
-
-        .pagination-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.75rem;
-        }
-
-        .pagination-page-indicator {
-            padding: 0.45rem 0.85rem;
-            border-radius: 9999px;
-            background-color: #f5f5f4;
-            color: #44403c;
-            font-size: 0.82rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .pagination {
-            display: flex;
-            gap: 0.4rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .pagination a,
-        .pagination span {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 40px;
-            height: 40px;
-            padding: 0 14px;
-            border: 1px solid #e7e5e4;
-            background: white;
-            color: #292524;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            border-radius: 12px;
-            transition: all 0.2s ease;
-            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
-        }
-
-        .pagination a:hover {
-            background: #f5f5f4;
-            border-color: #d6d3d1;
-            transform: translateY(-1px);
-        }
-
-        .pagination .active {
-            background: #1c1917;
-            border-color: #1c1917;
-            color: white;
-            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
-        }
-
-        .pagination .disabled {
-            opacity: 0.5;
-            pointer-events: none;
-            box-shadow: none;
-        }
-
-        .pagination .compact {
-            min-width: auto;
-            padding: 0 14px;
-        }
-
-        .pagination-ellipsis {
-            color: #a8a29e;
-            box-shadow: none;
-            border-color: transparent !important;
-            background: transparent !important;
-            min-width: 32px;
-            padding: 0;
-        }
-
-        /* Filter panel */
-        .filter-panel {
-            transition: all 0.3s ease;
-        }
-
-        .filter-panel.collapsed {
-            max-height: 0;
-            opacity: 0;
-            overflow: hidden;
-            padding: 0;
-            margin: 0;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
-<body class="bg-[#f5f5f4]">
+<body>
     <div class="flex">
         <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
-            <!-- Simple header -->
-            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Parcel Management System</h1>
-                        <p class="text-sm text-[#6e6e6e] mt-1">Receive and track parcels with pickup information</p>
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Parcels</span>
                     </div>
-                    <div class="text-sm text-[#6e6e6e]">
-                        <i class="fa-regular fa-calendar mr-1"></i> <?php echo date('l, F j, Y'); ?>
+                    <h1 class="page-header-title">Parcels</h1>
+                    <p class="page-header-subtitle">Receive and track parcels with pickup information.</p>
+                </div>
+                <div class="header-actions flex items-center gap-2 print-hide">
+                    <div class="dropdown">
+                        <button class="btn btn-soft" onclick="toggleDropdown(this)">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            <span class="hidden sm:inline">Export</span>
+                        </button>
+                        <div class="dropdown-menu">
+                            <a href="#" class="dropdown-item" onclick="exportReceiveCSV(); return false;"><i class="fa-regular fa-file-excel"></i> Export CSV</a>
+                            <a href="#" class="dropdown-item" onclick="printRecords(); return false;"><i class="fa-solid fa-print"></i> Print</a>
+                        </div>
                     </div>
+                    <button onclick="openReceiveModal()" class="btn btn-primary">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">Receive Parcel</span>
+                    </button>
                 </div>
             </div>
 
-            <div class="p-4 lg:p-8">
+            <div class="page-body">
                 <!-- Tabs -->
-                <div class="border-b border-[#e5e5e5] mb-6">
-                    <div class="flex gap-6">
-                        <button class="tab-button active px-1 py-2 text-sm font-medium text-[#1e1e1e] border-b-2 border-[#1e1e1e]" onclick="switchTab('receive')">
-                            <i class="fa-regular fa-circle-down mr-2"></i>Receive Parcel
-                        </button>
-                        <button class="tab-button px-1 py-2 text-sm font-medium text-[#6e6e6e] hover:text-[#1e1e1e]" onclick="switchTab('pickup')">
-                            <i class="fa-regular fa-circle-up mr-2"></i>Pickup Parcel
-                        </button>
-                        <button class="tab-button px-1 py-2 text-sm font-medium text-[#6e6e6e] hover:text-[#1e1e1e]" onclick="switchTab('records')">
-                            <i class="fa-regular fa-rectangle-list mr-2"></i>All Records
-                        </button>
-                    </div>
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="receive" onclick="switchTab('receive')">
+                        <i class="fa-regular fa-circle-down"></i> Receive Parcel
+                    </button>
+                    <button class="tab-button" data-tab="pickup" onclick="switchTab('pickup')">
+                        <i class="fa-regular fa-circle-up"></i> Pickup Parcel
+                    </button>
+                    <button class="tab-button" data-tab="records" onclick="switchTab('records')">
+                        <i class="fa-regular fa-rectangle-list"></i> All Records
+                    </button>
                 </div>
 
-                <!-- Receive Parcel Tab - Redesigned -->
+                <!-- Receive Parcel Tab -->
                 <div id="receiveTab" class="tab-content">
-                    <!-- Quick Actions Bar -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div class="flex flex-wrap gap-2">
-                                <button onclick="openReceiveModal()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium flex items-center">
-                                    <i class="fa-regular fa-plus mr-2 text-[#6e6e6e]"></i> New Parcel
+                    <!-- Quick Actions + Search -->
+                    <div class="card mb-6 print-hide">
+                        <div class="card-body" style="padding:14px 16px;">
+                            <div class="filter-bar" style="margin-bottom:0;">
+                                <button onclick="openReceiveModal()" class="btn btn-primary">
+                                    <i class="fa-solid fa-plus"></i> New Parcel
                                 </button>
-                                <button onclick="exportReceiveCSV()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export
+                                <button onclick="exportReceiveCSV()" class="btn btn-soft">
+                                    <i class="fa-regular fa-file-excel"></i> Export
                                 </button>
-                                <button onclick="printReceiveRecords()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i> Print
+                                <button onclick="printReceiveRecords()" class="btn btn-soft">
+                                    <i class="fa-solid fa-print"></i> Print
                                 </button>
-                                <button onclick="refreshReceiveTab()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-solid fa-rotate-right mr-1 text-[#6e6e6e]"></i> Refresh
+                                <button onclick="refreshReceiveTab()" class="btn btn-soft">
+                                    <i class="fa-solid fa-rotate-right"></i> Refresh
                                 </button>
-                            </div>
-                            <div class="flex flex-wrap gap-2 w-full md:w-auto">
-                                <div class="relative flex-1 md:flex-none">
-                                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
+                                <div style="margin-left:auto;"></div>
+                                <div class="search-wrap">
+                                    <i class="fa-solid fa-magnifying-glass icon"></i>
                                     <input type="text" id="receiveSearch" placeholder="Search parcels..."
-                                        class="pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] w-full md:w-64"
-                                        autocomplete="off">
+                                        class="input" autocomplete="off">
                                 </div>
-                                <button onclick="filterReceiveTable(true)" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
-                                    Search
-                                </button>
-                                <select id="receiveFilter" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                                    <option value="all">All</option>
+                                <select id="receiveFilter" class="select">
+                                    <option value="all">All Dates</option>
                                     <option value="today">Today</option>
                                     <option value="week">This Week</option>
                                     <option value="month">This Month</option>
                                 </select>
+                                <button onclick="filterReceiveTable(true)" class="btn btn-soft">
+                                    <i class="fa-solid fa-filter"></i> Filter
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Stats Cards -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                        <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Total Parcels</p>
-                                    <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['parcels_received']; ?></p>
-                                </div>
-                                <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-solid fa-box text-[#6e6e6e]"></i>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#6e6e6e] mt-2">All time parcels received</p>
+                    <!-- Stats -->
+                    <div class="stat-grid mb-6">
+                        <div class="stat-card">
+                            <div class="stat-icon blue"><i class="fa-solid fa-box"></i></div>
+                            <div class="stat-label">Total Parcels</div>
+                            <div class="stat-value"><?php echo number_format($stats['parcels_received']); ?></div>
+                            <div class="stat-hint">All time received</div>
                         </div>
-
-                        <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Today</p>
-                                    <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['today_parcels']; ?></p>
-                                </div>
-                                <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-regular fa-calendar text-[#6e6e6e]"></i>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#6e6e6e] mt-2">Parcels received today</p>
+                        <div class="stat-card">
+                            <div class="stat-icon green"><i class="fa-regular fa-calendar"></i></div>
+                            <div class="stat-label">Received Today</div>
+                            <div class="stat-value"><?php echo number_format($stats['today_parcels']); ?></div>
+                            <div class="stat-hint">Parcels received today</div>
                         </div>
-
-                        <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">This Week</p>
-                                    <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['week_parcels']; ?></p>
-                                </div>
-                                <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-solid fa-calendar-week text-[#6e6e6e]"></i>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#6e6e6e] mt-2">Parcels this week</p>
+                        <div class="stat-card">
+                            <div class="stat-icon orange"><i class="fa-solid fa-calendar-week"></i></div>
+                            <div class="stat-label">This Week</div>
+                            <div class="stat-value"><?php echo number_format($stats['week_parcels']); ?></div>
+                            <div class="stat-hint">Parcels this week</div>
                         </div>
-
-                        <div class="stat-card bg-white border border-[#e5e5e5] rounded-md p-4">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs text-[#6e6e6e] uppercase tracking-wide">Pending</p>
-                                    <p class="text-2xl font-medium text-[#1e1e1e] mt-1"><?php echo $stats['pending_parcels']; ?></p>
-                                </div>
-                                <div class="w-10 h-10 bg-[#f5f5f4] rounded-full flex items-center justify-center">
-                                    <i class="fa-regular fa-clock text-[#6e6e6e]"></i>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#6e6e6e] mt-2">Awaiting pickup</p>
+                        <div class="stat-card">
+                            <div class="stat-icon gray"><i class="fa-regular fa-clock"></i></div>
+                            <div class="stat-label">Pending Pickup</div>
+                            <div class="stat-value"><?php echo number_format($stats['pending_parcels']); ?></div>
+                            <div class="stat-hint">Awaiting pickup</div>
                         </div>
                     </div>
 
                     <!-- Recent Parcels Table -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                        <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
-                            <h2 class="text-sm font-medium text-[#1e1e1e]">Recent Parcels</h2>
-                            <span class="text-xs text-[#6e6e6e]">Showing page <?php echo $recent_page; ?> of <?php echo ceil($total_records / $records_per_page); ?></span>
+                    <div class="card">
+                        <div class="card-header" style="padding:14px 20px;">
+                            <div>
+                                <div class="card-title">Recent Parcels</div>
+                                <div class="card-subtitle">Showing page <?php echo $recent_page; ?> of <?php echo max(1, ceil($total_records / $records_per_page)); ?></div>
+                            </div>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table>
+                        <div class="table-wrap">
+                            <table class="table">
                                 <thead>
-                                    <tr class="bg-[#fafafa]">
-                                        <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs hidden md:table-cell">Description</th>
-                                        <th class="text-xs">Sender</th>
-                                        <th class="text-xs">Recipient</th>
-                                        <th class="text-xs">Received Timestamp</th>
-                                        <th class="text-xs hidden md:table-cell">Received By</th>
-                                        <th class="text-xs">Status</th>
-                                        <th class="text-xs">Actions</th>
+                                    <tr>
+                                        <th>Tracking ID</th>
+                                        <th class="hidden md:table-cell">Description</th>
+                                        <th>Sender</th>
+                                        <th>Recipient</th>
+                                        <th>Received On</th>
+                                        <th class="hidden md:table-cell">Received By</th>
+                                        <th>Status</th>
+                                        <th style="width:92px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="receiveTableBody">
                                     <?php if ($recent_parcels->num_rows > 0): ?>
                                         <?php while ($parcel = $recent_parcels->fetch_assoc()): ?>
-                                            <tr class="hover:bg-[#fafafa] receive-row"
+                                            <tr class="receive-row"
                                                 data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>"
                                                 data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
-                                                <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                                <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
-                                                <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
-                                                <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                                <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
-                                                <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo $parcel['received_by']; ?></td>
-                                                <td class="text-sm">
+                                                <td>
+                                                    <span class="table-cell-mono"><?php echo $parcel['tracking_id']; ?></span>
+                                                </td>
+                                                <td class="hidden md:table-cell">
+                                                    <span class="text-xs text-[#4b5570] max-w-[200px] block truncate"><?php echo substr($parcel['description'], 0, 40); ?><?php echo strlen($parcel['description']) > 40 ? '...' : ''; ?></span>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                                <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
+                                                <td>
+                                                    <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></span>
+                                                </td>
+                                                <td class="hidden md:table-cell"><?php echo htmlspecialchars($parcel['received_by']); ?></td>
+                                                <td>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <span class="badge badge-warning">Pending</span>
+                                                        <span class="badge badge-orange">Pending</span>
                                                     <?php else: ?>
-                                                        <span class="badge badge-success">Picked Up</span>
+                                                        <span class="badge badge-green">Picked Up</span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td class="text-sm">
-                                                    <button onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)"
-                                                        class="text-[#9e9e9e] hover:text-[#1e1e1e] mr-2" title="View Details">
-                                                        <i class="fa-solid fa-eye"></i>
-                                                    </button>
-                                                    <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <button onclick='openEditReceiveModal(<?php echo htmlspecialchars(json_encode([
-                                                                                                    "id" => $parcel["id"],
-                                                                                                    "tracking_id" => $parcel["tracking_id"],
-                                                                                                    "description" => $parcel["description"],
-                                                                                                    "sender" => $parcel["sender"],
-                                                                                                    "addressed_to" => $parcel["addressed_to"],
-                                                                                                    "received_by" => $parcel["received_by"],
-                                                                                                    "received_timestamp" => $parcel["received_timestamp"] ?? $parcel["date_received"]
-                                                                                                ]), ENT_QUOTES, "UTF-8"); ?>)'
-                                                            class="text-[#6e6e6e] hover:text-[#1d4ed8] mr-2" title="Edit Parcel">
-                                                            <i class="fa-regular fa-pen-to-square"></i>
+                                                <td>
+                                                    <div class="row-actions">
+                                                        <button class="icon-btn" onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)" title="View Details">
+                                                            <i class="fa-regular fa-eye"></i>
                                                         </button>
-                                                    <?php endif; ?>
-                                                    <button onclick="openDeleteReceiveModal(<?php echo $parcel['id']; ?>, '<?php echo htmlspecialchars($parcel['tracking_id'], ENT_QUOTES); ?>')"
-                                                        class="text-[#6e6e6e] hover:text-[#991b1b]" title="Delete Parcel">
-                                                        <i class="fa-regular fa-trash-can"></i>
-                                                    </button>
+                                                        <?php if ($parcel['status'] == 'Pending'): ?>
+                                                            <button class="icon-btn primary" onclick='openEditReceiveModal(<?php echo htmlspecialchars(json_encode([
+                                                                        "id" => $parcel["id"],
+                                                                        "tracking_id" => $parcel["tracking_id"],
+                                                                        "description" => $parcel["description"],
+                                                                        "sender" => $parcel["sender"],
+                                                                        "addressed_to" => $parcel["addressed_to"],
+                                                                        "received_by" => $parcel["received_by"],
+                                                                        "received_timestamp" => $parcel["received_timestamp"] ?? $parcel["date_received"]
+                                                                    ]), ENT_QUOTES, "UTF-8"); ?>)' title="Edit Parcel">
+                                                                <i class="fa-regular fa-pen-to-square"></i>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                        <button class="icon-btn danger" onclick="openDeleteReceiveModal(<?php echo $parcel['id']; ?>, '<?php echo htmlspecialchars($parcel['tracking_id'], ENT_QUOTES); ?>')" title="Delete Parcel">
+                                                            <i class="fa-regular fa-trash-can"></i>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         <?php endwhile; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">No parcels found</td>
+                                            <td colspan="8">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon"><i class="fa-regular fa-box-open"></i></div>
+                                                    <div class="empty-state-title">No parcels found</div>
+                                                    <div class="empty-state-text">Start by receiving your first parcel.</div>
+                                                    <button onclick="openReceiveModal()" class="btn btn-soft btn-sm" style="margin-top:16px;">Receive a parcel</button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>
@@ -757,30 +479,30 @@ $recent_parcels = $conn->query("
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
                                     <div class="pagination-title">Showing parcels on this page</div>
-                                    <div class="pagination-subtitle">Records <?php echo $receiveFrom; ?>-<?php echo $receiveTo; ?> of <?php echo $total_records; ?> total</div>
+                                    <span>Records <?php echo $receiveFrom; ?>-<?php echo $receiveTo; ?> of <?php echo $total_records; ?> total</span>
                                 </div>
                                 <div class="pagination-controls">
                                     <div class="pagination-page-indicator">Page <?php echo $recent_page; ?> of <?php echo $receiveTotalPages; ?></div>
                                     <div class="pagination">
-                                        <a class="compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=1&tab=receive"><i class="fa-regular fa-chevrons-left"></i></a>
-                                        <a class="compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=<?php echo max(1, $recent_page - 1); ?>&tab=receive"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=1&tab=receive"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $recent_page <= 1 ? 'disabled' : ''; ?>" href="?recent_page=<?php echo max(1, $recent_page - 1); ?>&tab=receive"><i class="fa-regular fa-chevron-left"></i></a>
                                         <?php if ($receiveStart > 1): ?>
-                                            <a href="?recent_page=1&tab=receive">1</a>
+                                            <a class="pagination-item" href="?recent_page=1&tab=receive">1</a>
                                             <?php if ($receiveStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
                                         <?php for ($i = $receiveStart; $i <= $receiveEnd; $i++): ?>
                                             <?php if ($i == $recent_page): ?>
-                                                <span class="active"><?php echo $i; ?></span>
+                                                <span class="pagination-item active"><?php echo $i; ?></span>
                                             <?php else: ?>
-                                                <a href="?recent_page=<?php echo $i; ?>&tab=receive"><?php echo $i; ?></a>
+                                                <a class="pagination-item" href="?recent_page=<?php echo $i; ?>&tab=receive"><?php echo $i; ?></a>
                                             <?php endif; ?>
                                         <?php endfor; ?>
                                         <?php if ($receiveEnd < $receiveTotalPages): ?>
                                             <?php if ($receiveEnd < $receiveTotalPages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
-                                            <a href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><?php echo $receiveTotalPages; ?></a>
+                                            <a class="pagination-item" href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><?php echo $receiveTotalPages; ?></a>
                                         <?php endif; ?>
-                                        <a class="compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo min($receiveTotalPages, $recent_page + 1); ?>&tab=receive"><i class="fa-regular fa-chevron-right"></i></a>
-                                        <a class="compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><i class="fa-regular fa-chevrons-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo min($receiveTotalPages, $recent_page + 1); ?>&tab=receive"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $recent_page >= $receiveTotalPages ? 'disabled' : ''; ?>" href="?recent_page=<?php echo $receiveTotalPages; ?>&tab=receive"><i class="fa-regular fa-chevrons-right"></i></a>
                                     </div>
                                 </div>
                             </div>
@@ -791,83 +513,106 @@ $recent_parcels = $conn->query("
                 <!-- Pickup Parcel Tab -->
                 <div id="pickupTab" class="tab-content hidden">
                     <!-- Search and filter -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
-                        <div class="flex flex-col md:flex-row gap-3">
-                            <div class="flex-1">
-                                <div class="relative flex items-center gap-2">
-                                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
+                    <div class="card mb-6 print-hide">
+                        <div class="card-body" style="padding:14px 16px;">
+                            <div class="filter-bar" style="margin-bottom:0;">
+                                <div class="search-wrap" style="flex:1;min-width:220px;">
+                                    <i class="fa-solid fa-magnifying-glass icon"></i>
                                     <input type="text" id="searchPickup" placeholder="Search by tracking ID, sender, or recipient..."
-                                        class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                        autocomplete="off">
-                                    <button onclick="filterPickupTable(true)" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
-                                        Search
-                                    </button>
+                                        class="input" autocomplete="off">
                                 </div>
+                                <select id="statusFilterPickup" class="select">
+                                    <option value="all">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="picked-up">Picked Up</option>
+                                </select>
+                                <button onclick="filterPickupTable(true)" class="btn btn-primary">
+                                    <i class="fa-solid fa-filter"></i> Filter
+                                </button>
                             </div>
-                            <select id="statusFilterPickup" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                                <option value="all">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="picked-up">Picked Up</option>
-                            </select>
                         </div>
                     </div>
 
                     <!-- Parcels table -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                        <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
-                            <h2 class="text-sm font-medium text-[#1e1e1e]">Parcels for Pickup</h2>
-                            <span class="text-xs text-[#6e6e6e]">Page <?php echo $page; ?> of <?php echo $total_pages; ?></span>
+                    <div class="card">
+                        <div class="card-header" style="padding:14px 20px;">
+                            <div>
+                                <div class="card-title">Parcels for Pickup</div>
+                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?></div>
+                            </div>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table>
+                        <div class="table-wrap">
+                            <table class="table">
                                 <thead>
-                                    <tr class="bg-[#fafafa]">
-                                        <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs hidden md:table-cell">Description</th>
-                                        <th class="text-xs">Sender</th>
-                                        <th class="text-xs">Recipient</th>
-                                        <th class="text-xs">Received Timestamp</th>
-                                        <th class="text-xs hidden md:table-cell">Picked Up Timestamp</th>
-                                        <th class="text-xs">Status</th>
-                                        <th class="text-xs">Actions</th>
+                                    <tr>
+                                        <th>Tracking ID</th>
+                                        <th class="hidden md:table-cell">Description</th>
+                                        <th>Sender</th>
+                                        <th>Recipient</th>
+                                        <th>Received On</th>
+                                        <th class="hidden md:table-cell">Picked Up On</th>
+                                        <th>Status</th>
+                                        <th style="width:110px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="pickupTableBody">
-                                    <?php
-                                    $parcels->data_seek(0);
-                                    while ($parcel = $parcels->fetch_assoc()):
-                                    ?>
-                                        <tr class="hover:bg-[#fafafa] pickup-row"
-                                            data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
-                                            data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
-                                            <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap hidden md:table-cell"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></td>
-                                            <td class="text-sm">
-                                                <?php if ($parcel['status'] == 'Pending'): ?>
-                                                    <span class="badge badge-warning">Pending</span>
-                                                <?php else: ?>
-                                                    <span class="badge badge-success">Picked up</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="text-sm">
-                                                <?php if ($parcel['status'] == 'Pending'): ?>
-                                                    <button onclick="openPickupModal(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
-                                                        class="px-3 py-1 text-xs border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                                        <i class="fa-solid fa-truck mr-1"></i> Process
-                                                    </button>
-                                                <?php else: ?>
-                                                    <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>', '<?php echo $parcel['picked_by']; ?>', '<?php echo $parcel['picker_phone']; ?>', '<?php echo $parcel['picker_designation']; ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
-                                                        class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                                        <i class="fa-solid fa-circle-info"></i>
-                                                    </button>
-                                                <?php endif; ?>
+                                    <?php if ($parcels->num_rows > 0): ?>
+                                        <?php
+                                        $parcels->data_seek(0);
+                                        while ($parcel = $parcels->fetch_assoc()):
+                                        ?>
+                                            <tr class="pickup-row"
+                                                data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
+                                                data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to']); ?>">
+                                                <td>
+                                                    <span class="table-cell-mono"><?php echo $parcel['tracking_id']; ?></span>
+                                                </td>
+                                                <td class="hidden md:table-cell">
+                                                    <span class="text-xs text-[#4b5570] max-w-[200px] block truncate"><?php echo substr($parcel['description'], 0, 40); ?><?php echo strlen($parcel['description']) > 40 ? '...' : ''; ?></span>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                                <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
+                                                <td>
+                                                    <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></span>
+                                                </td>
+                                                <td class="hidden md:table-cell">
+                                                    <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></span>
+                                                </td>
+                                                <td>
+                                                    <?php if ($parcel['status'] == 'Pending'): ?>
+                                                        <span class="badge badge-orange">Pending</span>
+                                                    <?php else: ?>
+                                                        <span class="badge badge-green">Picked Up</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <?php if ($parcel['status'] == 'Pending'): ?>
+                                                        <button onclick="openPickupModal(<?php echo $parcel['id']; ?>, '<?php echo $parcel['tracking_id']; ?>')"
+                                                            class="btn btn-primary btn-sm">
+                                                            <i class="fa-solid fa-truck"></i> Process
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <div class="row-actions">
+                                                            <button onclick="viewPickupDetails(<?php echo $parcel['id']; ?>, '<?php echo htmlspecialchars($parcel['tracking_id'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($parcel['picked_by'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars($parcel['picker_phone'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars($parcel['picker_designation'] ?? '', ENT_QUOTES); ?>', '<?php echo $parcel['picked_timestamp'] ?? $parcel['date_picked']; ?>')"
+                                                                class="icon-btn" title="View Pickup Details">
+                                                                <i class="fa-solid fa-circle-info"></i>
+                                                            </button>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endwhile; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="8">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon"><i class="fa-regular fa-box-open"></i></div>
+                                                    <div class="empty-state-title">No parcels found</div>
+                                                    <div class="empty-state-text">Adjust your search or filters.</div>
+                                                </div>
                                             </td>
                                         </tr>
-                                    <?php endwhile; ?>
+                                    <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -883,30 +628,30 @@ $recent_parcels = $conn->query("
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
                                     <div class="pagination-title">Showing pickups on this page</div>
-                                    <div class="pagination-subtitle">Records <?php echo $pickupFrom; ?>-<?php echo $pickupTo; ?> of <?php echo $total_records; ?> total</div>
+                                    <span>Records <?php echo $pickupFrom; ?>-<?php echo $pickupTo; ?> of <?php echo $total_records; ?> total</span>
                                 </div>
                                 <div class="pagination-controls">
                                     <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                                     <div class="pagination">
-                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=pickup"><i class="fa-regular fa-chevrons-left"></i></a>
-                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=pickup"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-left"></i></a>
                                         <?php if ($pickupStart > 1): ?>
-                                            <a href="?page=1&tab=pickup">1</a>
+                                            <a class="pagination-item" href="?page=1&tab=pickup">1</a>
                                             <?php if ($pickupStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
                                         <?php for ($i = $pickupStart; $i <= $pickupEnd; $i++): ?>
                                             <?php if ($i == $page): ?>
-                                                <span class="active"><?php echo $i; ?></span>
+                                                <span class="pagination-item active"><?php echo $i; ?></span>
                                             <?php else: ?>
-                                                <a href="?page=<?php echo $i; ?>&tab=pickup"><?php echo $i; ?></a>
+                                                <a class="pagination-item" href="?page=<?php echo $i; ?>&tab=pickup"><?php echo $i; ?></a>
                                             <?php endif; ?>
                                         <?php endfor; ?>
                                         <?php if ($pickupEnd < $total_pages): ?>
                                             <?php if ($pickupEnd < $total_pages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
-                                            <a href="?page=<?php echo $total_pages; ?>&tab=pickup"><?php echo $total_pages; ?></a>
+                                            <a class="pagination-item" href="?page=<?php echo $total_pages; ?>&tab=pickup"><?php echo $total_pages; ?></a>
                                         <?php endif; ?>
-                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-right"></i></a>
-                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=pickup"><i class="fa-regular fa-chevrons-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=pickup"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=pickup"><i class="fa-regular fa-chevrons-right"></i></a>
                                     </div>
                                 </div>
                             </div>
@@ -914,125 +659,138 @@ $recent_parcels = $conn->query("
                     </div>
                 </div>
 
-                <!-- REDESIGNED ALL RECORDS TAB -->
+                <!-- All Records Tab -->
                 <div id="recordsTab" class="tab-content hidden">
                     <!-- Quick Actions Bar -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
-                        <div class="flex flex-wrap justify-between items-center gap-4">
-                            <div class="flex flex-wrap gap-2">
-                                <button onclick="exportToCSV()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i> Export CSV
-                                </button>
-                                <!-- <button onclick="exportToPDF()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-regular fa-file-pdf mr-1 text-[#6e6e6e]"></i> Export PDF
-                                </button>-->
-                                <button onclick="printRecords()" class="px-3 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                    <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i> Print
-                                </button>
-                            </div>
-                            <div class="text-sm text-[#6e6e6e]">
-                                Total Records: <span class="font-medium text-[#1e1e1e]"><?php echo $total_records; ?></span>
+                    <div class="card mb-6 print-hide">
+                        <div class="card-body" style="padding:14px 16px;">
+                            <div class="filter-bar" style="margin-bottom:0;justify-content:space-between;">
+                                <div class="flex items-center gap-2">
+                                    <button onclick="exportToCSV()" class="btn btn-soft">
+                                        <i class="fa-regular fa-file-excel"></i> Export CSV
+                                    </button>
+                                    <button onclick="printRecords()" class="btn btn-soft">
+                                        <i class="fa-solid fa-print"></i> Print
+                                    </button>
+                                </div>
+                                <div class="text-xs text-[#7d8398]">
+                                    Total Records: <span id="totalRecords" class="font-medium text-[#1b2a4a]"><?php echo number_format($total_records); ?></span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="bg-white border border-[#e5e5e5] rounded-md p-4 mb-6">
-                        <div class="flex flex-wrap items-center gap-3">
-                            <div class="relative flex-1 min-w-[260px]">
-                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-sm text-[#9e9e9e]"></i>
-                                <input type="text" id="quickSearch" placeholder="Search by tracking ID, sender, recipient, or picker..."
-                                    class="w-full pl-9 pr-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                                    autocomplete="off">
+                    <!-- Filters -->
+                    <div class="card mb-6 print-hide">
+                        <div class="card-body" style="padding:14px 16px;">
+                            <div class="filter-bar" style="margin-bottom:0;">
+                                <div class="search-wrap" style="flex:1;min-width:220px;">
+                                    <i class="fa-solid fa-magnifying-glass icon"></i>
+                                    <input type="text" id="quickSearch" placeholder="Search by tracking ID, sender, recipient, or picker..."
+                                        class="input" autocomplete="off">
+                                </div>
+                                <select id="filterStatus" class="select">
+                                    <option value="all">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="picked-up">Picked Up</option>
+                                </select>
+                                <input type="date" id="dateFrom" class="input" autocomplete="off">
+                                <input type="date" id="dateTo" class="input" autocomplete="off">
+                                <button onclick="applyQuickSearch()" class="btn btn-primary">
+                                    <i class="fa-solid fa-filter"></i> Search
+                                </button>
+                                <button onclick="clearSearch()" class="btn btn-soft">
+                                    <i class="fa-solid fa-rotate-left"></i> Reset
+                                </button>
+                                <span class="text-xs text-[#7d8398] whitespace-nowrap" id="activeFiltersCount">No active filters</span>
                             </div>
-
-                            <select id="filterStatus" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                                <option value="all">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="picked-up">Picked Up</option>
-                            </select>
-
-                            <input type="date" id="dateFrom" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                            <input type="date" id="dateTo" class="min-w-[150px] px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-
-                            <button onclick="applyQuickSearch()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
-                                Search
-                            </button>
-
-                            <button onclick="clearSearch()" class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] whitespace-nowrap">
-                                Reset
-                            </button>
-
-                            <span class="text-xs text-[#6e6e6e] whitespace-nowrap ml-auto" id="activeFiltersCount">No active filters</span>
                         </div>
                     </div>
 
-                    <!-- Records Table - Condensed View -->
-                    <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden">
-                        <div class="px-5 py-4 border-b border-[#e5e5e5] bg-[#fafafa] flex justify-between items-center">
-                            <h2 class="text-sm font-medium text-[#1e1e1e]">All Parcel Records</h2>
-                            <span class="text-xs text-[#6e6e6e]">Page <?php echo $page; ?> of <?php echo $total_pages; ?></span>
+                    <!-- Records Table -->
+                    <div class="card">
+                        <div class="card-header" style="padding:14px 20px;">
+                            <div>
+                                <div class="card-title">All Parcel Records</div>
+                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?></div>
+                            </div>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table id="recordsTable">
+                        <div class="table-wrap">
+                            <table id="recordsTable" class="table">
                                 <thead>
-                                    <tr class="bg-[#fafafa]">
-                                        <th class="text-xs">Tracking ID</th>
-                                        <th class="text-xs hidden md:table-cell">Description</th>
-                                        <th class="text-xs">Sender</th>
-                                        <th class="text-xs">Recipient</th>
-                                        <th class="text-xs">Received</th>
-                                        <th class="text-xs">Status</th>
-                                        <th class="text-xs hidden md:table-cell">Pickup Info</th>
-                                        <th class="text-xs">Actions</th>
+                                    <tr>
+                                        <th>Tracking ID</th>
+                                        <th class="hidden md:table-cell">Description</th>
+                                        <th>Sender</th>
+                                        <th>Recipient</th>
+                                        <th>Received</th>
+                                        <th>Status</th>
+                                        <th class="hidden md:table-cell">Pickup Info</th>
+                                        <th style="width:60px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="recordsTableBody">
-                                    <?php
-                                    $parcels->data_seek(0);
-                                    while ($parcel = $parcels->fetch_assoc()):
-                                    ?>
-                                        <tr class="hover:bg-[#fafafa] record-row"
-                                            data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
-                                            data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to'] . ' ' . ($parcel['picked_by'] ?? '')); ?>"
-                                            data-tracking="<?php echo strtolower($parcel['tracking_id']); ?>"
-                                            data-sender="<?php echo strtolower($parcel['sender']); ?>"
-                                            data-recipient="<?php echo strtolower($parcel['addressed_to']); ?>"
-                                            data-picker="<?php echo strtolower($parcel['picked_by'] ?? ''); ?>"
-                                            data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>">
-                                            <td class="text-sm font-mono text-[#1e1e1e]"><?php echo $parcel['tracking_id']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] max-w-[200px] truncate hidden md:table-cell"><?php echo substr($parcel['description'], 0, 30); ?>...</td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['sender']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e]"><?php echo $parcel['addressed_to']; ?></td>
-                                            <td class="text-sm text-[#1e1e1e] whitespace-nowrap"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></td>
-                                            <td class="text-sm">
-                                                <?php if ($parcel['status'] == 'Pending'): ?>
-                                                    <span class="badge badge-warning">Pending</span>
-                                                <?php else: ?>
-                                                    <span class="badge badge-success">Picked Up</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="text-sm text-[#1e1e1e] hidden md:table-cell">
-                                                <?php if ($parcel['picked_by']): ?>
-                                                    <div class="text-xs">
-                                                        <span class="font-medium"><?php echo $parcel['picked_by']; ?></span>
+                                    <?php if ($parcels->num_rows > 0): ?>
+                                        <?php
+                                        $parcels->data_seek(0);
+                                        while ($parcel = $parcels->fetch_assoc()):
+                                        ?>
+                                            <tr class="record-row"
+                                                data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
+                                                data-search="<?php echo strtolower($parcel['tracking_id'] . ' ' . $parcel['sender'] . ' ' . $parcel['addressed_to'] . ' ' . ($parcel['picked_by'] ?? '')); ?>"
+                                                data-tracking="<?php echo strtolower($parcel['tracking_id']); ?>"
+                                                data-sender="<?php echo strtolower($parcel['sender']); ?>"
+                                                data-recipient="<?php echo strtolower($parcel['addressed_to']); ?>"
+                                                data-picker="<?php echo strtolower($parcel['picked_by'] ?? ''); ?>"
+                                                data-date="<?php echo date('Y-m-d', strtotime($parcel['received_timestamp'] ?? $parcel['date_received'])); ?>">
+                                                <td>
+                                                    <span class="table-cell-mono"><?php echo $parcel['tracking_id']; ?></span>
+                                                </td>
+                                                <td class="hidden md:table-cell">
+                                                    <span class="text-xs text-[#4b5570] max-w-[200px] block truncate"><?php echo substr($parcel['description'], 0, 40); ?><?php echo strlen($parcel['description']) > 40 ? '...' : ''; ?></span>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                                <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
+                                                <td>
+                                                    <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></span>
+                                                </td>
+                                                <td>
+                                                    <?php if ($parcel['status'] == 'Pending'): ?>
+                                                        <span class="badge badge-orange">Pending</span>
+                                                    <?php else: ?>
+                                                        <span class="badge badge-green">Picked Up</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="hidden md:table-cell">
+                                                    <?php if ($parcel['picked_by']): ?>
+                                                        <div class="table-cell-title" style="font-size:12px;"><?php echo htmlspecialchars($parcel['picked_by']); ?></div>
                                                         <?php if ($parcel['date_picked']): ?>
-                                                            <span class="text-[#6e6e6e] block"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></span>
+                                                            <div class="table-cell-subtitle"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></div>
                                                         <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <span class="text-xs text-[#9aa0b5]">Not picked up</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div class="row-actions">
+                                                        <button class="icon-btn" onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)" title="View Details">
+                                                            <i class="fa-regular fa-eye"></i>
+                                                        </button>
                                                     </div>
-                                                <?php else: ?>
-                                                    <span class="text-[#9e9e9e] text-xs">Not picked up</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="text-sm">
-                                                <div class="flex items-center gap-2">
-                                                    <button onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)"
-                                                        class="text-[#9e9e9e] hover:text-[#1e1e1e]" title="View Details">
-                                                        <i class="fa-regular fa-eye"></i>
-                                                    </button>
+                                                </td>
+                                            </tr>
+                                        <?php endwhile; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="8">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon"><i class="fa-regular fa-box-open"></i></div>
+                                                    <div class="empty-state-title">No parcel records found</div>
+                                                    <div class="empty-state-text">Adjust your search or filters.</div>
                                                 </div>
                                             </td>
                                         </tr>
-                                    <?php endwhile; ?>
+                                    <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -1048,30 +806,30 @@ $recent_parcels = $conn->query("
                             <div class="pagination-shell">
                                 <div class="pagination-meta">
                                     <div class="pagination-title">Showing parcel records on this page</div>
-                                    <div class="pagination-subtitle">Records <?php echo $recordFrom; ?>-<?php echo $recordTo; ?> of <?php echo $total_records; ?> total</div>
+                                    <span>Records <?php echo $recordFrom; ?>-<?php echo $recordTo; ?> of <?php echo $total_records; ?> total</span>
                                 </div>
                                 <div class="pagination-controls">
                                     <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
                                     <div class="pagination">
-                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=records"><i class="fa-regular fa-chevrons-left"></i></a>
-                                        <a class="compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=records"><i class="fa-regular fa-chevron-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=1&tab=records"><i class="fa-regular fa-chevrons-left"></i></a>
+                                        <a class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>" href="?page=<?php echo max(1, $page - 1); ?>&tab=records"><i class="fa-regular fa-chevron-left"></i></a>
                                         <?php if ($recordStart > 1): ?>
-                                            <a href="?page=1&tab=records">1</a>
+                                            <a class="pagination-item" href="?page=1&tab=records">1</a>
                                             <?php if ($recordStart > 2): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
                                         <?php endif; ?>
                                         <?php for ($i = $recordStart; $i <= $recordEnd; $i++): ?>
                                             <?php if ($i == $page): ?>
-                                                <span class="active"><?php echo $i; ?></span>
+                                                <span class="pagination-item active"><?php echo $i; ?></span>
                                             <?php else: ?>
-                                                <a href="?page=<?php echo $i; ?>&tab=records"><?php echo $i; ?></a>
+                                                <a class="pagination-item" href="?page=<?php echo $i; ?>&tab=records"><?php echo $i; ?></a>
                                             <?php endif; ?>
                                         <?php endfor; ?>
                                         <?php if ($recordEnd < $total_pages): ?>
                                             <?php if ($recordEnd < $total_pages - 1): ?><span class="pagination-ellipsis">...</span><?php endif; ?>
-                                            <a href="?page=<?php echo $total_pages; ?>&tab=records"><?php echo $total_pages; ?></a>
+                                            <a class="pagination-item" href="?page=<?php echo $total_pages; ?>&tab=records"><?php echo $total_pages; ?></a>
                                         <?php endif; ?>
-                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=records"><i class="fa-regular fa-chevron-right"></i></a>
-                                        <a class="compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=records"><i class="fa-regular fa-chevrons-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo min($total_pages, $page + 1); ?>&tab=records"><i class="fa-regular fa-chevron-right"></i></a>
+                                        <a class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>" href="?page=<?php echo $total_pages; ?>&tab=records"><i class="fa-regular fa-chevrons-right"></i></a>
                                     </div>
                                 </div>
                             </div>
@@ -1086,138 +844,93 @@ $recent_parcels = $conn->query("
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- Receive Parcel Modal -->
-    <div id="receiveModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6">
-            <div class="flex justify-between items-center mb-5">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Receive New Parcel</h3>
-                <button onclick="closeReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="receiveModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
+            <div class="modal-header">
+                <h3 class="modal-title">Receive New Parcel</h3>
+                <button type="button" class="modal-close" onclick="closeReceiveModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
             <form id="receiveForm" onsubmit="submitReceiveForm(event)">
                 <input type="hidden" name="action" value="receive">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div class="md:col-span-2">
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description <span class="text-red-400">*</span></label>
-                        <textarea name="description" rows="3" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            placeholder="Enter parcel description"
-                            autocomplete="off"></textarea>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sender <span class="text-red-400">*</span></label>
-                        <input type="text" name="sender" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            placeholder="Sender name"
-                            autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Addressed To <span class="text-red-400">*</span></label>
-                        <input type="text" name="addressed_to" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            placeholder="Recipient name"
-                            autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp <span class="text-red-400">*</span></label>
-                        <input type="datetime-local" name="date_received" required value="<?php echo date('Y-m-d\TH:i'); ?>"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By <span class="text-red-400">*</span></label>
-                        <input type="text" name="received_by" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            placeholder="Staff name"
-                            autocomplete="off">
-                    </div>
-
-                    <div class="md:col-span-2">
-                        <div class="bg-[#fafafa] p-3 rounded-md border border-[#e5e5e5]">
-                            <p class="text-xs text-[#6e6e6e]">
-                                <i class="fa-solid fa-circle-info mr-1"></i>
-                                Tracking ID will be automatically generated as: <span class="font-mono">PRCL-<?php echo date('Ymd'); ?>-XXXXXX</span>
-                            </p>
+                <?php csrf_field(); ?>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-field span-2">
+                            <label class="label">Description <span class="req">*</span></label>
+                            <textarea name="description" rows="3" required class="input" autocomplete="off" placeholder="Enter parcel description"></textarea>
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Sender <span class="req">*</span></label>
+                            <input type="text" name="sender" required class="input" autocomplete="off" placeholder="Sender name">
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Addressed To <span class="req">*</span></label>
+                            <input type="text" name="addressed_to" required class="input" autocomplete="off" placeholder="Recipient name">
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Received Timestamp <span class="req">*</span></label>
+                            <input type="datetime-local" name="date_received" required value="<?php echo date('Y-m-d\TH:i'); ?>" class="input" autocomplete="off">
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Received By <span class="req">*</span></label>
+                            <input type="text" name="received_by" required class="input" autocomplete="off" placeholder="Staff name">
+                        </div>
+                        <div class="form-field span-2">
+                            <div class="notice-bar">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>Tracking ID will be auto-generated as <span class="font-mono">PRCL-<?php echo date('Ymd'); ?>-XXXXXX</span></span>
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                <div class="mt-6 flex justify-end gap-3">
-                    <button type="button" onclick="closeReceiveModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium">
-                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                        Receive Parcel
+                <div class="modal-footer">
+                    <button type="button" onclick="closeReceiveModal()" class="btn btn-soft">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-regular fa-floppy-disk"></i> Receive Parcel
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="editReceiveModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-6">
-            <div class="flex justify-between items-center mb-5">
+    <!-- Edit Pending Parcel Modal -->
+    <div id="editReceiveModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
+            <div class="modal-header">
                 <div>
-                    <h3 class="text-base font-medium text-[#1e1e1e]">Edit Pending Parcel</h3>
-                    <p class="text-xs text-[#6e6e6e] mt-1">Tracking ID: <span id="editTrackingId" class="font-mono"></span></p>
+                    <h3 class="modal-title">Edit Pending Parcel</h3>
+                    <p class="text-xs text-[#7d8398] mt-1">Tracking ID: <span id="editTrackingId" class="font-mono"></span></p>
                 </div>
-                <button onclick="closeEditReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <button type="button" class="modal-close" onclick="closeEditReceiveModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
             <form id="editReceiveForm" onsubmit="submitEditReceiveForm(event)">
                 <input type="hidden" name="action" value="edit_received">
                 <input type="hidden" name="parcel_id" id="editParcelId">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div class="md:col-span-2">
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description <span class="text-red-400">*</span></label>
-                        <textarea name="description" id="editDescription" rows="3" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            autocomplete="off"></textarea>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sender <span class="text-red-400">*</span></label>
-                        <input type="text" name="sender" id="editSender" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Addressed To <span class="text-red-400">*</span></label>
-                        <input type="text" name="addressed_to" id="editAddressedTo" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By <span class="text-red-400">*</span></label>
-                        <input type="text" name="received_by" id="editReceivedBy" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] focus:ring-1 focus:ring-[#9e9e9e]"
-                            autocomplete="off">
+                <?php csrf_field(); ?>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-field span-2">
+                            <label class="label">Description <span class="req">*</span></label>
+                            <textarea name="description" id="editDescription" rows="3" required class="input" autocomplete="off"></textarea>
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Sender <span class="req">*</span></label>
+                            <input type="text" name="sender" id="editSender" required class="input" autocomplete="off">
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Addressed To <span class="req">*</span></label>
+                            <input type="text" name="addressed_to" id="editAddressedTo" required class="input" autocomplete="off">
+                        </div>
+                        <div class="form-field span-2">
+                            <label class="label">Received By <span class="req">*</span></label>
+                            <input type="text" name="received_by" id="editReceivedBy" required class="input" autocomplete="off">
+                        </div>
                     </div>
                 </div>
-
-                <div class="mt-6 flex justify-end gap-3">
-                    <button type="button" onclick="closeEditReceiveModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] font-medium">
-                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                        Save Changes
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditReceiveModal()" class="btn btn-soft">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-regular fa-floppy-disk"></i> Save Changes
                     </button>
                 </div>
             </form>
@@ -1225,88 +938,65 @@ $recent_parcels = $conn->query("
     </div>
 
     <!-- Pickup Modal -->
-    <div id="pickupModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Process Pickup</h3>
-                <button onclick="closePickupModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="pickupModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">Process Pickup</h3>
+                    <p class="text-xs text-[#7d8398] mt-1">Tracking ID: <span id="modalTrackingId" class="font-mono"></span></p>
+                </div>
+                <button type="button" class="modal-close" onclick="closePickupModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form id="pickupForm" onsubmit="submitPickupForm(event)">
                 <input type="hidden" name="parcel_id" id="modalParcelId">
-
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Tracking ID</label>
-                    <input type="text" id="modalTrackingId" readonly
-                        class="w-full px-3 py-2 text-sm bg-[#fafafa] border border-[#e5e5e5] rounded-md"
-                        autocomplete="off">
+                <?php csrf_field(); ?>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label class="label">Picked By <span class="req">*</span></label>
+                            <input type="text" name="picked_by" required class="input" autocomplete="off" placeholder="Name of person picking up">
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Phone Number <span class="req">*</span></label>
+                            <input type="text" name="phone_number" required class="input" autocomplete="off" placeholder="Contact number">
+                        </div>
+                        <div class="form-field span-2">
+                            <label class="label">Designation <span class="req">*</span></label>
+                            <input type="text" name="designation" required class="input" autocomplete="off" placeholder="e.g., Chamber, HR, etc.">
+                        </div>
+                    </div>
                 </div>
-
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picked By <span class="text-red-400">*</span></label>
-                    <input type="text" name="picked_by" required
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="Name of person picking up"
-                        autocomplete="off">
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Phone Number <span class="text-red-400">*</span></label>
-                    <input type="text" name="phone_number" required
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="Contact number"
-                        autocomplete="off">
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Designation <span class="text-red-400">*</span></label>
-                    <input type="text" name="designation" required
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                        placeholder="e.g., Chamber, HR, etc."
-                        autocomplete="off">
-                </div>
-
-                <div class="flex justify-end gap-2">
-                    <button type="button" onclick="closePickupModal()"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Confirm Pickup
+                <div class="modal-footer">
+                    <button type="button" onclick="closePickupModal()" class="btn btn-soft">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-check"></i> Confirm Pickup
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="deleteReceiveModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Delete Parcel</h3>
-                <button onclick="closeDeleteReceiveModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <!-- Delete Parcel Modal -->
+    <div id="deleteReceiveModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h3 class="modal-title">Delete Parcel</h3>
+                <button type="button" class="modal-close" onclick="closeDeleteReceiveModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
             <form id="deleteReceiveForm" onsubmit="submitDeleteReceiveForm(event)">
                 <input type="hidden" name="action" value="delete_received">
                 <input type="hidden" name="parcel_id" id="deleteParcelId">
-
-                <div class="mb-5 p-3 bg-[#fafafa] border border-[#e5e5e5] rounded-md">
-                    <p class="text-sm text-[#1e1e1e]">Are you sure you want to delete parcel <span id="deleteTrackingId" class="font-mono font-medium"></span>?</p>
-                    <p class="text-xs text-[#6e6e6e] mt-2">This also removes any pickup record linked to it.</p>
+                <?php csrf_field(); ?>
+                <div class="modal-body">
+                    <div class="notice-bar" style="background:var(--red-soft);border-color:var(--red-border);color:var(--red);">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span>Are you sure you want to delete parcel <span id="deleteTrackingId" class="font-mono font-medium"></span>? This also removes any pickup record linked to it.</span>
+                    </div>
                 </div>
-
-                <div class="flex justify-end gap-2">
-                    <button type="button" onclick="closeDeleteReceiveModal()"
-                        class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit"
-                        class="px-3 py-1.5 text-sm bg-[#dc2626] text-white rounded-md hover:bg-[#b91c1c]">
-                        Delete Parcel
+                <div class="modal-footer">
+                    <button type="button" onclick="closeDeleteReceiveModal()" class="btn btn-soft">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fa-regular fa-trash-can"></i> Delete Parcel
                     </button>
                 </div>
             </form>
@@ -1314,122 +1004,78 @@ $recent_parcels = $conn->query("
     </div>
 
     <!-- Pickup Details Modal -->
-    <div id="detailsModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Pickup Details</h3>
-                <button onclick="closeDetailsModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="detailsModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">Pickup Details</h3>
+                <button type="button" class="modal-close" onclick="closeDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="space-y-3">
-                <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Tracking ID</label>
-                    <p id="detailTrackingId" class="text-sm text-[#1e1e1e] font-mono"></p>
-                </div>
-                <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picked By</label>
-                    <p id="detailPickedBy" class="text-sm text-[#1e1e1e]"></p>
-                </div>
-                <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Phone Number</label>
-                    <p id="detailPhone" class="text-sm text-[#1e1e1e]"></p>
-                </div>
-                <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Designation</label>
-                    <p id="detailDesignation" class="text-sm text-[#1e1e1e]"></p>
-                </div>
-                <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Picked</label>
-                    <p id="detailDate" class="text-sm text-[#1e1e1e]"></p>
+            <div class="modal-body">
+                <div class="space-y-4">
+                    <div>
+                        <div class="label">Tracking ID</div>
+                        <p id="detailTrackingId" class="text-sm font-mono text-[#1b2a4a]"></p>
+                    </div>
+                    <div>
+                        <div class="label">Picked By</div>
+                        <p id="detailPickedBy" class="text-sm text-[#1b2a4a]"></p>
+                    </div>
+                    <div>
+                        <div class="label">Phone Number</div>
+                        <p id="detailPhone" class="text-sm text-[#1b2a4a]"></p>
+                    </div>
+                    <div>
+                        <div class="label">Designation</div>
+                        <p id="detailDesignation" class="text-sm text-[#1b2a4a]"></p>
+                    </div>
+                    <div>
+                        <div class="label">Date Picked</div>
+                        <p id="detailDate" class="text-sm text-[#1b2a4a]"></p>
+                    </div>
                 </div>
             </div>
-            <div class="flex justify-end mt-4">
-                <button onclick="closeDetailsModal()"
-                    class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Close
-                </button>
+            <div class="modal-footer">
+                <button onclick="closeDetailsModal()" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Parcel Details Modal -->
-    <div id="parcelDetailsModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50" style="display: none;">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-2xl p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Parcel Details</h3>
-                <button onclick="closeParcelDetailsModal()" class="text-[#6e6e6e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="parcelDetailsModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog lg">
+            <div class="modal-header">
+                <h3 class="modal-title">Parcel Details</h3>
+                <button type="button" class="modal-close" onclick="closeParcelDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="grid grid-cols-2 gap-4" id="parcelDetailContent">
-                <!-- Filled by JavaScript -->
+            <div class="modal-body">
+                <div class="grid grid-cols-2 gap-5" id="parcelDetailContent">
+                    <!-- Filled by JavaScript -->
+                </div>
             </div>
-            <div class="flex justify-end mt-4">
-                <button onclick="closeParcelDetailsModal()"
-                    class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Close
-                </button>
+            <div class="modal-footer">
+                <button onclick="closeParcelDetailsModal()" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Toast notification functions
+        // Toast notification functions - delegates to shared MailroomToast
         function showToast(message, type = 'success') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-
-            let icon = 'fa-circle-check';
-            if (type === 'error') icon = 'fa-circle-exclamation';
-            if (type === 'warning') icon = 'fa-triangle-exclamation';
-            if (type === 'info') icon = 'fa-circle-info';
-
-            toast.innerHTML = `
-                <div class="toast-content">
-                    <i class="fa-regular ${icon} text-${type === 'success' ? '[#2c5e2c]' : type === 'error' ? '[#dc2626]' : type === 'warning' ? '[#d97706]' : '[#2563eb]'}"></i>
-                    <span class="text-sm">${message}</span>
-                </div>
-                <span class="toast-close" onclick="this.parentElement.remove()">&times;</span>
-            `;
-
-            container.appendChild(toast);
-
-            // Auto remove after 5 seconds
-            setTimeout(() => {
-                if (toast.parentElement) {
-                    toast.style.animation = 'slideOut 0.3s ease';
-                    setTimeout(() => {
-                        if (toast.parentElement) {
-                            toast.remove();
-                        }
-                    }, 300);
-                }
-            }, 5000);
+            MailroomToast.show(message, type);
         }
 
         // Tab switching with URL parameter
         function switchTab(tabName) {
-            // Hide all tabs
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.add('hidden');
             });
-
-            // Remove active class from all buttons
             document.querySelectorAll('.tab-button').forEach(button => {
-                button.classList.remove('active', 'border-[#1e1e1e]', 'text-[#1e1e1e]');
-                button.classList.add('text-[#6e6e6e]');
+                button.classList.remove('active');
             });
-
-            // Show selected tab
             document.getElementById(tabName + 'Tab').classList.remove('hidden');
+            const btn = document.querySelector('.tab-button[data-tab="' + tabName + '"]');
+            if (btn) btn.classList.add('active');
 
-            // Add active class to clicked button
-            event.target.classList.add('active', 'border-[#1e1e1e]', 'text-[#1e1e1e]');
-            event.target.classList.remove('text-[#6e6e6e]');
-
-            // Update URL parameter
             const url = new URL(window.location);
             url.searchParams.set('tab', tabName);
             window.history.pushState({}, '', url);
@@ -1440,9 +1086,7 @@ $recent_parcels = $conn->query("
             const urlParams = new URLSearchParams(window.location.search);
             const tab = urlParams.get('tab');
             if (tab) {
-                const tabButton = Array.from(document.querySelectorAll('.tab-button')).find(btn =>
-                    btn.textContent.toLowerCase().includes(tab)
-                );
+                const tabButton = document.querySelector('.tab-button[data-tab="' + tab + '"]');
                 if (tabButton) {
                     tabButton.click();
                 }
@@ -1451,26 +1095,26 @@ $recent_parcels = $conn->query("
 
         // Receive Modal functions
         function openReceiveModal() {
-            document.getElementById('receiveModal').style.display = 'flex';
+            MailroomModal.open('receiveModal');
         }
 
         function closeReceiveModal() {
-            document.getElementById('receiveModal').style.display = 'none';
+            MailroomModal.close('receiveModal');
             document.getElementById('receiveForm').reset();
         }
 
         function openEditReceiveModal(parcel) {
-            document.getElementById('editReceiveModal').style.display = 'flex';
             document.getElementById('editParcelId').value = parcel.id || '';
             document.getElementById('editTrackingId').textContent = parcel.tracking_id || '';
             document.getElementById('editDescription').value = parcel.description || '';
             document.getElementById('editSender').value = parcel.sender || '';
             document.getElementById('editAddressedTo').value = parcel.addressed_to || '';
             document.getElementById('editReceivedBy').value = parcel.received_by || '';
+            MailroomModal.open('editReceiveModal');
         }
 
         function closeEditReceiveModal() {
-            document.getElementById('editReceiveModal').style.display = 'none';
+            MailroomModal.close('editReceiveModal');
             document.getElementById('editReceiveForm').reset();
             document.getElementById('editTrackingId').textContent = '';
         }
@@ -1526,13 +1170,13 @@ $recent_parcels = $conn->query("
 
         // Pickup Modal functions
         function openPickupModal(id, trackingId) {
-            document.getElementById('pickupModal').style.display = 'flex';
             document.getElementById('modalParcelId').value = id;
-            document.getElementById('modalTrackingId').value = trackingId;
+            document.getElementById('modalTrackingId').textContent = trackingId;
+            MailroomModal.open('pickupModal');
         }
 
         function closePickupModal() {
-            document.getElementById('pickupModal').style.display = 'none';
+            MailroomModal.close('pickupModal');
             document.getElementById('pickupForm').reset();
         }
 
@@ -1562,13 +1206,13 @@ $recent_parcels = $conn->query("
         }
 
         function openDeleteReceiveModal(id, trackingId) {
-            document.getElementById('deleteReceiveModal').style.display = 'flex';
             document.getElementById('deleteParcelId').value = id;
             document.getElementById('deleteTrackingId').textContent = trackingId;
+            MailroomModal.open('deleteReceiveModal');
         }
 
         function closeDeleteReceiveModal() {
-            document.getElementById('deleteReceiveModal').style.display = 'none';
+            MailroomModal.close('deleteReceiveModal');
             document.getElementById('deleteReceiveForm').reset();
             document.getElementById('deleteTrackingId').textContent = '';
         }
@@ -1604,11 +1248,11 @@ $recent_parcels = $conn->query("
             document.getElementById('detailPhone').textContent = phone || 'N/A';
             document.getElementById('detailDesignation').textContent = designation || 'N/A';
             document.getElementById('detailDate').textContent = date ? new Date(date.replace(' ', 'T')).toLocaleString() : 'N/A';
-            document.getElementById('detailsModal').style.display = 'flex';
+            MailroomModal.open('detailsModal');
         }
 
         function closeDetailsModal() {
-            document.getElementById('detailsModal').style.display = 'none';
+            MailroomModal.close('detailsModal');
         }
 
         // Parcel Details Modal
@@ -1616,57 +1260,57 @@ $recent_parcels = $conn->query("
             const content = document.getElementById('parcelDetailContent');
             content.innerHTML = `
                 <div class="col-span-2">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.description || 'N/A'}</p>
+                    <div class="label">Description</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.description || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Tracking ID</label>
-                    <p class="text-sm text-[#1e1e1e] font-mono">${parcel.tracking_id || 'N/A'}</p>
+                    <div class="label">Tracking ID</div>
+                    <p class="text-sm font-mono text-[#1b2a4a]">${parcel.tracking_id || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Status</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.status || 'N/A'}</p>
+                    <div class="label">Status</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.status || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Sender</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.sender || 'N/A'}</p>
+                    <div class="label">Sender</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.sender || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Recipient</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.addressed_to || 'N/A'}</p>
+                    <div class="label">Recipient</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.addressed_to || 'N/A'}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received Timestamp</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.received_timestamp ? new Date(parcel.received_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_received || 'N/A')}</p>
+                    <div class="label">Received Timestamp</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.received_timestamp ? new Date(parcel.received_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_received || 'N/A')}</p>
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By</label>
-                    <p class="text-sm text-[#1e1e1e]">${parcel.received_by || 'N/A'}</p>
+                    <div class="label">Received By</div>
+                    <p class="text-sm text-[#1b2a4a]">${parcel.received_by || 'N/A'}</p>
                 </div>
                 ${parcel.status === 'Picked Up' ? `
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picked By</label>
-                        <p class="text-sm text-[#1e1e1e]">${parcel.picked_by || 'N/A'}</p>
+                        <div class="label">Picked By</div>
+                        <p class="text-sm text-[#1b2a4a]">${parcel.picked_by || 'N/A'}</p>
                     </div>
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picker Phone</label>
-                        <p class="text-sm text-[#1e1e1e]">${parcel.picker_phone || 'N/A'}</p>
+                        <div class="label">Picker Phone</div>
+                        <p class="text-sm text-[#1b2a4a]">${parcel.picker_phone || 'N/A'}</p>
                     </div>
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Designation</label>
-                        <p class="text-sm text-[#1e1e1e]">${parcel.picker_designation || 'N/A'}</p>
+                        <div class="label">Designation</div>
+                        <p class="text-sm text-[#1b2a4a]">${parcel.picker_designation || 'N/A'}</p>
                     </div>
                     <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Picked Up Timestamp</label>
-                        <p class="text-sm text-[#1e1e1e]">${parcel.picked_timestamp ? new Date(parcel.picked_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_picked || 'N/A')}</p>
+                        <div class="label">Picked Up Timestamp</div>
+                        <p class="text-sm text-[#1b2a4a]">${parcel.picked_timestamp ? new Date(parcel.picked_timestamp.replace(' ', 'T')).toLocaleString() : (parcel.date_picked || 'N/A')}</p>
                     </div>
                 ` : ''}
             `;
-            document.getElementById('parcelDetailsModal').style.display = 'flex';
+            MailroomModal.open('parcelDetailsModal');
         }
 
         function closeParcelDetailsModal() {
-            document.getElementById('parcelDetailsModal').style.display = 'none';
+            MailroomModal.close('parcelDetailsModal');
         }
 
         function getSearchTokens(value) {
@@ -1703,6 +1347,7 @@ $recent_parcels = $conn->query("
                 }
 
                 const matchesSearch = searchTokens.length === 0 || searchTokens.every(token => searchText.includes(token));
+
                 const show = matchesSearch && showByDate;
                 row.style.display = show ? '' : 'none';
                 if (show) visibleCount++;
@@ -1784,7 +1429,8 @@ $recent_parcels = $conn->query("
                 if (show) visibleCount++;
             }
 
-            document.getElementById('totalRecords').textContent = visibleCount;
+            const totalRecordsEl = document.getElementById('totalRecords');
+            if (totalRecordsEl) totalRecordsEl.textContent = visibleCount;
 
             if (showFeedback && visibleCount === 0) {
                 showToast('No matching records found', 'info');
@@ -1806,7 +1452,8 @@ $recent_parcels = $conn->query("
                 row.style.display = '';
             }
 
-            document.getElementById('totalRecords').textContent = rows.length;
+            const totalRecordsEl = document.getElementById('totalRecords');
+            if (totalRecordsEl) totalRecordsEl.textContent = rows.length;
             showToast('Search cleared', 'info');
             updateActiveFiltersCount();
         }
@@ -1874,8 +1521,8 @@ $recent_parcels = $conn->query("
 
         // Refresh receive tab
         function refreshReceiveTab() {
-            location.reload();
             showToast('Refreshing data...', 'info');
+            setTimeout(() => location.reload(), 400);
         }
 
         // Export functions for Receive tab
@@ -2091,48 +1738,8 @@ $recent_parcels = $conn->query("
                 frame.remove();
             }, 1000);
         }
-
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            const receiveModal = document.getElementById('receiveModal');
-            const editReceiveModal = document.getElementById('editReceiveModal');
-            const pickupModal = document.getElementById('pickupModal');
-            const deleteReceiveModal = document.getElementById('deleteReceiveModal');
-            const detailsModal = document.getElementById('detailsModal');
-            const parcelDetailsModal = document.getElementById('parcelDetailsModal');
-
-            if (event.target == receiveModal) {
-                closeReceiveModal();
-            }
-            if (event.target == editReceiveModal) {
-                closeEditReceiveModal();
-            }
-            if (event.target == pickupModal) {
-                closePickupModal();
-            }
-            if (event.target == deleteReceiveModal) {
-                closeDeleteReceiveModal();
-            }
-            if (event.target == detailsModal) {
-                closeDetailsModal();
-            }
-            if (event.target == parcelDetailsModal) {
-                closeParcelDetailsModal();
-            }
-        }
-
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeReceiveModal();
-                closeEditReceiveModal();
-                closePickupModal();
-                closeDeleteReceiveModal();
-                closeDetailsModal();
-                closeParcelDetailsModal();
-            }
-        });
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

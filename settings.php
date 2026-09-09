@@ -1,5 +1,7 @@
 <?php
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 session_start();
 
 $error = '';
@@ -26,6 +28,7 @@ if (file_exists($settings_file)) {
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check_post();
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
             case 'create_backup':
@@ -218,7 +221,14 @@ foreach ($backups as $b) {
     }
 }
 
-function formatBytes($bytes, $precision = 2)
+/**
+ * Format a byte count into a human readable string.
+ *
+ * @param int $bytes Size in bytes.
+ * @param int $precision Decimal places to keep.
+ * @return string
+ */
+function formatBytes(int $bytes, int $precision = 2)
 {
     $units = ['B', 'KB', 'MB', 'GB'];
     $bytes = max($bytes, 0);
@@ -233,189 +243,228 @@ function formatBytes($bytes, $precision = 2)
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings & Backup - Mailroom</title>
+    <title>Settings & Backup - Mailroom Ops</title>
     <link rel="icon" type="image/png" href="./images/logo.png">
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
-<body class="bg-[#f5f5f4] text-[#1e1e1e]">
+<body>
     <div class="flex">
-        <?php include 'sidebar.php'; ?>
+        <?php include './sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen bg-[#f5f5f4]">
-            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
-                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Settings & Backup</h1>
-                        <p class="mt-1 text-sm text-[#6e6e6e]">Manage system settings and database backups</p>
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="index.php">System</a>
+                        <span class="sep">/</span>
+                        <span>Settings &amp; Backup</span>
                     </div>
+                    <h1 class="page-header-title">Settings &amp; Backup</h1>
+                    <p class="page-header-subtitle">Manage system settings and database backups.</p>
                 </div>
             </div>
 
-            <div class="p-4 lg:p-8">
+            <div class="page-body">
                 <?php if ($message): ?>
-                    <div class="mb-6 rounded-[28px] bg-[#e8f5e9] px-5 py-4 text-[#2e7d32]">
-                        <i class="fa-regular fa-circle-check mr-2"></i>
-                        <?php echo htmlspecialchars($message); ?>
+                    <div class="alert alert-green" style="margin-bottom:20px;">
+                        <i class="fa-regular fa-circle-check"></i>
+                        <span><?php echo htmlspecialchars($message); ?></span>
                     </div>
                 <?php endif; ?>
                 <?php if ($error): ?>
-                    <div class="mb-6 rounded-[28px] bg-[#ffdad6] px-5 py-4 text-[#93000a]">
-                        <i class="fa-regular fa-circle-exclamation mr-2"></i>
-                        <?php echo htmlspecialchars($error); ?>
+                    <div class="alert alert-red" style="margin-bottom:20px;">
+                        <i class="fa-regular fa-circle-exclamation"></i>
+                        <span><?php echo htmlspecialchars($error); ?></span>
                     </div>
                 <?php endif; ?>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    <div class="stat-box">
+                <div class="stat-grid" style="margin-bottom:20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-database"></i></div>
                         <div class="stat-label">Total Backups</div>
                         <div class="stat-value"><?php echo count(array_filter($backups, fn($b) => $b['exists'])); ?></div>
+                        <div class="stat-hint">Backup files on disk</div>
                     </div>
-                    <div class="stat-box">
+                    <div class="stat-card">
+                        <div class="stat-icon gold"><i class="fa-solid fa-hard-drive"></i></div>
                         <div class="stat-label">Total Size</div>
                         <div class="stat-value"><?php echo formatBytes($total_backup_size); ?></div>
+                        <div class="stat-hint">Combined storage used</div>
                     </div>
-                    <div class="stat-box">
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-regular fa-clock"></i></div>
                         <div class="stat-label">Latest Backup</div>
-                        <div class="text-lg font-medium text-[#1e1e1e]">
+                        <div class="stat-value" style="font-size:15px;line-height:1.35;">
                             <?php echo $latest_backup ? date('M j, Y g:i A', strtotime($latest_backup['date'])) : 'No backups'; ?>
                         </div>
+                        <div class="stat-hint"><?php echo $latest_backup ? htmlspecialchars($latest_backup['filename']) : 'Create your first backup below'; ?></div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" style="gap:20px;">
                     <!-- Backup Actions -->
-                    <div class="panel circular-panel">
-                        <div class="panel-header">
-                            <h2 class="text-lg font-semibold text-[#1e1e1e]">Backup Actions</h2>
+                    <div class="card" style="margin:0;">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Backup Actions</div>
+                                <div class="card-subtitle">Create a full snapshot of the database.</div>
+                            </div>
                         </div>
-                        <div class="panel-body">
-                            <form method="POST" class="space-y-4">
+                        <div class="card-body" style="padding:20px;">
+                            <form method="POST" id="createBackupForm">
                                 <input type="hidden" name="action" value="create_backup">
-                                <p class="text-sm text-[#6e6e6e] mb-4">
-                                    Create a complete backup of the database including all tables, routines, and events.
+                                <?php csrf_field(); ?>
+                                <p class="card-subtitle" style="margin-bottom:16px;color:var(--text-faint);">
+                                    Creates a complete backup of the database including all tables, routines, triggers, and events.
                                 </p>
+                                <div class="filter-chip" style="margin-bottom:18px;"><i class="fa-solid fa-database"></i> Files stored in <code>config/backups/</code></div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fa-solid fa-database"></i>
                                     Create New Backup
                                 </button>
                             </form>
 
-                            <hr class="my-6 border-[#e5e5e5]">
+                            <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
 
-                            <h3 class="text-sm font-medium text-[#1e1e1e] mb-3">Quick Info</h3>
-                            <ul class="space-y-2 text-sm text-[#6e6e6e]">
-                                <li><i class="fa-solid fa-circle-info mr-2"></i> Backups include all tables, views, routines, and triggers</li>
-                                <li><i class="fa-solid fa-circle-info mr-2"></i> Files are stored in <code class="text-[#1e1e1e]">config/backups/</code></li>
-                                <li><i class="fa-solid fa-circle-info mr-2"></i> Use restore with caution — it will overwrite existing data</li>
+                            <div class="card-subtitle" style="margin-bottom:10px;"><i class="fa-solid fa-circle-info" style="color:var(--gold);margin-right:6px;"></i> Quick Info</div>
+                            <ul style="list-style:none;padding:0;margin:0;color:var(--text-faint);font-size:13px;line-height:1.9;">
+                                <li><i class="fa-solid fa-angle-right" style="color:var(--gold);margin-right:8px;font-size:11px;"></i> Backups include all tables, views, routines, and triggers</li>
+                                <li><i class="fa-solid fa-angle-right" style="color:var(--gold);margin-right:8px;font-size:11px;"></i> Files are stored in <code style="color:var(--text);">config/backups/</code></li>
+                                <li><i class="fa-solid fa-angle-right" style="color:var(--gold);margin-right:8px;font-size:11px;"></i> Restore overwrites existing data — use with caution</li>
                             </ul>
                         </div>
                     </div>
 
                     <!-- Backup Settings -->
-                    <div class="panel circular-panel">
-                        <div class="panel-header">
-                            <h2 class="text-lg font-semibold text-[#1e1e1e]">Backup Settings</h2>
+                    <div class="card" style="margin:0;">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">Backup Settings</div>
+                                <div class="card-subtitle">Configure automatic backup behavior.</div>
+                            </div>
                         </div>
-                        <div class="panel-body">
+                        <div class="card-body" style="padding:20px;">
                             <form method="POST">
                                 <input type="hidden" name="action" value="save_settings">
-                                <div class="space-y-5">
-                                    <label class="flex items-center gap-3 cursor-pointer">
-                                        <input type="checkbox" name="auto_backup" value="1" <?php echo $settings['auto_backup'] ? 'checked' : ''; ?> class="w-4 h-4 rounded border-[#e5e5e5]">
-                                        <span class="text-sm text-[#1e1e1e]">Enable automatic backups</span>
+                                <?php csrf_field(); ?>
+                                <div class="form-field" style="margin-bottom:18px;">
+                                    <label class="label" style="display:flex;align-items:center;gap:10px;cursor:pointer;color:var(--text);">
+                                        <input type="checkbox" name="auto_backup" value="1" <?php echo $settings['auto_backup'] ? 'checked' : ''; ?> style="width:16px;height:16px;accent-color:var(--accent);">
+                                        Enable automatic backups
                                     </label>
-
-                                    <div>
-                                        <label class="block text-sm text-[#6e6e6e] mb-1">Backup Interval</label>
-                                        <select name="backup_interval" class="w-full">
-                                            <option value="hourly" <?php echo $settings['backup_interval'] === 'hourly' ? 'selected' : ''; ?>>Every Hour</option>
-                                            <option value="daily" <?php echo $settings['backup_interval'] === 'daily' ? 'selected' : ''; ?>>Daily</option>
-                                            <option value="weekly" <?php echo $settings['backup_interval'] === 'weekly' ? 'selected' : ''; ?>>Weekly</option>
-                                            <option value="monthly" <?php echo $settings['backup_interval'] === 'monthly' ? 'selected' : ''; ?>>Monthly</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label class="block text-sm text-[#6e6e6e] mb-1">Retention (days)</label>
-                                            <input type="number" name="retention_days" value="<?php echo $settings['retention_days']; ?>" min="1" max="365" class="w-full">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm text-[#6e6e6e] mb-1">Max Backups</label>
-                                            <input type="number" name="max_backups" value="<?php echo $settings['max_backups']; ?>" min="1" max="100" class="w-full">
-                                        </div>
-                                    </div>
-
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="fa-regular fa-floppy-disk"></i>
-                                        Save Settings
-                                    </button>
+                                    <div class="card-subtitle" style="margin-top:4px;">Runs backups on the chosen interval.</div>
                                 </div>
+
+                                <div class="form-field" style="margin-bottom:18px;">
+                                    <label class="label">Backup Interval</label>
+                                    <select name="backup_interval" class="select">
+                                        <option value="hourly" <?php echo $settings['backup_interval'] === 'hourly' ? 'selected' : ''; ?>>Every Hour</option>
+                                        <option value="daily" <?php echo $settings['backup_interval'] === 'daily' ? 'selected' : ''; ?>>Daily</option>
+                                        <option value="weekly" <?php echo $settings['backup_interval'] === 'weekly' ? 'selected' : ''; ?>>Weekly</option>
+                                        <option value="monthly" <?php echo $settings['backup_interval'] === 'monthly' ? 'selected' : ''; ?>>Monthly</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-grid" style="margin-bottom:20px;">
+                                    <div class="form-field">
+                                        <label class="label">Retention (days)</label>
+                                        <input type="number" name="retention_days" value="<?php echo $settings['retention_days']; ?>" min="1" max="365" class="input">
+                                    </div>
+                                    <div class="form-field">
+                                        <label class="label">Max Backups</label>
+                                        <input type="number" name="max_backups" value="<?php echo $settings['max_backups']; ?>" min="1" max="100" class="input">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-regular fa-floppy-disk"></i>
+                                    Save Settings
+                                </button>
                             </form>
                         </div>
                     </div>
                 </div>
 
                 <!-- Backup History -->
-                <div class="panel circular-panel mt-6">
-                    <div class="panel-header flex items-center justify-between">
-                        <h2 class="text-lg font-semibold text-[#1e1e1e]">Backup History</h2>
-                        <span class="text-sm text-[#6e6e6e]"><?php echo count($backups); ?> total backups</span>
+                <div class="card" style="margin-top:20px;">
+                    <div class="card-header" style="padding:14px 20px;">
+                        <div>
+                            <div class="card-title">Backup History</div>
+                            <div class="card-subtitle">Download, restore, or remove saved backups.</div>
+                        </div>
+                        <span class="filter-chip"><i class="fa-solid fa-database"></i> <?php echo count($backups); ?> total</span>
                     </div>
-                    <div class="overflow-x-auto circular-table-wrap">
-                        <table>
+                    <div class="table-wrap">
+                        <table class="table">
                             <thead>
                                 <tr>
                                     <th>Filename</th>
-                                    <th>Date</th>
+                                    <th class="hidden md:table-cell">Date</th>
                                     <th>Size</th>
                                     <th>Type</th>
-                                    <th>Actions</th>
+                                    <th class="text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($backups)): ?>
                                     <tr>
-                                        <td colspan="5" class="text-center text-[#6e6e6e] py-8">No backups yet. Create your first backup above.</td>
+                                        <td colspan="5">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon"><i class="fa-solid fa-database"></i></div>
+                                                <div class="empty-state-title">No backups yet</div>
+                                                <div class="empty-state-text">Create your first backup with the button above.</div>
+                                            </div>
+                                        </td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($backups as $b): ?>
-                                        <tr class="<?php echo !$b['exists'] ? 'opacity-50' : ''; ?>">
-                                            <td class="font-medium text-[#1e1e1e]">
-                                                <i class="fa-regular fa-file-lines mr-2 text-[#6e6e6e]"></i>
-                                                <?php echo htmlspecialchars($b['filename']); ?>
-                                            </td>
-                                            <td class="text-[#6e6e6e]"><?php echo date('M j, Y g:i A', strtotime($b['date'])); ?></td>
-                                            <td class="text-[#6e6e6e]"><?php echo $b['exists'] ? formatBytes($b['size']) : 'File missing'; ?></td>
+                                        <tr style="<?php echo !$b['exists'] ? 'opacity:.55;' : ''; ?>">
                                             <td>
-                                                <span class="status-badge <?php echo $b['type'] === 'auto' ? 'status-pending' : 'status-picked'; ?>">
+                                                <span class="table-cell-title">
+                                                    <i class="fa-regular fa-file-lines" style="color:var(--text-faint);margin-right:8px;"></i>
+                                                    <?php echo htmlspecialchars($b['filename']); ?>
+                                                </span>
+                                            </td>
+                                            <td class="hidden md:table-cell">
+                                                <span class="table-cell-mono"><?php echo date('M j, Y g:i A', strtotime($b['date'])); ?></span>
+                                            </td>
+                                            <td>
+                                                <span class="table-cell-mono"><?php echo $b['exists'] ? formatBytes($b['size']) : 'File missing'; ?></span>
+                                            </td>
+                                            <td>
+                                                <span class="badge <?php echo $b['type'] === 'auto' ? 'badge-orange' : 'badge-green'; ?>">
                                                     <?php echo ucfirst($b['type']); ?>
                                                 </span>
                                             </td>
                                             <td>
-                                                <div class="flex items-center gap-2">
+                                                <div class="row-actions" style="justify-content:flex-end;">
                                                     <?php if ($b['exists']): ?>
-                                                        <a href="config/backups/<?php echo urlencode($b['filename']); ?>" download class="btn btn-sm btn-xs">
+                                                        <a href="config/backups/<?php echo urlencode($b['filename']); ?>" download class="icon-btn" title="Download">
                                                             <i class="fa-solid fa-download"></i>
                                                         </a>
-                                                        <form method="POST" class="inline" onsubmit="return confirm('Restore this backup? This will overwrite all existing data.');">
+                                                        <form method="POST" style="display:inline;" onsubmit="return confirm('Restore this backup? This will overwrite all existing data.');">
                                                             <input type="hidden" name="action" value="restore_backup">
                                                             <input type="hidden" name="filename" value="<?php echo htmlspecialchars($b['filename']); ?>">
-                                                            <button type="submit" class="btn btn-sm btn-xs">
+                                                            <?php csrf_field(); ?>
+                                                            <button type="submit" class="icon-btn primary" title="Restore">
                                                                 <i class="fa-solid fa-rotate-left"></i>
                                                             </button>
                                                         </form>
-                                                        <form method="POST" class="inline" onsubmit="return confirm('Delete this backup?');">
+                                                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this backup?');">
                                                             <input type="hidden" name="action" value="delete_backup">
                                                             <input type="hidden" name="filename" value="<?php echo htmlspecialchars($b['filename']); ?>">
-                                                            <button type="submit" class="btn btn-sm" style="color:#93000a">
+                                                            <?php csrf_field(); ?>
+                                                            <button type="submit" class="icon-btn danger" title="Delete">
                                                                 <i class="fa-regular fa-trash-can"></i>
                                                             </button>
                                                         </form>
                                                     <?php else: ?>
-                                                        <span class="text-xs text-[#93000a]">File missing</span>
+                                                        <span class="badge badge-red">File missing</span>
                                                     <?php endif; ?>
                                                 </div>
                                             </td>
@@ -428,27 +477,30 @@ function formatBytes($bytes, $precision = 2)
                 </div>
 
                 <!-- Database Connection Info -->
-                <div class="panel circular-panel mt-6">
-                    <div class="panel-header">
-                        <h2 class="text-lg font-semibold text-[#1e1e1e]">Database Connection</h2>
+                <div class="card" style="margin-top:20px;">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Database Connection</div>
+                            <div class="card-subtitle">Connection details used for backup and restore operations.</div>
+                        </div>
                     </div>
-                    <div class="panel-body">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="card-body" style="padding:20px;">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;">
                             <div>
-                                <span class="text-[#6e6e6e]">Host:</span>
-                                <span class="ml-2 text-[#1e1e1e] font-medium"><?php echo htmlspecialchars($host); ?></span>
+                                <div class="label">Host</div>
+                                <div class="table-cell-title"><?php echo htmlspecialchars($host); ?></div>
                             </div>
                             <div>
-                                <span class="text-[#6e6e6e]">Database:</span>
-                                <span class="ml-2 text-[#1e1e1e] font-medium"><?php echo htmlspecialchars($dbname); ?></span>
+                                <div class="label">Database</div>
+                                <div class="table-cell-title"><?php echo htmlspecialchars($dbname); ?></div>
                             </div>
                             <div>
-                                <span class="text-[#6e6e6e]">User:</span>
-                                <span class="ml-2 text-[#1e1e1e] font-medium"><?php echo htmlspecialchars($user); ?></span>
+                                <div class="label">User</div>
+                                <div class="table-cell-title"><?php echo htmlspecialchars($user); ?></div>
                             </div>
                             <div>
-                                <span class="text-[#6e6e6e]">Backup Directory:</span>
-                                <span class="ml-2 text-[#1e1e1e] font-medium">config/backups/</span>
+                                <div class="label">Backup Directory</div>
+                                <div class="table-cell-title">config/backups/</div>
                             </div>
                         </div>
                     </div>
@@ -456,6 +508,7 @@ function formatBytes($bytes, $precision = 2)
             </div>
         </main>
     </div>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

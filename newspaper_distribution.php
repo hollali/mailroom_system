@@ -1,13 +1,14 @@
 <?php
 // newspaper_distribution.php - Distribute newspapers by category (Once per day per recipient)
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 session_start();
 
 // Handle Distribution Form Submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) {
+    csrf_check_post();
     $distributed_by = trim($_POST['distributed_by']);
 
     // Handle recipient_ids
@@ -299,6 +300,9 @@ if (isset($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 }
 
+$available_papers_count = $categories_for_distribution ? $categories_for_distribution->num_rows : 0;
+$active_recipients_count = $recipients ? $recipients->num_rows : 0;
+$already_received_count = count($already_received_today);
 ?>
 
 <!DOCTYPE html>
@@ -307,286 +311,169 @@ if (isset($_SESSION['toast'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Newspaper Distribution - Mailroom</title>
+    <title>Newspaper Distribution - Mailroom Ops</title>
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
-        }
-
-        .category-card {
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
-            background-color: white;
-            margin-bottom: 1rem;
-            cursor: pointer;
-        }
-
-        .category-card:hover {
-            background-color: #fafaf9;
-        }
-
-        .category-card.selected {
-            border: 2px solid #1c1917;
-            background-color: #fafaf9;
-        }
-
-        .distribute-btn {
-            background-color: #1c1917;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            border: none;
-            font-size: 13px;
-        }
-
-        .distribute-btn:hover {
-            background-color: #292524;
-        }
-
-        .distribute-btn:disabled {
-            background-color: #9e9e9e;
-            cursor: not-allowed;
-        }
-
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            min-width: 260px;
-            background-color: white;
-            border: 1px solid #e5e5e5;
-            padding: 10px 16px;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .toast-success {
-            border-left: 3px solid #10b981;
-        }
-
-        .toast-error {
-            border-left: 3px solid #ef4444;
-        }
-
-        .toast-warning {
-            border-left: 3px solid #f59e0b;
-        }
-
-        .selected-count-badge {
-            background-color: #1c1917;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .category-checkbox {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-            margin-right: 10px;
-        }
-
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: white;
-            max-width: 450px;
-            width: 90%;
-        }
-
-        .modal-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h3 {
-            font-size: 16px;
-            font-weight: 500;
-        }
-
-        .modal-body {
-            padding: 20px;
-        }
-
-        .modal-footer {
-            padding: 12px 20px;
-            border-top: 1px solid #e5e5e5;
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-        }
-
-        .btn-secondary {
-            background: white;
-            border: 1px solid #e5e5e5;
-            padding: 6px 12px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .btn-primary-small {
-            background: #1c1917;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .info-box {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            padding: 12px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .warning-box {
-            background: #fef3c7;
-            border: 1px solid #fde68a;
-            padding: 12px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
-<body class="bg-[#f5f5f4]">
-    <?php include './sidebar.php'; ?>
-
-    <div id="toastContainer" class="toast-container"></div>
-
+<body>
     <div class="flex">
-        <main class="flex-1 lg:ml-[var(--sidebar-width)]">
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h1 class="text-xl font-medium">Newspaper Distribution</h1>
-                        <p class="text-sm text-gray-500 mt-1">Select subscriptions and recipients to distribute</p>
+        <?php include './sidebar.php'; ?>
+
+        <main class="main-content">
+            <!-- Header -->
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Newspaper Distribution</span>
                     </div>
-                    <div class="flex gap-2">
-                        <button type="button" onclick="exportToCSV()" class="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100 text-gray-700 inline-flex items-center">
-                            <i class="fa-regular fa-file-excel mr-1 text-gray-500"></i>Export CSV
-                        </button>
-                        <button id="distributeBtn" class="distribute-btn" onclick="openDistributeModal()" disabled>
-                            <i class="fa-solid fa-hand-holding-hand"></i>
-                            <span>Distribute</span>
-                        </button>
-                    </div>
+                    <h1 class="page-header-title">Newspaper Distribution</h1>
+                    <p class="page-header-subtitle">Select subscriptions and recipients to distribute.</p>
+                </div>
+                <div class="header-actions flex items-center gap-2">
+                    <button type="button" onclick="exportTodayStatus()" class="btn btn-soft">
+                        <i class="fa-regular fa-file-excel"></i>
+                        <span class="hidden sm:inline">Export CSV</span>
+                    </button>
+                    <button id="distributeBtn" class="btn btn-primary" onclick="openDistributeModal()" disabled>
+                        <i class="fa-solid fa-hand-holding-hand"></i>
+                        <span class="hidden sm:inline">Distribute</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="page-body">
+                <?php if ($toast): ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
+                        });
+                    </script>
+                <?php endif; ?>
+
+                <div class="flex flex-wrap gap-2 mb-5">
+                    <span class="filter-chip"><i class="fa-solid fa-newspaper"></i> <?php echo $available_papers_count; ?> papers available</span>
+                    <span class="filter-chip"><i class="fa-regular fa-user"></i> <?php echo $active_recipients_count; ?> recipients active</span>
+                    <?php if ($already_received_count > 0): ?>
+                        <span class="filter-chip"><i class="fa-solid fa-clock-rotate-left" style="color:var(--orange);"></i> <?php echo $already_received_count; ?> already received today</span>
+                    <?php endif; ?>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="bg-white border border-gray-200 p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-base font-medium">1. Select Subscriptions (Papers)</h2>
-                            <div class="selected-count-badge">
-                                <span id="selectedCountBadge">0</span> selected
+                    <div class="card card-unclip">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">1. Select Subscriptions</div>
+                                <div class="card-subtitle">Choose the papers to distribute.</div>
                             </div>
+                            <span class="filter-chip"><span id="selectedCountBadge">0</span> selected</span>
                         </div>
+                        <div class="card-body">
+                            <div class="dropdown w-full">
+                                <button type="button" class="input w-full" style="text-align:left;display:flex;align-items:center;justify-content:space-between;cursor:pointer;"
+                                    onclick="toggleDropdown(this)">
+                                    <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
+                                    <i class="fa-solid fa-chevron-down" style="color:var(--text-faint);font-size:11px;"></i>
+                                </button>
+                                <div class="dropdown-menu" style="left:0;right:auto;width:100%;top:calc(100% + 6px);padding:0;">
+                                    <div style="padding:10px 12px;border-bottom:1px solid var(--border);">
+                                        <input type="text" class="input" placeholder="Search papers..." oninput="filterSelectOptions(this, 'subOption')" autocomplete="off">
+                                    </div>
+                                    <div class="flex gap-2" style="padding:10px 12px;border-bottom:1px solid var(--border);">
+                                        <button type="button" class="btn btn-soft btn-sm" onclick="selectAllOptions('selected_categories_chk[]')">
+                                            <i class="fa-regular fa-square-check"></i> Select all
+                                        </button>
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="clearOptions('selected_categories_chk[]')">
+                                            <i class="fa-regular fa-square"></i> Clear
+                                        </button>
+                                    </div>
+                                    <div class="max-h-60 overflow-auto">
+                                        <?php
+                                        if ($newspapers_error) {
+                                            echo "<div class='px-4 py-2' style='color:var(--red);'>Could not load newspapers: " . htmlspecialchars($newspapers_error) . "</div>";
+                                        } elseif ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
+                                            $categories_for_distribution->data_seek(0);
+                                            while ($paper = $categories_for_distribution->fetch_assoc()) {
+                                                $clean_label = htmlspecialchars($paper['newspaper_name']);
+                                                if ($paper['newspaper_number']) $clean_label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
+                                                $display_label = $clean_label . ' - ' . $paper['available_copies'] . ' left';
 
-                        <div class="mt-2 relative">
-                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('subscriptionsDropdownOptions').classList.toggle('hidden')">
-                                <span class="block truncate" id="subscriptionsDropdownText">Select subscriptions...</span>
-                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
-                                </span>
-                            </button>
-                            <div id="subscriptionsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
-                                <?php
-                                if ($newspapers_error) {
-                                    echo "<div class='px-4 py-2 text-red-600'>Could not load newspapers: " . htmlspecialchars($newspapers_error) . "</div>";
-                                } elseif ($categories_for_distribution && $categories_for_distribution->num_rows > 0) {
-                                    $categories_for_distribution->data_seek(0);
-                                    while ($paper = $categories_for_distribution->fetch_assoc()) {
-                                        $label = htmlspecialchars($paper['newspaper_name']);
-                                        if ($paper['newspaper_number']) $label .= ' (Issue: ' . htmlspecialchars($paper['newspaper_number']) . ')';
-                                        $label .= ' - ' . $paper['available_copies'] . ' left';
-
-                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 text-gray-700 cursor-pointer'>";
-                                        echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
-                                        echo "<span>{$label}</span>";
-                                        echo "</label>";
-                                    }
-                                } else {
-                                    echo "<div class='px-4 py-2 text-gray-500'>No available newspapers found</div>";
-                                }
-                                ?>
+                                                echo "<label class='subOption search-item flex items-center px-4 py-2 cursor-pointer' style='color:var(--text-secondary);' data-label='" . htmlspecialchars($clean_label, ENT_QUOTES) . "' data-search='" . htmlspecialchars($display_label, ENT_QUOTES) . "'>";
+                                                echo "<input type='checkbox' name='selected_categories_chk[]' value='{$paper['id']}' class='mr-3 h-4 w-4' style='accent-color:var(--accent);' onchange='updateSelectionCount()'>";
+                                                echo "<span class='search-text'>{$display_label}</span>";
+                                                echo "</label>";
+                                            }
+                                        } else {
+                                            echo "<div class='px-4 py-2' style='color:var(--text-muted);'>No available newspapers found</div>";
+                                        }
+                                        ?>
+                                    </div>
+                                </div>
                             </div>
+                            <div id="subscriptionsChips" class="flex flex-wrap gap-2 mt-3"></div>
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-base font-medium">2. Select Recipients</h2>
-                            <div class="selected-count-badge">
-                                <span id="selectedRecipientCountBadge">0</span> selected
+                    <div class="card card-unclip">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title">2. Select Recipients</div>
+                                <div class="card-subtitle">Choose who should receive today's papers.</div>
                             </div>
+                            <span class="filter-chip"><span id="selectedRecipientCountBadge">0</span> selected</span>
                         </div>
-
-                        <div id="recipientListContainer" class="mt-2 relative">
-                            <button type="button" class="w-full bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" onclick="document.getElementById('recipientsDropdownOptions').classList.toggle('hidden')">
-                                <span class="block truncate" id="recipientsDropdownText">Select recipients...</span>
-                                <span class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
-                                </span>
-                            </button>
-                            <div id="recipientsDropdownOptions" class="hidden absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200">
-                                <?php
-                                if ($recipients_error) {
-                                    echo "<div class='px-4 py-2 text-red-600'>Could not load recipients: " . htmlspecialchars($recipients_error) . "</div>";
-                                } elseif ($recipients && $recipients->num_rows > 0) {
-                                    $recipients->data_seek(0);
-                                    while ($recipient = $recipients->fetch_assoc()) {
-                                        $rec_name = $recipient['name'];
-                                        $already_got = isset($already_received_lookup[$rec_name]);
-                                        $disabled = $already_got ? 'disabled' : '';
-                                        $label_class = $already_got ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer';
-                                        $label = htmlspecialchars($recipient['name']);
-                                        if ($already_got) $label .= ' (Already received today)';
-                                        echo "<label class='flex items-center px-4 py-2 hover:bg-gray-100 {$label_class}'>";
-                                        echo "<input type='checkbox' name='recipient_ids_chk[]' value='{$recipient['id']}' {$disabled} class='mr-3 h-4 w-4 text-blue-600 rounded border-gray-300' onchange='updateSelectionCount()'>";
-                                        echo "<span>{$label}</span>";
-                                        echo "</label>";
-                                    }
-                                } else {
-                                    echo "<div class='px-4 py-2 text-gray-500'>No recipients found</div>";
-                                }
-                                ?>
+                        <div class="card-body">
+                            <div class="dropdown w-full">
+                                <button type="button" class="input w-full" style="text-align:left;display:flex;align-items:center;justify-content:space-between;cursor:pointer;"
+                                    onclick="toggleDropdown(this)">
+                                    <span class="block truncate" id="recipientsDropdownText">Select recipients...</span>
+                                    <i class="fa-solid fa-chevron-down" style="color:var(--text-faint);font-size:11px;"></i>
+                                </button>
+                                <div class="dropdown-menu" style="left:0;right:auto;width:100%;top:calc(100% + 6px);padding:0;">
+                                    <div style="padding:10px 12px;border-bottom:1px solid var(--border);">
+                                        <input type="text" class="input" placeholder="Search recipients..." oninput="filterSelectOptions(this, 'recOption')" autocomplete="off">
+                                    </div>
+                                    <div class="flex gap-2" style="padding:10px 12px;border-bottom:1px solid var(--border);">
+                                        <button type="button" class="btn btn-soft btn-sm" onclick="selectAllOptions('recipient_ids_chk[]')">
+                                            <i class="fa-regular fa-square-check"></i> Select all
+                                        </button>
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="clearOptions('recipient_ids_chk[]')">
+                                            <i class="fa-regular fa-square"></i> Clear
+                                        </button>
+                                    </div>
+                                    <div class="max-h-60 overflow-auto">
+                                        <?php
+                                        if ($recipients_error) {
+                                            echo "<div class='px-4 py-2' style='color:var(--red);'>Could not load recipients: " . htmlspecialchars($recipients_error) . "</div>";
+                                        } elseif ($recipients && $recipients->num_rows > 0) {
+                                            $recipients->data_seek(0);
+                                            while ($recipient = $recipients->fetch_assoc()) {
+                                                $rec_name = $recipient['name'];
+                                                $already_got = isset($already_received_lookup[$rec_name]);
+                                                $disabled = $already_got ? 'disabled' : '';
+                                                $label_class = $already_got ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
+                                                $text_style = $already_got ? 'color:var(--text-faint);' : '';
+                                                $clean_label = htmlspecialchars($recipient['name']);
+                                                $display_label = $clean_label;
+                                                if ($already_got) $display_label .= ' (Already received today)';
+                                                if ($already_got) $text_style .= 'text-decoration:line-through;';
+                                                echo "<label class='recOption search-item flex items-center px-4 py-2 {$label_class}' style='{$text_style}' data-label='" . htmlspecialchars($clean_label, ENT_QUOTES) . "' data-search='" . htmlspecialchars($display_label, ENT_QUOTES) . "'>";
+                                                echo "<input type='checkbox' name='recipient_ids_chk[]' value='{$recipient['id']}' {$disabled} class='mr-3 h-4 w-4' style='accent-color:var(--accent);' onchange='updateSelectionCount()'>";
+                                                echo "<span class='search-text'>{$display_label}</span>";
+                                                echo "</label>";
+                                            }
+                                        } else {
+                                            echo "<div class='px-4 py-2' style='color:var(--text-muted);'>No recipients found</div>";
+                                        }
+                                        ?>
+                                    </div>
+                                </div>
                             </div>
+                            <div id="recipientsChips" class="flex flex-wrap gap-2 mt-3"></div>
                         </div>
                     </div>
                 </div>
@@ -595,62 +482,44 @@ if (isset($_SESSION['toast'])) {
     </div>
 
     <!-- Distribution Modal -->
-    <div id="distributeModal" class="modal">
-        <div class="modal-content">
+    <div id="distributeModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
             <div class="modal-header">
-                <h3>Confirm Distribution</h3>
-                <button type="button" onclick="closeDistributeModal()" class="text-gray-400 hover:text-gray-600">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <h3 class="modal-title">Confirm Distribution</h3>
+                <button type="button" class="modal-close" onclick="closeDistributeModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <div class="mb-4 p-3 bg-gray-50 border border-gray-200 flex justify-between gap-4">
+                <div class="flex justify-between gap-4" style="padding:12px 0;margin-bottom:14px;border-bottom:1px solid var(--border);">
                     <div>
-                        <p class="text-sm text-gray-600 mb-1">Recipients:</p>
-                        <p class="text-lg font-semibold"><span id="modalSelectedRecipientCountDisplay">0</span> user(s)</p>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">Recipients:</p>
+                        <p style="font-size:20px;font-weight:700;color:var(--text);"><span id="modalSelectedRecipientCountDisplay">0</span> user(s)</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-600 mb-1">Subscriptions:</p>
-                        <p class="text-lg font-semibold"><span id="modalSelectedCountDisplay">0</span> paper(s)</p>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">Subscriptions:</p>
+                        <p style="font-size:20px;font-weight:700;color:var(--text);"><span id="modalSelectedCountDisplay">0</span> paper(s)</p>
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-xs text-gray-600 mb-1">Distributed By</label>
-                    <input type="text" id="modal_distributed_by" class="w-full p-2 border border-gray-200 text-sm" placeholder="Your name">
-                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Papers:</p>
+                <div id="modalSubList" class="flex flex-wrap gap-2"></div>
+                <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px;">Recipients:</p>
+                <div id="modalRecipientList" class="flex flex-wrap gap-2"></div>
 
-                <div class="mt-3 text-xs text-gray-500">
-                    <i class="fa-regular fa-info-circle"></i> Distributions will skip any recipients who already received their papers today.
-                </div>
+                <label class="label">Distributed By</label>
+                <input type="text" id="modal_distributed_by" class="input" placeholder="Your name" autocomplete="off">
+
+                <p style="font-size:12px;color:var(--text-muted);margin-top:12px;">
+                    <i class="fa-regular fa-circle-info"></i> Distributions will skip any recipients who already received their papers today.
+                </p>
             </div>
             <div class="modal-footer">
-                <button type="button" onclick="closeDistributeModal()" class="btn-secondary">Cancel</button>
-                <button type="button" onclick="submitDistribution()" class="btn-primary-small">Confirm Distribution</button>
+                <button type="button" onclick="closeDistributeModal()" class="btn btn-soft">Cancel</button>
+                <button type="button" onclick="submitDistribution(this)" class="btn btn-primary">Confirm Distribution</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Initialize Choices.js
-        const recipientsSelectEl = document.getElementById('recipientsSelect');
-        const subscriptionsSelectEl = document.getElementById('subscriptionsSelect');
-
-        // Close dropdowns on outside click
-        document.addEventListener('click', function(event) {
-            const recBtn = document.getElementById('recipientsDropdownText')?.parentElement;
-            const recDropdown = document.getElementById('recipientsDropdownOptions');
-            const subBtn = document.getElementById('subscriptionsDropdownText')?.parentElement;
-            const subDropdown = document.getElementById('subscriptionsDropdownOptions');
-
-            if (recBtn && recDropdown && !recBtn.contains(event.target) && !recDropdown.contains(event.target)) {
-                recDropdown.classList.add('hidden');
-            }
-            if (subBtn && subDropdown && !subBtn.contains(event.target) && !subDropdown.contains(event.target)) {
-                subDropdown.classList.add('hidden');
-            }
-        });
-
         function getCheckedValues(name) {
             const checkboxes = document.querySelectorAll(`input[name="${name}"]:checked`);
             return Array.from(checkboxes).map(chk => chk.value);
@@ -667,16 +536,87 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('selectedRecipientCountBadge').textContent = recCount;
 
             const distributeBtn = document.getElementById('distributeBtn');
-            const btnText = `Distribute (${recCount} rec, ${catCount} sub)`;
-            if (distributeBtn) distributeBtn.querySelector('span').textContent = btnText;
-
-            if (distributeBtn) distributeBtn.disabled = (catCount === 0 || recCount === 0);
+            if (distributeBtn) {
+                const btnLabel = distributeBtn.querySelector('span');
+                if (btnLabel) btnLabel.textContent = `Distribute (${recCount} rec, ${catCount} sub)`;
+                distributeBtn.disabled = (catCount === 0 || recCount === 0);
+            }
 
             const recText = document.getElementById('recipientsDropdownText');
             if (recText) recText.textContent = recCount > 0 ? `${recCount} recipients selected` : 'Select recipients...';
 
             const subText = document.getElementById('subscriptionsDropdownText');
             if (subText) subText.textContent = catCount > 0 ? `${catCount} subscriptions selected` : 'Select subscriptions...';
+
+            renderSelectionChips('subscriptionsChips', 'selected_categories_chk[]', 'No subscriptions selected');
+            renderSelectionChips('recipientsChips', 'recipient_ids_chk[]', 'No recipients selected');
+        }
+
+        function filterSelectOptions(input, itemClass) {
+            const q = input.value.trim().toLowerCase();
+            document.querySelectorAll('.' + itemClass).forEach(label => {
+                const txt = (label.dataset.search || label.textContent).toLowerCase();
+                label.classList.toggle('hidden', q !== '' && txt.indexOf(q) === -1);
+            });
+        }
+
+        function selectAllOptions(name) {
+            document.querySelectorAll(`input[name="${name}"]`).forEach(cb => {
+                const label = cb.closest('label');
+                if (!cb.disabled && label && !label.classList.contains('hidden')) cb.checked = true;
+            });
+            updateSelectionCount();
+        }
+
+        function clearOptions(name) {
+            document.querySelectorAll(`input[name="${name}"]`).forEach(cb => { cb.checked = false; });
+            updateSelectionCount();
+        }
+
+        function optionLabel(cb) {
+            const label = cb.closest('label');
+            return label && label.dataset.label ? label.dataset.label : (label ? label.textContent.trim() : cb.value);
+        }
+
+        function renderSelectionChips(containerId, name, emptyText) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const boxes = getCheckedValues(name);
+            container.innerHTML = '';
+            boxes.forEach(value => {
+                const cb = document.querySelector(`input[name="${name}"][value="${value}"]`);
+                if (!cb) return;
+                const chip = document.createElement('span');
+                chip.className = 'filter-chip';
+                chip.innerHTML = '<i class="fa-solid fa-circle-check" style="color:var(--green);margin-right:6px;font-size:10px;"></i>' + esc(optionLabel(cb)) + ' <button type="button" class="chip-remove" title="Remove">&times;</button>';
+                chip.querySelector('.chip-remove').onclick = () => { cb.checked = false; updateSelectionCount(); };
+                container.appendChild(chip);
+            });
+            if (boxes.length === 0) {
+                container.innerHTML = '<span class="text-xs" style="color:var(--text-faint);">' + emptyText + '</span>';
+            }
+        }
+
+        function populateModalSummary() {
+            const subList = document.getElementById('modalSubList');
+            const recList = document.getElementById('modalRecipientList');
+            if (!subList || !recList) return;
+            const MAX = 6;
+            const subs = getCheckedValues('selected_categories_chk[]');
+            const recs = getCheckedValues('recipient_ids_chk[]');
+            const htmlFor = (name) => {
+                const values = name === 'selected_categories_chk[]' ? subs : recs;
+                const items = values.map(value => {
+                    const cb = document.querySelector(`input[name="${name}"][value="${value}"]`);
+                    return '<span class="filter-chip">' + esc(cb ? optionLabel(cb) : value) + '</span>';
+                });
+                if (items.length > MAX) {
+                    return items.slice(0, MAX).join(' ') + ' <span class="filter-chip">+' + (items.length - MAX) + ' more</span>';
+                }
+                return items.join(' ') || '<span class="text-xs" style="color:var(--text-faint);">None</span>';
+            };
+            subList.innerHTML = htmlFor('selected_categories_chk[]');
+            recList.innerHTML = htmlFor('recipient_ids_chk[]');
         }
 
         function openDistributeModal() {
@@ -684,32 +624,34 @@ if (isset($_SESSION['toast'])) {
             const catCount = getCheckedValues('selected_categories_chk[]').length;
 
             if (recCount === 0) {
-                showToast('error', 'Please select at least one recipient');
+                MailroomToast.error('Please select at least one recipient');
                 return;
             }
             if (catCount === 0) {
-                showToast('error', 'Please select at least one subscription');
+                MailroomToast.error('Please select at least one subscription');
                 return;
             }
             document.getElementById('modalSelectedCountDisplay').textContent = catCount;
             document.getElementById('modalSelectedRecipientCountDisplay').textContent = recCount;
-            document.getElementById('distributeModal').style.display = 'flex';
+            populateModalSummary();
+            MailroomModal.open('distributeModal');
         }
 
         function closeDistributeModal() {
-            document.getElementById('distributeModal').style.display = 'none';
+            MailroomModal.close('distributeModal');
             document.getElementById('modal_distributed_by').value = '';
         }
 
-        function submitDistribution() {
+        function submitDistribution(btn) {
             const distributedBy = document.getElementById('modal_distributed_by').value.trim();
 
             if (!distributedBy) {
-                showToast('error', 'Please enter who is distributing');
+                MailroomToast.error('Please enter who is distributing');
                 return;
             }
 
             const formData = new FormData();
+            formData.append('csrf_token', '<?php echo csrf_token(); ?>');
             formData.append('distribute_submit', '1');
             formData.append('distributed_by', distributedBy);
 
@@ -719,100 +661,51 @@ if (isset($_SESSION['toast'])) {
             const selectedArray = getCheckedValues('selected_categories_chk[]');
             formData.append('selected_categories', selectedArray.join(','));
 
-            const confirmBtn = event.target;
-            const originalText = confirmBtn.innerHTML;
-            confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing...';
-            confirmBtn.disabled = true;
+            const originalText = btn ? btn.innerHTML : null;
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing...';
+                btn.disabled = true;
+            }
 
             fetch('newspaper_distribution.php', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                redirect: 'manual'
             }).then(response => {
-                window.location.href = 'newspaper_distribution.php';
+                // Server replies with a 302 carrying the toast session; a manual reload shows it.
+                if (response.type === 'opaqueredirect' || response.ok) {
+                    window.location.replace('newspaper_distribution.php');
+                } else {
+                    if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+                    MailroomToast.error('Error submitting distribution');
+                }
             }).catch(error => {
-                showToast('error', 'Error submitting distribution');
-                confirmBtn.innerHTML = originalText;
-                confirmBtn.disabled = false;
+                if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+                MailroomToast.error('Error submitting distribution');
             });
 
             closeDistributeModal();
         }
-
-        function showToast(type, message, duration = 5000) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fa-regular ${type === 'success' ? 'fa-circle-check' : type === 'warning' ? 'fa-clock' : 'fa-circle-exclamation'}"></i>
-                <span class="flex-1 text-sm">${message}</span>
-                <button onclick="this.parentElement.remove()" class="text-gray-400">×</button>
-            `;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), duration);
-        }
-
-        <?php if ($toast): ?>
-            document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
-            });
-        <?php endif; ?>
 
         <?php if (!empty($already_received_today)): ?>
             document.addEventListener('DOMContentLoaded', function() {
                 const alreadyReceived = <?php echo json_encode($already_received_today); ?>;
                 alreadyReceived.forEach((name, index) => {
                     setTimeout(() => {
-                        showToast('warning', `Already received today: ${name}`, 3000);
+                        MailroomToast.warning(`Already received today: ${name}`);
                     }, index * 800); // 800ms delay between toasts
                 });
             });
         <?php endif; ?>
 
-        window.onclick = function(event) {
-            const modal = document.getElementById('distributeModal');
-            if (event.target == modal) {
-                closeDistributeModal();
-            }
-        }
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeDistributeModal();
-            }
-        });
-
         // Export today's distribution status to CSV
-        function exportToCSV() {
+        function exportTodayStatus() {
             const data = <?php echo json_encode($today_distribution_export); ?>;
-            const headers = ['Recipient Name', 'Department', 'Received Today', 'Copies Count', 'Newspapers List'];
-            const rows = [headers.join(',')];
-            
-            data.forEach(item => {
-                const row = [
-                    `"${item.name.replace(/"/g, '""')}"`,
-                    `"${item.department.replace(/"/g, '""')}"`,
-                    `"${item.received_today}"`,
-                    item.copies,
-                    `"${item.newspapers.replace(/"/g, '""')}"`
-                ];
-                rows.push(row.join(','));
-            });
-            
-            const csv = rows.join('\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `today_distribution_status_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            if (typeof showToast === 'function') {
-                showToast('success', 'Export completed successfully!');
-            }
+            const filename = 'today_distribution_status_' + new Date().toISOString().split('T')[0] + '.csv';
+            exportToCSV(data, filename);
         }
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

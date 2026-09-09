@@ -1,9 +1,9 @@
 <?php
 // list.php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once './config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 
 // Start session for messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -20,21 +20,11 @@ function setToast($type, $message)
     $_SESSION['toast'] = ['type' => $type, 'message' => $message];
 }
 
-/**
- * Generate issue number
- */
-function generateIssueNumber($category_name, $date_received)
-{
-    $category_prefix = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $category_name), 0, 3));
-    $date_prefix = date('Ymd', strtotime($date_received));
-    $random_suffix = str_pad(mt_rand(1, 999), 3, '0', STR_PAD_LEFT);
-    return $category_prefix . '-' . $date_prefix . '-' . $random_suffix;
-}
-
 // ========== CATEGORY HANDLERS ==========
 
 // Handle Add Category
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category_submit'])) {
+    csrf_check_post();
     $category_name = trim($_POST['category_name']);
     $description = trim($_POST['description']);
 
@@ -58,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category_submit'])
 
 // Handle Edit Category
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_category_submit'])) {
+    csrf_check_post();
     $id = (int)$_POST['category_id'];
     $category_name = trim($_POST['category_name']);
     $description = trim($_POST['description']);
@@ -81,12 +72,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_category_submit']
 }
 
 // Handle Delete Category
-if (isset($_GET['delete_category'])) {
-    $id = (int)$_GET['delete_category'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
+    csrf_check_post();
+    $id = (int)$_POST['delete_category'];
 
     // Check if category is used in newspapers
-    $check = $conn->query("SELECT COUNT(*) as count FROM newspapers WHERE category_id = $id");
-    $row = $check->fetch_assoc();
+    $check_stmt = $conn->prepare("SELECT COUNT(*) as count FROM newspapers WHERE category_id = ?");
+    $check_stmt->bind_param("i", $id);
+    $check_stmt->execute();
+    $row = $check_stmt->get_result()->fetch_assoc();
+    $check_stmt->close();
 
     if ($row['count'] > 0) {
         setToast('error', "Cannot delete: This category has $row[count] newspaper(s)");
@@ -109,14 +104,18 @@ if (isset($_GET['delete_category'])) {
 
 // Handle Add Newspaper
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_newspaper_submit'])) {
+    csrf_check_post();
     $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
     $date_received = $_POST['date_received'];
     $copies_received = (int)$_POST['copies_received'];
     $received_by = trim($_POST['received_by']);
 
     // Get category name for newspaper name and issue number
-    $cat_result = $conn->query("SELECT category_name FROM newspaper_categories WHERE id = $category_id");
-    $cat_row = $cat_result->fetch_assoc();
+    $cat_stmt = $conn->prepare("SELECT category_name FROM newspaper_categories WHERE id = ?");
+    $cat_stmt->bind_param("i", $category_id);
+    $cat_stmt->execute();
+    $cat_row = $cat_stmt->get_result()->fetch_assoc();
+    $cat_stmt->close();
     $newspaper_name = $cat_row['category_name'];
 
     // Generate issue number
@@ -138,12 +137,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_newspaper_submit']
 }
 
 // Handle Delete Newspaper
-if (isset($_GET['delete'])) {
-    $id = (int)$_GET['delete'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_newspaper'])) {
+    csrf_check_post();
+    $id = (int)$_POST['delete_newspaper'];
 
     // Check if newspaper is used in distribution
-    $check = $conn->query("SELECT COUNT(*) as count FROM distribution WHERE newspaper_id = $id");
-    $row = $check->fetch_assoc();
+    $check_stmt = $conn->prepare("SELECT COUNT(*) as count FROM distribution WHERE newspaper_id = ?");
+    $check_stmt->bind_param("i", $id);
+    $check_stmt->execute();
+    $row = $check_stmt->get_result()->fetch_assoc();
+    $check_stmt->close();
 
     if ($row['count'] > 0) {
         setToast('error', "Cannot delete: This newspaper has been distributed");
@@ -158,16 +161,13 @@ if (isset($_GET['delete'])) {
         $stmt->close();
     }
 
-    // Preserve filters and pagination
-    $query_params = $_GET;
-    unset($query_params['delete']);
-    $redirect_url = 'list.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
-    header('Location: ' . $redirect_url);
+    header('Location: list.php');
     exit();
 }
 
 // Handle Update Newspaper Copies
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit'])) {
+    csrf_check_post();
     $id = (int)$_POST['newspaper_id'];
     $available_copies = (int)$_POST['available_copies'];
 
@@ -177,10 +177,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
     if ($stmt->execute()) {
         // Update status based on available copies
         if ($available_copies == 0) {
-            $conn->query("UPDATE newspapers SET status = 'distributed' WHERE id = $id");
+            $status_stmt = $conn->prepare("UPDATE newspapers SET status = 'distributed' WHERE id = ?");
         } else {
-            $conn->query("UPDATE newspapers SET status = 'available' WHERE id = $id");
+            $status_stmt = $conn->prepare("UPDATE newspapers SET status = 'available' WHERE id = ?");
         }
+        $status_stmt->bind_param("i", $id);
+        $status_stmt->execute();
+        $status_stmt->close();
         setToast('success', "Newspaper copies updated successfully!");
     } else {
         setToast('error', "Error updating copies: " . $conn->error);
@@ -195,8 +198,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
 }
 
 // Handle Discontinue / Continue Newspaper
-if (isset($_GET['toggle_status'])) {
-    $id = (int)$_GET['toggle_status'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
+    csrf_check_post();
+    $id = (int)$_POST['toggle_status'];
     $stmt = $conn->prepare("SELECT status, available_copies FROM newspapers WHERE id = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
@@ -221,10 +225,7 @@ if (isset($_GET['toggle_status'])) {
         setToast('error', 'Invalid newspaper selected.');
     }
 
-    $query_params = $_GET;
-    unset($query_params['toggle_status']);
-    $redirect_url = 'list.php' . (!empty($query_params) ? '?' . http_build_query($query_params) : '');
-    header('Location: ' . $redirect_url);
+    header('Location: list.php');
     exit();
 }
 
@@ -239,6 +240,7 @@ while ($cat = $categories_query->fetch_assoc()) {
 
 // Pagination settings for newspapers
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$page = max(1, $page);
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
@@ -249,55 +251,94 @@ $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'date_received';
 $sort_order = isset($_GET['sort_order']) ? $_GET['sort_order'] : 'DESC';
 
+$has_active_filters = $filter_category > 0 || $filter_status !== '' || $search !== '';
+
+$allowed_sort_fields = ['date_received', 'newspaper_name', 'category_name', 'status', 'available_copies'];
+if (!in_array($sort_by, $allowed_sort_fields, true)) {
+    $sort_by = 'date_received';
+}
+$sort_order = strtoupper($sort_order) === 'ASC' ? 'ASC' : 'DESC';
+
 $allowed_statuses = ['available', 'partial', 'distributed', 'archived', 'pending'];
 if ($filter_status !== '' && !in_array($filter_status, $allowed_statuses, true)) {
     $filter_status = '';
 }
 
-// Build query for all newspapers with filters
+// Build query for all newspapers with filters (use prepared statements for LIKE)
 $where_clauses = [];
+$where_params = [];
+$where_types = '';
 if ($filter_category > 0) {
-    $where_clauses[] = "n.category_id = $filter_category";
+    $where_clauses[] = "n.category_id = ?";
+    $where_params[] = $filter_category;
+    $where_types .= 'i';
 }
 if (!empty($filter_status)) {
-    $where_clauses[] = "n.status = '$filter_status'";
+    $where_clauses[] = "n.status = ?";
+    $where_params[] = $filter_status;
+    $where_types .= 's';
 }
 if (!empty($search)) {
-    $where_clauses[] = "(n.newspaper_name LIKE '%$search%' OR n.newspaper_number LIKE '%$search%')";
+    $where_clauses[] = "(n.newspaper_name LIKE ? OR n.newspaper_number LIKE ?)";
+    $search_pattern = '%' . $search . '%';
+    $where_params[] = $search_pattern;
+    $where_params[] = $search_pattern;
+    $where_types .= 'ss';
 }
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
 // Get total count for pagination
 $count_query = "SELECT COUNT(*) as total FROM newspapers n $where_sql";
-$count_result = $conn->query($count_query);
-$total_rows = $count_result->fetch_assoc()['total'];
-$total_pages = ceil($total_rows / $limit);
+if (!empty($where_params)) {
+    $count_stmt = $conn->prepare($count_query);
+    $count_stmt->bind_param($where_types, ...$where_params);
+    $count_stmt->execute();
+    $total_rows = $count_stmt->get_result()->fetch_assoc()['total'];
+    $count_stmt->close();
+} else {
+    $total_rows = $conn->query($count_query)->fetch_assoc()['total'];
+}
+$total_pages = $total_rows > 0 ? ceil($total_rows / $limit) : 1;
 
 // Get all newspapers for management with filters, sorting and pagination
-$all_newspapers = $conn->query("SELECT n.*, nc.category_name 
-                               FROM newspapers n 
-                               LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-                               $where_sql
-                               ORDER BY 
-                                   CASE WHEN '$sort_by' = 'date_received' THEN n.date_received END $sort_order,
-                                   CASE WHEN '$sort_by' = 'newspaper_name' THEN n.newspaper_name END $sort_order,
-                                   CASE WHEN '$sort_by' = 'category_name' THEN nc.category_name END $sort_order,
-                                   CASE WHEN '$sort_by' = 'status' THEN n.status END $sort_order,
-                                   CASE WHEN '$sort_by' = 'available_copies' THEN n.available_copies END $sort_order
-                               LIMIT $offset, $limit");
+$main_query = "SELECT n.*, nc.category_name 
+               FROM newspapers n 
+               LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
+               $where_sql
+               ORDER BY 
+                   CASE WHEN ? = 'date_received' THEN n.date_received END $sort_order,
+                   CASE WHEN ? = 'newspaper_name' THEN n.newspaper_name END $sort_order,
+                   CASE WHEN ? = 'category_name' THEN nc.category_name END $sort_order,
+                   CASE WHEN ? = 'status' THEN n.status END $sort_order,
+                   CASE WHEN ? = 'available_copies' THEN n.available_copies END $sort_order
+               LIMIT ?, ?";
+$main_params = array_merge($where_params, [$sort_by, $sort_by, $sort_by, $sort_by, $sort_by, $offset, $limit]);
+$main_types = $where_types . 'ssssiii';
+$main_stmt = $conn->prepare($main_query);
+$main_stmt->bind_param($main_types, ...$main_params);
+$main_stmt->execute();
+$all_newspapers = $main_stmt->get_result();
+$main_stmt->close();
 
 // Get all newspapers for export matching filters (without pagination limit)
 $all_newspapers_export = [];
-$export_res = $conn->query("SELECT n.*, nc.category_name 
-                            FROM newspapers n 
-                            LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
-                            $where_sql
-                            ORDER BY 
-                                CASE WHEN '$sort_by' = 'date_received' THEN n.date_received END $sort_order,
-                                CASE WHEN '$sort_by' = 'newspaper_name' THEN n.newspaper_name END $sort_order,
-                                CASE WHEN '$sort_by' = 'category_name' THEN nc.category_name END $sort_order,
-                                CASE WHEN '$sort_by' = 'status' THEN n.status END $sort_order,
-                                CASE WHEN '$sort_by' = 'available_copies' THEN n.available_copies END $sort_order");
+$export_query = "SELECT n.*, nc.category_name 
+                 FROM newspapers n 
+                 LEFT JOIN newspaper_categories nc ON n.category_id = nc.id 
+                 $where_sql
+                 ORDER BY 
+                     CASE WHEN ? = 'date_received' THEN n.date_received END $sort_order,
+                     CASE WHEN ? = 'newspaper_name' THEN n.newspaper_name END $sort_order,
+                     CASE WHEN ? = 'category_name' THEN nc.category_name END $sort_order,
+                     CASE WHEN ? = 'status' THEN n.status END $sort_order,
+                     CASE WHEN ? = 'available_copies' THEN n.available_copies END $sort_order";
+$export_params = array_merge($where_params, [$sort_by, $sort_by, $sort_by, $sort_by, $sort_by]);
+$export_types = $where_types . 'sssss';
+$export_stmt = $conn->prepare($export_query);
+$export_stmt->bind_param($export_types, ...$export_params);
+$export_stmt->execute();
+$export_res = $export_stmt->get_result();
+$export_stmt->close();
 if ($export_res) {
     while ($row = $export_res->fetch_assoc()) {
         $all_newspapers_export[] = [
@@ -369,6 +410,20 @@ if ($category_result) {
     }
 }
 
+// ─── Build a pagination URL preserving current filters ────────────────────────
+function buildListUrl($overrides = [])
+{
+    $params = $_GET;
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
+        }
+    }
+    return 'list.php' . (!empty($params) ? '?' . http_build_query($params) : '');
+}
+
 // Get toast message from session
 $toast = null;
 if (isset($_SESSION['toast'])) {
@@ -384,689 +439,352 @@ if (isset($_SESSION['toast'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Newspaper List - Mailroom</title>
+    <title>Newspaper Management - Mailroom</title>
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f5f5f4;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            padding: 0.75rem 1rem;
-            border-bottom: 2px solid #e5e5e5;
-            font-weight: 500;
-            color: #4a4a4a;
-            font-size: 0.75rem;
-        }
-
-        td {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #e5e5e5;
-            font-size: 0.875rem;
-            color: #1e1e1e;
-        }
-
-        .status-badge {
-            font-size: 0.7rem;
-            padding: 0.15rem 0.5rem;
-            border-radius: 1rem;
-        }
-
-        .status-available {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .status-partial {
-            background-color: #fff3e0;
-            color: #f57c00;
-        }
-
-        .status-distributed {
-            background-color: #ffebee;
-            color: #d32f2f;
-        }
-
-        .status-archived {
-            background-color: #f3f4f6;
-            color: #475569;
-        }
-
-        .status-pending {
-            background-color: #eff6ff;
-            color: #1d4ed8;
-        }
-
-        .issue-number {
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #6b7280;
-        }
-
-        .generated-issue {
-            background-color: #f9f9f9;
-            border: 1px dashed #9e9e9e;
-            padding: 0.5rem;
-            border-radius: 0.375rem;
-            font-family: monospace;
-            font-size: 0.875rem;
-        }
-
-        .pagination-shell {
-            padding: 1rem 1.25rem;
-            border-top: 1px solid #e5e5e5;
-            background: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-        }
-
-        .pagination-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .pagination-title {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: #1c1917;
-        }
-
-        .pagination-subtitle {
-            font-size: 0.82rem;
-            color: #78716c;
-        }
-
-        .pagination-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.75rem;
-        }
-
-        .pagination-page-indicator {
-            padding: 0.45rem 0.85rem;
-            border-radius: 9999px;
-            background-color: #f5f5f4;
-            color: #44403c;
-            font-size: 0.82rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .pagination {
-            display: flex;
-            gap: 0.4rem;
-            justify-content: flex-end;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .pagination-item {
-            min-width: 2.5rem;
-            height: 2.5rem;
-            padding: 0 0.85rem;
-            border: 1px solid #e7e5e4;
-            border-radius: 0.8rem;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #292524;
-            background-color: white;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
-            transition: all 0.2s ease;
-        }
-
-        .pagination-item:hover {
-            background-color: #f5f5f4;
-            border-color: #d6d3d1;
-            transform: translateY(-1px);
-        }
-
-        .pagination-item.active {
-            background-color: #1c1917;
-            color: white;
-            border-color: #1c1917;
-            box-shadow: 0 10px 20px rgba(28, 25, 23, 0.14);
-        }
-
-        .pagination-item.compact {
-            min-width: auto;
-            padding: 0 0.9rem;
-        }
-
-        .pagination-ellipsis {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 2.5rem;
-            height: 2.5rem;
-            color: #a8a29e;
-            font-size: 0.95rem;
-        }
-
-        @media (max-width: 768px) {
-            .pagination-shell {
-                padding: 1rem;
-            }
-
-            .pagination-controls {
-                width: 100%;
-                justify-content: flex-start;
-            }
-        }
-
-        .filter-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background-color: #f0f0f0;
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.75rem;
-        }
-
-        .action-btn {
-            color: #9e9e9e;
-            transition: color 0.2s;
-            margin: 0 0.25rem;
-            background: none;
-            border: none;
-            cursor: pointer;
-        }
-
-        .action-btn:hover {
-            color: #1e1e1e;
-        }
-
-        .delete-btn:hover {
-            color: #dc2626;
-        }
-
-        /* Toast notification */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            min-width: 300px;
-            max-width: 400px;
-            background-color: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 0.375rem;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            animation: slideIn 0.3s ease-in-out;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .toast-success {
-            border-left: 4px solid #10b981;
-        }
-
-        .toast-error {
-            border-left: 4px solid #ef4444;
-        }
-
-        .toast-info {
-            border-left: 4px solid #3b82f6;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        .toast.fade-out {
-            animation: fadeOut 0.3s ease-in-out forwards;
-        }
-
-        /* Modal styles */
-        .modal {
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-content {
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .page-tabs {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 24px;
-        }
-
-        .page-tab {
-            border: 1px solid #e5e5e5;
-            background: #fafaf9;
-            color: #57534e;
-            border-radius: 999px;
-            padding: 10px 18px;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-            cursor: pointer;
-        }
-
-        .page-tab:hover {
-            background: #f5f5f4;
-            color: #1e1e1e;
-        }
-
-        .page-tab.active {
-            background: #1e1e1e;
-            border-color: #1e1e1e;
-            color: #ffffff;
-        }
-
-        .page-pane {
-            display: none;
-        }
-
-        .page-pane.active {
-            display: block;
-        }
-
-        .stats-panel {
-            background: #ffffff;
-            border: 1px solid #e5e5e5;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .stats-panel-header {
-            padding: 18px 20px;
-            border-bottom: 1px solid #e5e5e5;
-        }
-
-        .stats-panel-body {
-            padding: 20px;
-        }
-
-        .stats-table-wrap {
-            overflow-x: auto;
-        }
-
-        .stats-table-wrap th.numeric,
-        .stats-table-wrap td.numeric {
-            text-align: right;
-        }
-
-        .stats-table-wrap tfoot td {
-            font-weight: 600;
-            background: #fafafa;
-            border-top: 2px solid #e5e5e5;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
 </head>
 
-<body class="bg-[#f5f5f4]">
-    <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
-
+<body>
     <div class="flex">
         <?php include './sidebar.php'; ?>
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen">
+        <main class="main-content">
             <!-- Header -->
-            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e5e5e5] bg-white">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h1 class="text-2xl font-medium text-[#1e1e1e]">Newspaper Management</h1>
-                        <p class="text-sm text-[#6e6e6e] mt-1">Manage newspapers and track distributions</p>
+            <div class="page-header flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="index.php">Mail Operations</a>
+                        <span class="sep">/</span>
+                        <span>Newspapers</span>
                     </div>
-
-                    <button onclick="openAddModal()" class="px-4 py-2 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d]">
-                        <i class="fa-regular fa-plus mr-1"></i>Add Newspaper
+                    <h1 class="page-header-title">Newspaper Management</h1>
+                    <p class="page-header-subtitle">Manage newspapers and track distributions.</p>
+                </div>
+                <div class="header-actions flex items-center gap-2 no-print">
+                    <button onclick="openAddModal()" class="btn btn-primary">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">Add Newspaper</span>
                     </button>
                 </div>
             </div>
 
-            <div class="px-4 pt-4 lg:px-8 lg:pt-6">
-                <div class="page-tabs" data-page-tab-group>
-                    <button type="button" class="page-tab <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>" data-page-tab="newspapers">
-                        <i class="fa-solid fa-newspaper mr-2"></i>Newspapers
-                    </button>
-                    <button type="button" class="page-tab <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>" data-page-tab="statistics">
-                        <i class="fa-solid fa-chart-column mr-2"></i>Statistics
-                    </button>
-                </div>
-            </div>
-
-            <div id="newspapersPane" class="page-pane <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>">
-            <div class="p-4 pt-0 lg:p-8 lg:pt-0">
-
-                <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 no-print">
-                    <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">Total Received</p>
-                            <p class="text-2xl font-semibold text-[#1e1e1e] mt-1"><?php echo number_format($stats['total_newspapers']); ?></p>
-                        </div>
-                        <div class="w-10 h-10 rounded-full bg-[#f5f5f4] flex items-center justify-center text-[#1e1e1e]">
-                            <i class="fa-solid fa-newspaper"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">This Year</p>
-                            <p class="text-2xl font-semibold text-[#1e1e1e] mt-1"><?php echo number_format($stats['yearly_newspapers']); ?></p>
-                        </div>
-                        <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                            <i class="fa-solid fa-calendar"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">This Month</p>
-                            <p class="text-2xl font-semibold text-[#1e1e1e] mt-1"><?php echo number_format($stats['monthly_newspapers']); ?></p>
-                        </div>
-                        <div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-600">
-                            <i class="fa-solid fa-calendar-days"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">This Week</p>
-                            <p class="text-2xl font-semibold text-[#1e1e1e] mt-1"><?php echo number_format($stats['weekly_newspapers']); ?></p>
-                        </div>
-                        <div class="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
-                            <i class="fa-solid fa-calendar-week"></i>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-md border border-[#e5e5e5] stat-card flex items-center justify-between">
-                        <div>
-                            <p class="text-xs text-[#6e6e6e] uppercase tracking-wide font-medium">Today</p>
-                            <p class="text-2xl font-semibold text-[#1e1e1e] mt-1"><?php echo number_format($stats['daily_newspapers']); ?></p>
-                        </div>
-                        <div class="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
-                            <i class="fa-solid fa-calendar-day"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white border border-[#e5e5e5] rounded-md overflow-hidden mb-6 no-print">
-                    <div class="p-4 border-b border-[#e5e5e5]">
-                        <form method="GET" id="newspaperFilterForm" class="flex flex-wrap gap-3 items-center">
-                            <input type="hidden" name="page" value="1">
-
-                            <div class="flex-1 min-w-[200px] flex gap-2">
-                                <input type="text" name="search" id="newspaperLiveSearch"
-                                    placeholder="Search by name or issue number..."
-                                    value="<?php echo htmlspecialchars($search); ?>"
-                                    autocomplete="off"
-                                    class="w-full px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]">
-                                <button type="submit" class="px-3 py-1.5 text-sm bg-[#1e1e1e] text-white rounded-md hover:bg-[#2d2d2d] whitespace-nowrap">
-                                    <i class="fa-solid fa-magnifying-glass mr-1"></i>Search
-                                </button>
-                            </div>
-
-                            <select name="filter_category" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
-                                <option value="0">All Categories</option>
-                                <?php foreach ($all_categories as $cat): ?>
-                                    <option value="<?php echo $cat['id']; ?>" <?php echo $filter_category == $cat['id'] ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($cat['category_name']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-
-                            <select name="filter_status" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
-                                <option value="">All Statuses</option>
-                                <?php foreach ($allowed_statuses as $status_option): ?>
-                                    <option value="<?php echo $status_option; ?>" <?php echo $filter_status === $status_option ? 'selected' : ''; ?>>
-                                        <?php echo ucfirst($status_option); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-
-                            <select name="sort_by" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
-                                <option value="date_received" <?php echo $sort_by == 'date_received' ? 'selected' : ''; ?>>Sort by Date</option>
-                                <option value="newspaper_name" <?php echo $sort_by == 'newspaper_name' ? 'selected' : ''; ?>>Sort by Name</option>
-                                <option value="category_name" <?php echo $sort_by == 'category_name' ? 'selected' : ''; ?>>Sort by Category</option>
-                                <option value="available_copies" <?php echo $sort_by == 'available_copies' ? 'selected' : ''; ?>>Sort by Copies</option>
-                            </select>
-
-                            <select name="sort_order" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white">
-                                <option value="DESC" <?php echo $sort_order == 'DESC' ? 'selected' : ''; ?>>Descending</option>
-                                <option value="ASC" <?php echo $sort_order == 'ASC' ? 'selected' : ''; ?>>Ascending</option>
-                            </select>
-
-                            <button type="submit" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-solid fa-sliders mr-1"></i>Apply Filters
-                            </button>
-
-                            <a href="list.php" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4]">
-                                <i class="fa-solid fa-rotate-right mr-1"></i>Reset
-                            </a>
-
-                            <button type="button" onclick="printNewspaperList()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                                <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
-                            </button>
-
-                            <button type="button" onclick="exportToCSV()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] flex items-center">
-                                <i class="fa-regular fa-file-excel mr-1 text-[#6e6e6e]"></i>Export CSV
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Active Filters Display -->
-                <?php if ($filter_category > 0 || !empty($search)): ?>
-                    <div class="flex flex-wrap gap-2 mt-3">
-                        <?php if ($filter_category > 0):
-                            $cat_name = '';
-                            foreach ($all_categories as $cat) {
-                                if ($cat['id'] == $filter_category) {
-                                    $cat_name = $cat['category_name'];
-                                    break;
-                                }
-                            }
-                        ?>
-                            <span class="filter-badge">
-                                Category: <?php echo htmlspecialchars($cat_name); ?>
-                                <a href="?<?php echo http_build_query(array_merge($_GET, ['filter_category' => 0, 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                    <i class="fa-regular fa-xmark"></i>
-                                </a>
-                            </span>
-                        <?php endif; ?>
-
-                        <?php if (!empty($search)): ?>
-                            <span class="filter-badge">
-                                Search: "<?php echo htmlspecialchars($search); ?>"
-                                <a href="?<?php echo http_build_query(array_merge($_GET, ['search' => '', 'page' => 1])); ?>" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </a>
-                            </span>
-                        <?php endif; ?>
-                    </div>
+            <div class="page-body">
+                <?php if ($toast): ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
+                        });
+                    </script>
                 <?php endif; ?>
-            </div>
 
-            <!-- Newspapers Table -->
-            <div class="overflow-x-auto">
-                <table>
-                    <thead>
-                        <tr class="bg-[#fafafa]">
-                            <th class="text-xs hidden md:table-cell">ID</th>
-                            <th class="text-xs">Newspaper</th>
-                            <th class="text-xs hidden md:table-cell">Issue #</th>
-                            <th class="text-xs">Category</th>
-                            <th class="text-xs">Date Received</th>
-                            <th class="text-xs">Status</th>
-                            <th class="text-xs">Available</th>
-                            <th class="text-xs">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($all_newspapers && $all_newspapers->num_rows > 0): ?>
-                            <?php while ($paper = $all_newspapers->fetch_assoc()): ?>
-                                <tr class="hover:bg-[#fafafa] newspaper-row" id="newspaper-row-<?php echo $paper['id']; ?>"
-                                    data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
-                                    data-category="<?php echo (int) ($paper['category_id'] ?? 0); ?>"
-                                    data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
-                                    <td class="text-sm text-[#6e6e6e] hidden md:table-cell"><?php echo $paper['id']; ?></td>
-                                    <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($paper['newspaper_name']); ?></td>
-                                    <td class="text-sm font-mono text-[#1e1e1e] issue-number hidden md:table-cell"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
-                                    <td class="text-sm text-[#1e1e1e]"><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
-                                    <td class="text-sm text-[#1e1e1e]"><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
-                                    <td class="text-sm">
-                                        <span class="status-badge status-<?php echo htmlspecialchars($paper['status']); ?>">
-                                            <?php echo ucfirst(htmlspecialchars($paper['status'])); ?>
-                                        </span>
-                                    </td>
-                                    <td class="text-sm text-[#1e1e1e]"><?php echo $paper['available_copies']; ?></td>
-                                    <td class="text-sm">
-                                        <div class="flex gap-2 items-center">
-                                            <button onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)"
-                                                class="action-btn" title="View Details">
-                                                <i class="fa-regular fa-eye"></i>
-                                            </button>
-                                            <button onclick="openUpdateModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', <?php echo $paper['available_copies']; ?>)"
-                                                class="action-btn" title="Edit">
-                                                <i class="fa-regular fa-pen-to-square"></i>
-                                            </button>
-                                            <?php
-                                            $is_archived = $paper['status'] === 'archived';
-                                            $toggle_label = $is_archived ? 'Continue' : 'Discontinue';
-                                            $toggle_icon = $is_archived ? 'fa-play' : 'fa-ban';
-                                            $toggle_class = $is_archived ? 'text-green-600' : 'text-orange-600';
-                                            $toggle_query = http_build_query(array_merge($_GET, ['toggle_status' => $paper['id']]));
-                                            ?>
-                                            <a href="?<?php echo $toggle_query; ?>" class="action-btn <?php echo $toggle_class; ?>" title="<?php echo $toggle_label; ?>">
-                                                <i class="fa-solid <?php echo $toggle_icon; ?>"></i>
-                                            </a>
-                                            <button onclick="openDeleteModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', '<?php echo htmlspecialchars($paper['newspaper_number']); ?>')"
-                                                class="action-btn delete-btn" title="Delete">
-                                                <i class="fa-regular fa-trash-can"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endwhile; ?>
-                            <tr id="newspaperNoResultsRow" class="hidden">
-                                <td colspan="8" class="text-sm text-[#6e6e6e] text-center py-8">
-                                    No newspapers match the current live search on this page.
-                                </td>
-                            </tr>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="7" class="text-sm text-[#6e6e6e] text-center py-8">
-                                    No newspapers found.
-                                    <button onclick="openAddModal()" class="text-blue-600 hover:underline">Add one</button> to get started.
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                <!-- Tabs -->
+                <div class="tabs no-print">
+                    <button type="button" class="tab-button <?php echo $active_tab === 'newspapers' ? 'active' : ''; ?>" data-page-tab="newspapers">
+                        <i class="fa-solid fa-newspaper"></i> Newspapers
+                    </button>
+                    <button type="button" class="tab-button <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>" data-page-tab="statistics">
+                        <i class="fa-solid fa-chart-column"></i> Statistics
+                    </button>
+                </div>
 
-            <!-- Pagination -->
-            <?php if ($total_pages > 1): ?>
-                <?php
-                $pageStart = $total_rows > 0 ? $offset + 1 : 0;
-                $pageEnd = min($offset + ($all_newspapers ? $all_newspapers->num_rows : 0), $total_rows);
-                $start = max(1, $page - 2);
-                $end = min($total_pages, $page + 2);
-                ?>
-                <div class="pagination-shell">
-                    <div class="pagination-meta">
-                        <div class="pagination-title">
-                            Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> item<?php echo ($all_newspapers && $all_newspapers->num_rows == 1) ? '' : 's'; ?> on this page
+                <!-- Newspapers Pane -->
+                <div id="newspapersPane" class="<?php echo $active_tab === 'newspapers' ? '' : 'hidden'; ?>">
+                    <!-- Stats Cards -->
+                    <div class="stat-grid mb-6">
+                        <div class="stat-card">
+                            <div class="stat-icon blue"><i class="fa-solid fa-newspaper"></i></div>
+                            <div class="stat-label">Total Received</div>
+                            <div class="stat-value"><?php echo number_format($stats['total_newspapers']); ?></div>
+                            <div class="stat-hint">All-time received</div>
                         </div>
-                        <div class="pagination-subtitle">
-                            Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_rows; ?> total
+                        <div class="stat-card">
+                            <div class="stat-icon gold"><i class="fa-solid fa-calendar"></i></div>
+                            <div class="stat-label">This Year</div>
+                            <div class="stat-value"><?php echo number_format($stats['yearly_newspapers']); ?></div>
+                            <div class="stat-hint">This calendar year</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green"><i class="fa-solid fa-calendar-days"></i></div>
+                            <div class="stat-label">This Month</div>
+                            <div class="stat-value"><?php echo number_format($stats['monthly_newspapers']); ?></div>
+                            <div class="stat-hint">This calendar month</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon orange"><i class="fa-solid fa-calendar-week"></i></div>
+                            <div class="stat-label">This Week</div>
+                            <div class="stat-value"><?php echo number_format($stats['weekly_newspapers']); ?></div>
+                            <div class="stat-hint">This week</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon red"><i class="fa-solid fa-calendar-day"></i></div>
+                            <div class="stat-label">Today</div>
+                            <div class="stat-value"><?php echo number_format($stats['daily_newspapers']); ?></div>
+                            <div class="stat-hint">Received today</div>
                         </div>
                     </div>
-                    <div class="pagination-controls">
-                        <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
-                        <div class="pagination">
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                <i class="fa-regular fa-chevrons-left"></i>
-                            </a>
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">
-                                <i class="fa-regular fa-chevron-left"></i>
-                            </a>
 
-                            <?php if ($start > 1): ?>
-                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>" class="pagination-item">1</a>
-                                <?php if ($start > 2): ?>
-                                    <span class="pagination-ellipsis">...</span>
-                                <?php endif; ?>
-                            <?php endif; ?>
-
-                            <?php for ($i = $start; $i <= $end; $i++): ?>
-                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>"
-                                    class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
-                                    <?php echo $i; ?>
+                    <!-- Filters -->
+                    <div class="card mb-6 no-print">
+                        <div class="card-body">
+                            <form method="GET" id="newspaperFilterForm" class="filter-bar" style="margin-bottom:0;">
+                                <input type="hidden" name="page" value="1">
+                                <div class="search-wrap">
+                                    <i class="fa-solid fa-magnifying-glass icon"></i>
+                                    <input type="text" id="newspaperLiveSearch" name="search"
+                                        class="input" style="width:240px;" autocomplete="off"
+                                        placeholder="Search by name or issue number..."
+                                        value="<?php echo htmlspecialchars($search); ?>">
+                                </div>
+                                <select name="filter_category" class="select">
+                                    <option value="0">All Categories</option>
+                                    <?php foreach ($all_categories as $cat): ?>
+                                        <option value="<?php echo $cat['id']; ?>" <?php echo $filter_category == $cat['id'] ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($cat['category_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select name="filter_status" class="select">
+                                    <option value="">All Statuses</option>
+                                    <?php foreach ($allowed_statuses as $status_option): ?>
+                                        <option value="<?php echo $status_option; ?>" <?php echo $filter_status === $status_option ? 'selected' : ''; ?>>
+                                            <?php echo ucfirst($status_option); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select name="sort_by" class="select">
+                                    <option value="date_received" <?php echo $sort_by == 'date_received' ? 'selected' : ''; ?>>Sort by Date</option>
+                                    <option value="newspaper_name" <?php echo $sort_by == 'newspaper_name' ? 'selected' : ''; ?>>Sort by Name</option>
+                                    <option value="category_name" <?php echo $sort_by == 'category_name' ? 'selected' : ''; ?>>Sort by Category</option>
+                                    <option value="available_copies" <?php echo $sort_by == 'available_copies' ? 'selected' : ''; ?>>Sort by Copies</option>
+                                </select>
+                                <select name="sort_order" class="select">
+                                    <option value="DESC" <?php echo $sort_order == 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                                    <option value="ASC" <?php echo $sort_order == 'ASC' ? 'selected' : ''; ?>>Ascending</option>
+                                </select>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-sliders"></i> Filter
+                                </button>
+                                <a href="list.php" class="btn btn-soft">
+                                    <i class="fa-solid fa-rotate-right"></i> Reset
                                 </a>
-                            <?php endfor; ?>
+                                <button type="button" onclick="printNewspaperList()" class="btn btn-soft">
+                                    <i class="fa-solid fa-print"></i> Print
+                                </button>
+                                <button type="button" onclick="exportNewspapers()" class="btn btn-soft">
+                                    <i class="fa-regular fa-file-excel"></i> Export CSV
+                                </button>
+                            </form>
+                        </div>
+                    </div>
 
-                            <?php if ($end < $total_pages): ?>
-                                <?php if ($end < $total_pages - 1): ?>
-                                    <span class="pagination-ellipsis">...</span>
-                                <?php endif; ?>
-                                <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
+                    <!-- Active Filters Display -->
+                    <?php if ($has_active_filters): ?>
+                        <div class="filter-bar" style="margin-bottom:16px;">
+                            <?php if ($filter_category > 0):
+                                $cat_name = '';
+                                foreach ($all_categories as $cat) {
+                                    if ($cat['id'] == $filter_category) {
+                                        $cat_name = $cat['category_name'];
+                                        break;
+                                    }
+                                }
+                            ?>
+                                <span class="filter-chip">
+                                    Category: <?php echo htmlspecialchars($cat_name); ?>
+                                    <a href="<?php echo htmlspecialchars(buildListUrl(['filter_category' => 0, 'page' => 1])); ?>"><i class="fa-solid fa-xmark"></i></a>
+                                </span>
                             <?php endif; ?>
 
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                <i class="fa-regular fa-chevron-right"></i>
-                            </a>
-                            <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">
-                                <i class="fa-regular fa-chevrons-right"></i>
-                            </a>
+                            <?php if (!empty($filter_status)): ?>
+                                <span class="filter-chip">
+                                    Status: <?php echo htmlspecialchars(ucfirst($filter_status)); ?>
+                                    <a href="<?php echo htmlspecialchars(buildListUrl(['filter_status' => '', 'page' => 1])); ?>"><i class="fa-solid fa-xmark"></i></a>
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($search)): ?>
+                                <span class="filter-chip">
+                                    Search: "<?php echo htmlspecialchars($search); ?>"
+                                    <a href="<?php echo htmlspecialchars(buildListUrl(['search' => '', 'page' => 1])); ?>"><i class="fa-solid fa-xmark"></i></a>
+                                </span>
+                            <?php endif; ?>
                         </div>
+                    <?php endif; ?>
+
+                    <!-- Newspapers Table -->
+                    <div class="card">
+                        <div class="card-header" style="padding:14px 20px;">
+                            <div>
+                                <div class="card-title">Newspaper Records</div>
+                                <div class="card-subtitle">
+                                    <?php if ($total_rows > 0): ?>
+                                        Showing <?php echo $offset + 1; ?>–<?php echo min($offset + $limit, $total_rows); ?> of <?php echo number_format($total_rows); ?>
+                                    <?php else: ?>
+                                        No records to display
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th class="hidden md:table-cell">ID</th>
+                                        <th>Newspaper</th>
+                                        <th class="hidden md:table-cell">Issue #</th>
+                                        <th>Category</th>
+                                        <th>Date Received</th>
+                                        <th>Status</th>
+                                        <th>Available</th>
+                                        <th class="no-print" style="width:120px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if ($all_newspapers && $all_newspapers->num_rows > 0): ?>
+                                        <?php while ($paper = $all_newspapers->fetch_assoc()): ?>
+                                            <?php
+                                            $paper_status = $paper['status'] ?? 'pending';
+                                            $badge_map = [
+                                                'available' => 'badge-green',
+                                                'partial' => 'badge-orange',
+                                                'distributed' => 'badge-gray',
+                                                'archived' => 'badge-red',
+                                                'pending' => 'badge-blue',
+                                            ];
+                                            ?>
+                                            <tr class="newspaper-row" id="newspaper-row-<?php echo $paper['id']; ?>"
+                                                data-search="<?php echo strtolower(htmlspecialchars(trim($paper['id'] . ' ' . ($paper['newspaper_name'] ?? '') . ' ' . ($paper['newspaper_number'] ?? '') . ' ' . ($paper['category_name'] ?? '') . ' ' . ($paper['status'] ?? '') . ' ' . ($paper['available_copies'] ?? 0) . ' ' . date('M j, Y', strtotime($paper['date_received']))))); ?>"
+                                                data-category="<?php echo (int)($paper['category_id'] ?? 0); ?>"
+                                                data-status="<?php echo strtolower($paper['status'] ?? ''); ?>">
+                                                <td class="table-cell-mono hidden md:table-cell text-[#7d8398]"><?php echo $paper['id']; ?></td>
+                                                <td><span class="table-cell-title"><?php echo htmlspecialchars($paper['newspaper_name']); ?></span></td>
+                                                <td class="table-cell-mono hidden md:table-cell"><?php echo htmlspecialchars($paper['newspaper_number']); ?></td>
+                                                <td><?php echo htmlspecialchars($paper['category_name'] ?? 'Uncategorized'); ?></td>
+                                                <td><?php echo date('M j, Y', strtotime($paper['date_received'])); ?></td>
+                                                <td>
+                                                    <span class="badge <?php echo $badge_map[$paper_status] ?? 'badge-gray'; ?>">
+                                                        <?php echo ucfirst($paper_status); ?>
+                                                    </span>
+                                                </td>
+                                                <td><span class="table-cell-mono"><?php echo (int)$paper['available_copies']; ?></span></td>
+                                                <td class="no-print">
+                                                    <div class="row-actions">
+                                                        <button class="icon-btn primary" onclick="viewNewspaper(<?php echo htmlspecialchars(json_encode($paper)); ?>)" title="View Details">
+                                                            <i class="fa-regular fa-eye"></i>
+                                                        </button>
+                                                        <button class="icon-btn primary" onclick="openUpdateModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', <?php echo (int)$paper['available_copies']; ?>)" title="Edit">
+                                                            <i class="fa-regular fa-pen-to-square"></i>
+                                                        </button>
+                                                        <?php
+                                                        $is_archived = $paper_status === 'archived';
+                                                        $toggle_label = $is_archived ? 'Continue' : 'Discontinue';
+                                                        $toggle_icon = $is_archived ? 'fa-play' : 'fa-ban';
+                                                        $toggle_color = $is_archived ? 'var(--green)' : 'var(--orange)';
+                                                        ?>
+                                                        <form method="POST" action="list.php" style="display:inline;">
+                                                            <?php csrf_field(); ?>
+                                                            <input type="hidden" name="toggle_status" value="<?php echo $paper['id']; ?>">
+                                                            <button type="submit" class="icon-btn primary" style="color:<?php echo $toggle_color; ?>;" title="<?php echo $toggle_label; ?>">
+                                                                <i class="fa-solid <?php echo $toggle_icon; ?>"></i>
+                                                            </button>
+                                                        </form>
+                                                        <button class="icon-btn danger"
+                                                            onclick="openDeleteModal(<?php echo $paper['id']; ?>, '<?php echo htmlspecialchars($paper['newspaper_name']); ?>', '<?php echo htmlspecialchars($paper['newspaper_number']); ?>')"
+                                                            title="Delete">
+                                                            <i class="fa-regular fa-trash-can"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endwhile; ?>
+                                        <tr id="newspaperNoResultsRow" class="hidden">
+                                            <td colspan="8">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon"><i class="fa-regular fa-magnifying-glass"></i></div>
+                                                    <div class="empty-state-title">No newspapers match the current live search</div>
+                                                    <div class="empty-state-text">Try adjusting your search or filter criteria on this page.</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="8">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon"><i class="fa-regular fa-newspaper"></i></div>
+                                                    <div class="empty-state-title">No newspapers found</div>
+                                                    <div class="empty-state-text">Add a newspaper to start receiving subscriptions.</div>
+                                                    <button onclick="openAddModal()" class="btn btn-primary btn-sm" style="margin-top:16px;">
+                                                        <i class="fa-solid fa-plus"></i> Add Newspaper
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <?php if ($total_pages > 1): ?>
+                            <?php
+                            $pageStart = $total_rows > 0 ? $offset + 1 : 0;
+                            $pageEnd = min($offset + ($all_newspapers ? $all_newspapers->num_rows : 0), $total_rows);
+                            $start = max(1, $page - 2);
+                            $end = min($total_pages, $page + 2);
+                            ?>
+                            <div class="pagination-shell no-print">
+                                <div class="pagination-meta">
+                                    <div class="pagination-title">Showing <span id="visibleNewspaperCount"><?php echo $all_newspapers ? $all_newspapers->num_rows : 0; ?></span> item<?php echo ($all_newspapers && $all_newspapers->num_rows == 1) ? '' : 's'; ?> on this page</div>
+                                    <span>Records <?php echo $pageStart; ?>-<?php echo $pageEnd; ?> of <?php echo $total_rows; ?> total</span>
+                                </div>
+                                <div class="pagination-controls">
+                                    <div class="pagination-page-indicator">Page <?php echo $page; ?> of <?php echo $total_pages; ?></div>
+                                    <div class="pagination">
+                                        <a href="<?php echo htmlspecialchars(buildListUrl(['page' => 1])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+                                            <i class="fa-solid fa-chevrons-left"></i>
+                                        </a>
+                                        <a href="<?php echo htmlspecialchars(buildListUrl(['page' => max(1, $page - 1)])); ?>" class="pagination-item compact <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+                                            <i class="fa-solid fa-chevron-left"></i>
+                                        </a>
+
+                                        <?php if ($start > 1): ?>
+                                            <a href="<?php echo htmlspecialchars(buildListUrl(['page' => 1])); ?>" class="pagination-item">1</a>
+                                            <?php if ($start > 2): ?>
+                                                <span class="pagination-ellipsis">...</span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+
+                                        <?php for ($i = $start; $i <= $end; $i++): ?>
+                                            <a href="<?php echo htmlspecialchars(buildListUrl(['page' => $i])); ?>"
+                                                class="pagination-item <?php echo $i == $page ? 'active' : ''; ?>">
+                                                <?php echo $i; ?>
+                                            </a>
+                                        <?php endfor; ?>
+
+                                        <?php if ($end < $total_pages): ?>
+                                            <?php if ($end < $total_pages - 1): ?>
+                                                <span class="pagination-ellipsis">...</span>
+                                            <?php endif; ?>
+                                            <a href="<?php echo htmlspecialchars(buildListUrl(['page' => $total_pages])); ?>" class="pagination-item"><?php echo $total_pages; ?></a>
+                                        <?php endif; ?>
+
+                                        <a href="<?php echo htmlspecialchars(buildListUrl(['page' => min($total_pages, $page + 1)])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
+                                            <i class="fa-solid fa-chevron-right"></i>
+                                        </a>
+                                        <a href="<?php echo htmlspecialchars(buildListUrl(['page' => $total_pages])); ?>" class="pagination-item compact <?php echo $page >= $total_pages ? 'disabled' : ''; ?>">
+                                            <i class="fa-solid fa-chevrons-right"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-            <?php endif; ?>
-            </div>
 
-            <div id="statisticsPane" class="page-pane <?php echo $active_tab === 'statistics' ? 'active' : ''; ?>">
-                <div class="p-4 pt-0 lg:p-8 lg:pt-0">
+                <!-- Statistics Pane -->
+                <div id="statisticsPane" class="<?php echo $active_tab === 'statistics' ? '' : 'hidden'; ?>">
                     <?php if (!empty($category_stats)): ?>
                         <?php
                         $stats_totals = [
@@ -1082,313 +800,245 @@ if (isset($_SESSION['toast'])) {
                             }
                         }
                         ?>
-                        <div class="stats-panel">
-                            <div class="stats-panel-header">
-                                <div class="flex items-center justify-between gap-4 flex-wrap">
-                                    <div>
-                                        <h2 class="text-lg font-semibold text-[#1e1e1e]">Newspaper statistics</h2>
-                                        <p class="text-sm text-[#6e6e6e] mt-0.5">Copy counts by category</p>
-                                    </div>
-                                    <button type="button" onclick="printNewspaperStatistics()" class="px-3 py-1.5 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e] no-print">
-                                        <i class="fa-solid fa-print mr-1 text-[#6e6e6e]"></i>Print
-                                    </button>
+                        <div class="card">
+                            <div class="card-header" style="padding:14px 20px;">
+                                <div>
+                                    <div class="card-title">Newspaper Statistics</div>
+                                    <div class="card-subtitle">Copy counts by category</div>
                                 </div>
+                                <button type="button" onclick="printNewspaperStatistics()" class="btn btn-soft no-print">
+                                    <i class="fa-solid fa-print"></i> Print
+                                </button>
                             </div>
-                            <div class="stats-table-wrap">
-                                <table id="newspaperStatsTable">
+                            <div class="table-wrap">
+                                <table class="table" id="newspaperStatsTable">
                                     <thead>
-                                        <tr class="bg-[#fafafa]">
-                                            <th class="text-xs">Category</th>
-                                            <th class="text-xs numeric">Total received</th>
-                                            <th class="text-xs numeric">Today</th>
-                                            <th class="text-xs numeric">This week</th>
-                                            <th class="text-xs numeric">This month</th>
-                                            <th class="text-xs numeric">This year</th>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th style="text-align:right;">Total received</th>
+                                            <th style="text-align:right;">Today</th>
+                                            <th style="text-align:right;">This week</th>
+                                            <th style="text-align:right;">This month</th>
+                                            <th style="text-align:right;">This year</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php foreach ($category_stats as $cat): ?>
-                                            <tr class="hover:bg-[#fafafa]">
-                                                <td class="text-sm font-medium text-[#1e1e1e]"><?php echo htmlspecialchars($cat['category_name']); ?></td>
-                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['total_count']); ?></td>
-                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['daily_count']); ?></td>
-                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['weekly_count']); ?></td>
-                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['monthly_count']); ?></td>
-                                                <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($cat['yearly_count']); ?></td>
+                                            <tr>
+                                                <td><span class="table-cell-title"><?php echo htmlspecialchars($cat['category_name']); ?></span></td>
+                                                <td style="text-align:right;"><span class="table-cell-mono"><?php echo number_format($cat['total_count']); ?></span></td>
+                                                <td style="text-align:right;"><span class="table-cell-mono"><?php echo number_format($cat['daily_count']); ?></span></td>
+                                                <td style="text-align:right;"><span class="table-cell-mono"><?php echo number_format($cat['weekly_count']); ?></span></td>
+                                                <td style="text-align:right;"><span class="table-cell-mono"><?php echo number_format($cat['monthly_count']); ?></span></td>
+                                                <td style="text-align:right;"><span class="table-cell-mono"><?php echo number_format($cat['yearly_count']); ?></span></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td class="text-sm text-[#1e1e1e]">Total</td>
-                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['total_count']); ?></td>
-                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['daily_count']); ?></td>
-                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['weekly_count']); ?></td>
-                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['monthly_count']); ?></td>
-                                            <td class="text-sm numeric text-[#1e1e1e]"><?php echo number_format($stats_totals['yearly_count']); ?></td>
+                                            <td><strong>Total</strong></td>
+                                            <td style="text-align:right;"><span class="table-cell-mono"><strong><?php echo number_format($stats_totals['total_count']); ?></strong></span></td>
+                                            <td style="text-align:right;"><span class="table-cell-mono"><strong><?php echo number_format($stats_totals['daily_count']); ?></strong></span></td>
+                                            <td style="text-align:right;"><span class="table-cell-mono"><strong><?php echo number_format($stats_totals['weekly_count']); ?></strong></span></td>
+                                            <td style="text-align:right;"><span class="table-cell-mono"><strong><?php echo number_format($stats_totals['monthly_count']); ?></strong></span></td>
+                                            <td style="text-align:right;"><span class="table-cell-mono"><strong><?php echo number_format($stats_totals['yearly_count']); ?></strong></span></td>
                                         </tr>
                                     </tfoot>
                                 </table>
                             </div>
                         </div>
                     <?php else: ?>
-                        <div class="bg-white border border-[#e5e5e5] rounded-md p-4 lg:p-8 text-center text-[#6e6e6e]">
-                            No newspaper category stats available.
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="fa-solid fa-chart-column"></i></div>
+                                    <div class="empty-state-title">No category statistics available</div>
+                                    <div class="empty-state-text">Statistics will appear here once newspapers are added.</div>
+                                </div>
+                            </div>
                         </div>
                     <?php endif; ?>
                 </div>
             </div>
-    </main>
+        </main>
     </div>
 
     <!-- Add Newspaper Modal -->
-
-    <div id="addModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Add Newspaper</h3>
-                <button type="button" onclick="closeAddModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+    <div id="addModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 class="modal-title">Add Newspaper</h2>
+                <button type="button" onclick="MailroomModal.close('addModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <!-- Preview of generated issue number -->
-            <div class="mb-4 p-3 bg-[#fafafa] border border-[#e5e5e5] rounded-md">
-                <p class="text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Auto-generated Issue #</p>
-                <p id="previewIssueNumber" class="text-sm font-mono text-[#1e1e1e]">-</p>
-            </div>
-
-            <form method="POST" action="list.php">
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Category</label>
-                        <select name="category_id" id="categorySelect" required
-                            onchange="updateIssuePreview()"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e] bg-white">
-                            <option value="">Select category</option>
-                            <?php foreach ($all_categories as $cat): ?>
-                                <option value="<?php echo $cat['id']; ?>" data-name="<?php echo htmlspecialchars($cat['category_name']); ?>">
-                                    <?php echo htmlspecialchars($cat['category_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+            <div class="modal-body">
+                <!-- Preview of generated issue number -->
+                <div class="notice-bar" style="margin-bottom:16px;">
+                    <i class="fa-solid fa-file-signature"></i>
+                    <div style="flex:1;">
+                        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;">Auto-generated Issue #</div>
+                        <div id="previewIssueNumber" class="table-cell-mono" style="color:var(--text);">—</div>
                     </div>
+                </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Date Received</label>
+                <form method="POST" action="list.php">
+                    <?php csrf_field(); ?>
+                    <div class="form-grid">
+                        <div class="form-field span-2">
+                            <label class="label">Category <span class="req">*</span></label>
+                            <select name="category_id" id="categorySelect" required
+                                onchange="updateIssuePreview()" class="select">
+                                <option value="">Select category</option>
+                                <?php foreach ($all_categories as $cat): ?>
+                                    <option value="<?php echo $cat['id']; ?>" data-name="<?php echo htmlspecialchars($cat['category_name']); ?>">
+                                        <?php echo htmlspecialchars($cat['category_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="label">Date Received <span class="req">*</span></label>
                             <input type="date" name="date_received" id="dateReceived" required value="<?php echo date('Y-m-d'); ?>"
-                                onchange="updateIssuePreview()"
-                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                autocomplete='off'>
+                                onchange="updateIssuePreview()" class="input" autocomplete="off">
                         </div>
-                        <div>
-                            <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Copies</label>
+                        <div class="form-field">
+                            <label class="label">Copies <span class="req">*</span></label>
                             <input type="number" name="copies_received" min="1" required
-                                class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                                placeholder="e.g., 5"
-                                autocomplete='off'>
+                                class="input" placeholder="e.g., 5" autocomplete="off">
+                        </div>
+                        <div class="form-field span-2">
+                            <label class="label">Received By <span class="req">*</span></label>
+                            <input type="text" name="received_by" required
+                                class="input" placeholder="Staff name" autocomplete="off">
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Received By</label>
-                        <input type="text" name="received_by" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="Staff name"
-                            autocomplete='off'>
+                    <div class="notice-bar" style="margin-top:16px;">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span>Issue number will be auto-generated based on category and date.</span>
                     </div>
 
-                    <div class="text-xs text-[#6e6e6e] bg-[#fafafa] p-2 rounded-md">
-                        <i class="fa-solid fa-circle-info mr-1"></i>
-                        Issue number will be auto-generated based on category and date
+                    <div class="modal-footer" style="padding:16px 0 0;border-top:none;">
+                        <button type="button" onclick="MailroomModal.close('addModal')" class="btn btn-soft">Cancel</button>
+                        <button type="submit" name="add_newspaper_submit" class="btn btn-primary">
+                            <i class="fa-solid fa-floppy-disk"></i> Add Newspaper
+                        </button>
                     </div>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeAddModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit" name="add_newspaper_submit"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                        Add Newspaper
-                    </button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
     <!-- Update Newspaper Copies Modal -->
-    <div id="updateModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Update Available Copies</h3>
-                <button type="button" onclick="closeUpdateModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+    <div id="updateModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Update Available Copies</h2>
+                <button type="button" onclick="MailroomModal.close('updateModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <form method="POST" action="list.php">
-                <input type="hidden" name="newspaper_id" id="update_id">
-                <div class="mb-4">
-                    <p class="text-sm font-medium text-[#1e1e1e] mb-2" id="update_name"></p>
-                </div>
-                <div class="mb-4">
-                    <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Available Copies</label>
-                    <input type="number" name="available_copies" id="update_copies" min="0" required
-                        class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]" autocomplete="off">
-                </div>
-                <div class="flex justify-end gap-2">
-                    <button type="button" onclick="closeUpdateModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit" name="update_copies_submit"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                        Update
-                    </button>
-                </div>
-            </form>
+            <div class="modal-body">
+                <form method="POST" action="list.php">
+                    <?php csrf_field(); ?>
+                    <input type="hidden" name="newspaper_id" id="update_id">
+                    <p class="text-sm font-medium" style="color:var(--text);margin-bottom:16px;" id="update_name"></p>
+                    <label class="label">Available Copies</label>
+                    <input type="number" name="available_copies" id="update_copies" min="0" required class="input" autocomplete="off">
+                    <div class="modal-footer" style="padding:16px 0 0;border-top:none;">
+                        <button type="button" onclick="MailroomModal.close('updateModal')" class="btn btn-soft">Cancel</button>
+                        <button type="submit" name="update_copies_submit" class="btn btn-primary">
+                            <i class="fa-solid fa-floppy-disk"></i> Update
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
     <!-- Add Category Modal -->
-    <div id="addCategoryModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-5">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-base font-medium text-[#1e1e1e]">Add Category</h3>
-                <button type="button" onclick="closeAddCategoryModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+    <div id="addCategoryModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 class="modal-title">Add Category</h2>
+                <button type="button" onclick="MailroomModal.close('addCategoryModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <form method="POST" action="list.php">
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Category Name</label>
-                        <input type="text" name="category_name" required
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"
-                            placeholder="e.g., Daily News, Sports, Business"
-                            autocomplete='off'>
+            <div class="modal-body">
+                <form method="POST" action="list.php">
+                    <?php csrf_field(); ?>
+                    <div class="form-grid">
+                        <div class="form-field span-2">
+                            <label class="label">Category Name <span class="req">*</span></label>
+                            <input type="text" name="category_name" required
+                                class="input" placeholder="e.g., Daily News, Sports, Business" autocomplete="off">
+                        </div>
+                        <div class="form-field span-2">
+                            <label class="label">Description</label>
+                            <textarea name="description" rows="3" placeholder="Optional description"
+                                class="textarea"></textarea>
+                        </div>
                     </div>
-
-                    <div>
-                        <label class="block text-xs text-[#6e6e6e] uppercase tracking-wide mb-1">Description</label>
-                        <textarea name="description" rows="3"
-                            placeholder="Optional description"
-                            class="w-full px-3 py-2 text-sm border border-[#e5e5e5] rounded-md focus:outline-none focus:border-[#9e9e9e]"></textarea>
+                    <div class="modal-footer" style="padding:16px 0 0;border-top:none;">
+                        <button type="button" onclick="MailroomModal.close('addCategoryModal')" class="btn btn-soft">Cancel</button>
+                        <button type="submit" name="add_category_submit" class="btn btn-primary">
+                            <i class="fa-solid fa-floppy-disk"></i> Add Category
+                        </button>
                     </div>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6">
-                    <button type="button" onclick="closeAddCategoryModal()"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        Cancel
-                    </button>
-                    <button type="submit" name="add_category_submit"
-                        class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                        <i class="fa-regular fa-floppy-disk mr-1 text-[#6e6e6e]"></i>
-                        Add Category
-                    </button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
     <!-- View Newspaper Modal -->
-    <div id="viewModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-lg p-6 modal-content">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Newspaper Details</h2>
-                <button type="button" onclick="closeViewModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="viewModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 class="modal-title">Newspaper Details</h2>
+                <button type="button" onclick="MailroomModal.close('viewModal')" class="modal-close"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-
-            <div id="viewContent" class="space-y-4">
-                <!-- Content will be filled by JavaScript -->
+            <div class="modal-body">
+                <div id="viewContent" class="grid grid-cols-2 gap-3">
+                    <!-- Content will be filled by JavaScript -->
+                </div>
             </div>
-
-            <div class="flex justify-end mt-4">
-                <button onclick="closeViewModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Close
-                </button>
+            <div class="modal-footer">
+                <button onclick="MailroomModal.close('viewModal')" class="btn btn-soft">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-[#000000] bg-opacity-20 hidden items-center justify-center z-50 modal">
-        <div class="bg-white border border-[#e5e5e5] rounded-md w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-medium text-[#1e1e1e]">Confirm Delete</h2>
-                <button type="button" onclick="closeDeleteModal()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+    <div id="deleteModal" class="modal-backdrop" style="display:none;">
+        <div class="modal-dialog sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Confirm Delete</h2>
+                <button type="button" onclick="MailroomModal.close('deleteModal')" class="modal-close"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <div class="py-2">
-                <p class="text-sm text-[#6e6e6e]">Are you sure you want to delete this newspaper?</p>
-                <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p class="text-sm font-medium text-red-800" id="deleteNewspaperName"></p>
-                    <p class="text-xs text-red-600 mt-1" id="deleteIssueNumber"></p>
+            <div class="modal-body">
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:14px;">Are you sure you want to delete this newspaper?</p>
+                <div class="alert alert-red" style="margin-bottom:0;">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <div>
+                        <p class="font-medium text-sm" id="deleteNewspaperName"></p>
+                        <p class="text-xs mt-1" id="deleteIssueNumber"></p>
+                        <p class="text-xs mt-2" style="opacity:.85;">This action cannot be undone. The newspaper will be permanently deleted.</p>
+                    </div>
                 </div>
-                <p class="text-xs text-[#9e9e9e] mt-3">
-                    <i class="fa-regular fa-circle-info mr-1"></i>
-                    This action cannot be undone. The newspaper will be permanently deleted.
-                </p>
             </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="closeDeleteModal()"
-                    class="px-4 py-2 text-sm border border-[#e5e5e5] rounded-md bg-white hover:bg-[#f5f5f4] text-[#1e1e1e]">
-                    Cancel
-                </button>
-                <a href="#" id="confirmDeleteBtn"
-                    class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700">
-                    Delete Permanently
-                </a>
+            <div class="modal-footer">
+                <button onclick="MailroomModal.close('deleteModal')" class="btn btn-soft">Cancel</button>
+                <form method="POST" action="list.php" id="deleteForm" style="display:inline;">
+                    <?php csrf_field(); ?>
+                    <input type="hidden" name="delete_newspaper" id="delete_newspaper_input" value="">
+                    <button type="submit" class="btn btn-danger">
+                        Delete Permanently
+                    </button>
+                </form>
             </div>
         </div>
     </div>
 
     <script>
-        // ========== TOAST NOTIFICATION ==========
-        function showToast(type, message) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-
-            const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
-
-            toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-regular ${icon} text-${type === 'success' ? 'green' : 'red'}-500"></i>
-                    <span class="text-sm text-[#1e1e1e]">${message}</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="text-[#9e9e9e] hover:text-[#1e1e1e]">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            `;
-
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, 300);
-            }, 5000);
-        }
-
         <?php if ($toast): ?>
             document.addEventListener('DOMContentLoaded', function() {
-                showToast('<?php echo $toast['type']; ?>', '<?php echo addslashes($toast['message']); ?>');
+                MailroomToast.<?php echo $toast['type']; ?>(<?php echo json_encode($toast['message']); ?>);
             });
         <?php endif; ?>
 
@@ -1407,38 +1057,21 @@ if (isset($_SESSION['toast'])) {
 
                 previewEl.textContent = categoryPrefix + '-' + datePrefix + '-001';
             } else {
-                previewEl.textContent = '-';
+                previewEl.textContent = '—';
             }
         }
 
         // ========== NEWSPAPER MODAL FUNCTIONS ==========
         function openAddModal() {
-            document.getElementById('addModal').style.display = 'flex';
+            MailroomModal.open('addModal');
             updateIssuePreview();
-        }
-
-        function closeAddModal() {
-            document.getElementById('addModal').style.display = 'none';
         }
 
         function openUpdateModal(id, name, copies) {
             document.getElementById('update_id').value = id;
             document.getElementById('update_name').textContent = name;
             document.getElementById('update_copies').value = copies;
-            document.getElementById('updateModal').style.display = 'flex';
-        }
-
-        function closeUpdateModal() {
-            document.getElementById('updateModal').style.display = 'none';
-        }
-
-        // ========== CATEGORY MODAL FUNCTIONS ==========
-        function openAddCategoryModal() {
-            document.getElementById('addCategoryModal').style.display = 'flex';
-        }
-
-        function closeAddCategoryModal() {
-            document.getElementById('addCategoryModal').style.display = 'none';
+            MailroomModal.open('updateModal');
         }
 
         // ========== VIEW MODAL FUNCTIONS ==========
@@ -1446,69 +1079,52 @@ if (isset($_SESSION['toast'])) {
             const content = document.getElementById('viewContent');
 
             content.innerHTML = `
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Newspaper</p>
-                        <p class="text-lg font-medium text-[#1e1e1e]">${escapeHtml(paper.newspaper_name)}</p>
-                    </div>
-                    <div class="col-span-2">
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Issue Number</p>
-                        <p class="text-sm font-mono text-[#1e1e1e]">${escapeHtml(paper.newspaper_number)}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Category</p>
-                        <p class="text-sm">${escapeHtml(paper.category_name || 'Uncategorized')}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Date Received</p>
-                        <p class="text-sm">${new Date(paper.date_received).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Received By</p>
-                        <p class="text-sm">${escapeHtml(paper.received_by)}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-[#6e6e6e] uppercase mb-1">Total Copies</p>
-                        <p class="text-sm">${paper.available_copies}</p>
-                    </div>
+                <div class="col-span-2">
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Newspaper</p>
+                    <p class="text-sm font-medium" style="color:var(--text);">${escapeHtml(paper.newspaper_name)}</p>
+                </div>
+                <div class="col-span-2">
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Issue Number</p>
+                    <p class="table-cell-mono" style="color:var(--text);">${escapeHtml(paper.newspaper_number)}</p>
+                </div>
+                <div>
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Category</p>
+                    <p class="text-sm" style="color:var(--text-secondary);">${escapeHtml(paper.category_name || 'Uncategorized')}</p>
+                </div>
+                <div>
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Date Received</p>
+                    <p class="text-sm" style="color:var(--text-secondary);">${paper.date_received ? new Date(paper.date_received + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—'}</p>
+                </div>
+                <div>
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Received By</p>
+                    <p class="text-sm" style="color:var(--text-secondary);">${escapeHtml(paper.received_by || '—')}</p>
+                </div>
+                <div>
+                    <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;">Total Copies</p>
+                    <p class="table-cell-mono" style="color:var(--text);">${Number(paper.available_copies) || 0}</p>
                 </div>
             `;
-            document.getElementById('viewModal').style.display = 'flex';
-        }
-
-        function closeViewModal() {
-            document.getElementById('viewModal').style.display = 'none';
+            MailroomModal.open('viewModal');
         }
 
         // ========== DELETE MODAL FUNCTIONS ==========
-        let currentDeleteId = null;
-
         function openDeleteModal(id, name, issueNumber) {
-            currentDeleteId = id;
             document.getElementById('deleteNewspaperName').textContent = name;
             document.getElementById('deleteIssueNumber').textContent = 'Issue #: ' + issueNumber;
+            document.getElementById('delete_newspaper_input').value = id;
 
-            // Build the delete URL with current query parameters
-            const urlParams = new URLSearchParams(window.location.search);
-            urlParams.set('delete', id);
-            document.getElementById('confirmDeleteBtn').href = '?' + urlParams.toString();
-
-            document.getElementById('deleteModal').style.display = 'flex';
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-            currentDeleteId = null;
+            MailroomModal.open('deleteModal');
         }
 
         // ========== ESCAPE HTML ==========
         function escapeHtml(text) {
-            if (!text) return '';
+            if (text === null || text === undefined) return '';
             const div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = String(text);
             return div.innerHTML;
         }
 
+        // ========== LIVE FILTER NEWSPAPERS ==========
         function filterNewspapersLive() {
             const searchTokens = (document.getElementById('newspaperLiveSearch')?.value || '')
                 .toLowerCase()
@@ -1546,87 +1162,28 @@ if (isset($_SESSION['toast'])) {
             }
         }
 
-        // ========== MODAL CLICK HANDLERS ==========
-        window.onclick = function(event) {
-            const addModal = document.getElementById('addModal');
-            const updateModal = document.getElementById('updateModal');
-            const addCategoryModal = document.getElementById('addCategoryModal');
-            const viewModal = document.getElementById('viewModal');
-            const deleteModal = document.getElementById('deleteModal');
-
-            if (event.target == addModal) {
-                closeAddModal();
-            }
-            if (event.target == updateModal) {
-                closeUpdateModal();
-            }
-            if (event.target == addCategoryModal) {
-                closeAddCategoryModal();
-            }
-            if (event.target == viewModal) {
-                closeViewModal();
-            }
-            if (event.target == deleteModal) {
-                closeDeleteModal();
-            }
-        }
-
-        // ========== KEYBOARD SHORTCUTS ==========
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeAddModal();
-                closeUpdateModal();
-                closeAddCategoryModal();
-                closeViewModal();
-                closeDeleteModal();
-            }
-        });
-
         document.getElementById('newspaperLiveSearch')?.addEventListener('input', filterNewspapersLive);
         document.querySelector('#newspaperFilterForm select[name="filter_category"]')?.addEventListener('change', filterNewspapersLive);
         document.querySelector('#newspaperFilterForm select[name="filter_status"]')?.addEventListener('change', filterNewspapersLive);
 
-        function printHtmlOnPage(html) {
-            const frame = document.createElement('iframe');
-            frame.style.position = 'fixed';
-            frame.style.right = '0';
-            frame.style.bottom = '0';
-            frame.style.width = '0';
-            frame.style.height = '0';
-            frame.style.border = '0';
-            document.body.appendChild(frame);
-
-            const frameWindow = frame.contentWindow;
-            const frameDocument = frameWindow.document;
-            frameDocument.open();
-            frameDocument.write(html);
-            frameDocument.close();
-
-            frameWindow.focus();
-            frameWindow.print();
-
-            setTimeout(() => {
-                frame.remove();
-            }, 1000);
-        }
-
+        // ========== PRINT ==========
         function getPrintTableStyles() {
             return `
-                body { font-family: Arial, sans-serif; padding: 20px; color: #1e1e1e; }
+                body { font-family: Arial, sans-serif; padding: 20px; color: #1b2a4a; }
                 h1 { font-size: 22px; margin: 0 0 6px; }
-                .meta { color: #6e6e6e; font-size: 13px; margin-bottom: 18px; }
+                .meta { color: #4b5570; font-size: 13px; margin-bottom: 18px; }
                 table { border-collapse: collapse; width: 100%; }
                 th, td { border: 1px solid #ddd; padding: 10px 12px; font-size: 13px; }
-                th { background-color: #f5f5f4; text-align: left; }
+                th { background-color: #f1ece1; text-align: left; }
                 td.numeric, th.numeric { text-align: right; }
-                tfoot td { font-weight: 600; background-color: #fafafa; }
+                tfoot td { font-weight: 600; background-color: #f7f3ec; }
             `;
         }
 
         function printNewspaperList() {
             const rows = Array.from(document.querySelectorAll('.newspaper-row')).filter((row) => row.style.display !== 'none');
             if (!rows.length) {
-                showToast('error', 'No newspapers to print on this page.');
+                MailroomToast.error('No newspapers to print on this page.');
                 return;
             }
 
@@ -1685,13 +1242,13 @@ if (isset($_SESSION['toast'])) {
             `;
 
             printHtmlOnPage(printContent);
-            showToast('info', 'Print dialog opened.');
+            MailroomToast.info('Print dialog opened.');
         }
 
         function printNewspaperStatistics() {
             const table = document.getElementById('newspaperStatsTable');
             if (!table) {
-                showToast('error', 'No statistics available to print.');
+                MailroomToast.error('No statistics available to print.');
                 return;
             }
 
@@ -1710,9 +1267,10 @@ if (isset($_SESSION['toast'])) {
             `;
 
             printHtmlOnPage(printContent);
-            showToast('info', 'Print dialog opened.');
+            MailroomToast.info('Print dialog opened.');
         }
 
+        // ========== PAGE TABS ==========
         (function() {
             const pageTabs = Array.from(document.querySelectorAll('[data-page-tab]'));
             const pagePanes = {
@@ -1726,7 +1284,7 @@ if (isset($_SESSION['toast'])) {
                 });
                 Object.entries(pagePanes).forEach(([name, pane]) => {
                     if (pane) {
-                        pane.classList.toggle('active', name === tabName);
+                        pane.classList.toggle('hidden', name !== tabName);
                     }
                 });
                 if (updateUrl) {
@@ -1747,40 +1305,18 @@ if (isset($_SESSION['toast'])) {
             });
         })();
 
-        // Export newspapers to CSV
-        function exportToCSV() {
+        // ========== EXPORT ==========
+        function exportNewspapers() {
             const data = <?php echo json_encode($all_newspapers_export); ?>;
-            const headers = ['ID', 'Newspaper Name', 'Issue Number', 'Category', 'Date Received', 'Status', 'Available Copies'];
-            const rows = [headers.join(',')];
-            
-            data.forEach(item => {
-                const row = [
-                    item.id,
-                    `"${item.newspaper_name.replace(/"/g, '""')}"`,
-                    `"${item.newspaper_number.replace(/"/g, '""')}"`,
-                    `"${item.category_name.replace(/"/g, '""')}"`,
-                    `"${item.date_received}"`,
-                    `"${item.status}"`,
-                    item.available_copies
-                ];
-                rows.push(row.join(','));
-            });
-            
-            const csv = rows.join('\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `newspapers_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            if (typeof showToast === 'function') {
-                showToast('success', 'Export completed successfully!');
+            if (!data || data.length === 0) {
+                MailroomToast.info('No records to export.');
+                return;
             }
+            exportToCSV(data, 'newspapers_' + new Date().toISOString().split('T')[0] + '.csv');
+            MailroomToast.success('Export completed successfully!');
         }
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>

@@ -1,9 +1,8 @@
 <?php
-// Enable error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 require_once 'config/db.php';
+require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/csrf.php';
 session_start();
 
 // Initialize stats array with defaults
@@ -33,6 +32,8 @@ $stats = [
 ];
 
 $dashboard_parcels = null;
+$attention_items = [];
+$recent_activity = [];
 
 // Check connection
 if (!$conn) {
@@ -41,19 +42,16 @@ if (!$conn) {
 
 // Get statistics with error handling
 try {
-    // Documents count
     $result = $conn->query("SELECT COUNT(*) as total FROM documents");
     if ($result) {
         $stats['documents'] = $result->fetch_assoc()['total'];
     }
 
-    // Document types count
     $result = $conn->query("SELECT COUNT(*) as total FROM document_types");
     if ($result) {
         $stats['document_types'] = $result->fetch_assoc()['total'];
     }
 
-    // Parcels received
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received");
     if ($result) {
         $stats['parcels_received'] = $result->fetch_assoc()['total'];
@@ -70,78 +68,65 @@ try {
         $stats['pending_parcels'] = $result->fetch_assoc()['total'];
     }
 
-    // Total pickups
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_pickup");
     if ($result) {
         $stats['total_pickups'] = $result->fetch_assoc()['total'];
     }
 
-    // Newspapers count
     $result = $conn->query("SELECT COUNT(*) as total FROM newspapers");
     if ($result) {
         $stats['newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // Newspaper categories count
     $result = $conn->query("SELECT COUNT(*) as total FROM newspaper_categories");
     if ($result) {
         $stats['newspaper_categories'] = $result->fetch_assoc()['total'];
     }
 
-    // Document distributions
     $result = $conn->query("SELECT COUNT(*) as total FROM document_distribution");
     if ($result) {
         $stats['total_distributions'] = $result->fetch_assoc()['total'];
     }
 
-    // Total copies received
     $result = $conn->query("SELECT SUM(copies_received) as total FROM documents");
     if ($result) {
         $stats['total_copies_received'] = $result->fetch_assoc()['total'] ?? 0;
     }
 
-    // Total copies distributed
     $result = $conn->query("SELECT SUM(number_distributed) as total FROM document_distribution");
     if ($result) {
         $stats['total_copies_distributed'] = $result->fetch_assoc()['total'] ?? 0;
     }
 
-    // Today's dates
     $today = date('Y-m-d');
     $week_start = date('Y-m-d', strtotime('monday this week'));
     $month_start = date('Y-m-01');
 
-    // Today's documents
     $result = $conn->query("SELECT COUNT(*) as total FROM documents WHERE date_received = '$today'");
     if ($result) {
         $stats['today_documents'] = $result->fetch_assoc()['total'];
     }
 
-    // This week's documents
     $result = $conn->query("SELECT COUNT(*) as total FROM documents WHERE date_received >= '$week_start'");
     if ($result) {
         $stats['week_documents'] = $result->fetch_assoc()['total'];
     }
 
-    // This month's documents
     $result = $conn->query("SELECT COUNT(*) as total FROM documents WHERE date_received >= '$month_start'");
     if ($result) {
         $stats['month_documents'] = $result->fetch_assoc()['total'];
     }
 
-    // Today's parcels
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE DATE(date_received) = '$today'");
     if ($result) {
         $stats['today_parcels'] = $result->fetch_assoc()['total'];
     }
 
-    // This week's parcels
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE date_received >= '$week_start'");
     if ($result) {
         $stats['week_parcels'] = $result->fetch_assoc()['total'];
     }
 
-    // This month's parcels
     $result = $conn->query("SELECT COUNT(*) as total FROM parcels_received WHERE date_received >= '$month_start'");
     if ($result) {
         $stats['month_parcels'] = $result->fetch_assoc()['total'];
@@ -157,138 +142,153 @@ try {
         $stats['latest_parcel_picked'] = $result->fetch_assoc()['latest_date'] ?? null;
     }
 
-    // Today's newspapers
     $result = $conn->query("SELECT COUNT(*) as total FROM newspapers WHERE date_received = '$today'");
     if ($result) {
         $stats['today_newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // This week's newspapers
     $result = $conn->query("SELECT COUNT(*) as total FROM newspapers WHERE date_received >= '$week_start'");
     if ($result) {
         $stats['week_newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // This month's newspapers
     $result = $conn->query("SELECT COUNT(*) as total FROM newspapers WHERE date_received >= '$month_start'");
     if ($result) {
         $stats['month_newspapers'] = $result->fetch_assoc()['total'];
     }
 
-    // Recent activity grouped by tab
-    $recent_document_activities = [];
-    $recent_parcel_activities = [];
-    $recent_newspaper_activities = [];
-
-    $doc_result = $conn->query("
-        SELECT 'received' as type, document_name as title, date_received as date,
-               CONCAT('Received: ', copies_received, ' copies') as details
-        FROM documents
-        ORDER BY date_received DESC, id DESC
-        LIMIT 12
+    // Documents awaiting distribution (received but never distributed)
+    $doc_awaiting = $conn->query("
+        SELECT d.id, d.document_name, d.copies_received,
+               COALESCE((SELECT SUM(number_distributed) FROM document_distribution WHERE document_id = d.id), 0) as distributed
+        FROM documents d
+        HAVING distributed < d.copies_received
+        ORDER BY d.date_received DESC
+        LIMIT 5
     ");
-    if ($doc_result) {
-        while ($row = $doc_result->fetch_assoc()) {
-            $recent_document_activities[] = $row;
+    if ($doc_awaiting) {
+        while ($row = $doc_awaiting->fetch_assoc()) {
+            $remaining = (int)$row['copies_received'] - (int)$row['distributed'];
+            $attention_items[] = [
+                'type' => 'document',
+                'priority' => 'orange',
+                'title' => $row['document_name'],
+                'detail' => "{$remaining} copies awaiting distribution",
+                'url' => "documents.php"
+            ];
         }
     }
 
-    $dist_result = $conn->query("
-        SELECT 'distributed' as type,
-               d.document_name as title,
-               dd.date_distributed as date,
-               CONCAT(dd.number_distributed, ' copies distributed') as details
-        FROM document_distribution dd
-        JOIN documents d ON dd.document_id = d.id
-        ORDER BY dd.date_distributed DESC, dd.id DESC
-        LIMIT 12
-    ");
-    if ($dist_result) {
-        while ($row = $dist_result->fetch_assoc()) {
-            $recent_document_activities[] = $row;
-        }
-    }
-
-    usort($recent_document_activities, function ($a, $b) {
-        return strtotime($b['date']) - strtotime($a['date']);
-    });
-    $recent_document_activities = array_slice($recent_document_activities, 0, 12);
-
-    $parcel_result = $conn->query("
-        SELECT 'received' as type,
-               CONCAT(pr.tracking_id, ' - ', LEFT(pr.description, 30)) as title,
-               pr.date_received as date,
-               CONCAT('From: ', pr.sender) as details
+    // Parcels pending pickup (overdue / waiting)
+    $pending_parcels = $conn->query("
+        SELECT pr.tracking_id, pr.addressed_to, pr.date_received,
+               DATEDIFF('$today', pr.date_received) as days_waiting
         FROM parcels_received pr
-        ORDER BY pr.date_received DESC, pr.id DESC
-        LIMIT 12
+        LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
+        WHERE pp.id IS NULL
+        ORDER BY pr.date_received ASC
+        LIMIT 5
     ");
-    if ($parcel_result) {
-        while ($row = $parcel_result->fetch_assoc()) {
-            $recent_parcel_activities[] = $row;
+    if ($pending_parcels) {
+        while ($row = $pending_parcels->fetch_assoc()) {
+            $days = (int)$row['days_waiting'];
+            $attention_items[] = [
+                'type' => 'parcel',
+                'priority' => $days >= 3 ? 'red' : ($days >= 1 ? 'orange' : 'green'),
+                'title' => $row['tracking_id'] . ' — ' . $row['addressed_to'],
+                'detail' => $days == 0 ? 'Awaiting pickup today' : "Awaiting pickup for {$days} day" . ($days === 1 ? '' : 's'),
+                'url' => "parcels.php"
+            ];
         }
     }
 
-    $pickup_result = $conn->query("
-        SELECT 'picked up' as type,
-               pr.tracking_id as title,
-               pp.date_picked as date,
-               CONCAT('Picked by: ', pp.picked_by) as details
-        FROM parcels_pickup pp
-        JOIN parcels_received pr ON pp.parcel_id = pr.id
-        ORDER BY pp.date_picked DESC, pp.id DESC
-        LIMIT 12
+    // Recent activity - combined timeline
+    $recent_activity = [];
+
+    // Document received
+    $res = $conn->query("
+        SELECT 'doc_received' as kind, document_name as title, date_received as date,
+               CONCAT('Received ', copies_received, ' copy', IF(copies_received=1,'','s')) as detail
+        FROM documents ORDER BY date_received DESC, id DESC LIMIT 6
     ");
-    if ($pickup_result) {
-        while ($row = $pickup_result->fetch_assoc()) {
-            $recent_parcel_activities[] = $row;
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'green', 'icon' => 'fa-file-lines'];
         }
     }
 
-    usort($recent_parcel_activities, function ($a, $b) {
+    // Parcel received
+    $res = $conn->query("
+        SELECT 'parcel_received' as kind, tracking_id as title, date_received as date,
+               CONCAT('Received from ', sender) as detail
+        FROM parcels_received ORDER BY date_received DESC, id DESC LIMIT 6
+    ");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'blue', 'icon' => 'fa-box'];
+        }
+    }
+
+    // Parcel pickup
+    $res = $conn->query("
+        SELECT 'parcel_picked' as kind, pr.tracking_id as title, pp.date_picked as date,
+               CONCAT('Picked up by ', pp.picked_by) as detail
+        FROM parcels_pickup pp JOIN parcels_received pr ON pp.parcel_id = pr.id
+        ORDER BY pp.date_picked DESC, pp.id DESC LIMIT 6
+    ");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'green', 'icon' => 'fa-box-open'];
+        }
+    }
+
+    // Document distributed
+    $res = $conn->query("
+        SELECT 'doc_distributed' as kind, d.document_name as title, dd.date_distributed as date,
+               CONCAT('Distributed ', dd.number_distributed, ' copy', IF(dd.number_distributed=1,'','s')) as detail
+        FROM document_distribution dd JOIN documents d ON dd.document_id = d.id
+        ORDER BY dd.date_distributed DESC, dd.id DESC LIMIT 6
+    ");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'orange', 'icon' => 'fa-share-from-square'];
+        }
+    }
+
+    // Newspaper received
+    $res = $conn->query("
+        SELECT 'newspaper_received' as kind, newspaper_name as title, date_received as date,
+               CONCAT(newspaper_number, ' — ', available_copies, ' copies available') as detail
+        FROM newspapers ORDER BY date_received DESC, id DESC LIMIT 6
+    ");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'gray', 'icon' => 'fa-newspaper'];
+        }
+    }
+
+    // Newspaper distributed
+    $res = $conn->query("
+        SELECT 'news_distributed' as kind, distributed_to as title, date_distributed as date,
+               CONCAT('Received ', copies, ' edition(s)') as detail
+        FROM distribution ORDER BY date_distributed DESC, id DESC LIMIT 6
+    ");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $recent_activity[] = $row + ['color' => 'orange', 'icon' => 'fa-share-from-square'];
+        }
+    }
+
+    // Sort by date desc, take top 10
+    usort($recent_activity, function ($a, $b) {
         return strtotime($b['date']) - strtotime($a['date']);
     });
-    $recent_parcel_activities = array_slice($recent_parcel_activities, 0, 12);
+    $recent_activity = array_slice($recent_activity, 0, 10);
 
-    $news_result = $conn->query("
-        SELECT 'received' as type,
-               CONCAT(newspaper_name, ' #', newspaper_number) as title,
-               date_received as date,
-               CONCAT('Available: ', available_copies, ' copies') as details
-        FROM newspapers
-        ORDER BY date_received DESC, id DESC
-        LIMIT 12
-    ");
-    if ($news_result) {
-        while ($row = $news_result->fetch_assoc()) {
-            $recent_newspaper_activities[] = $row;
-        }
-    }
-
-    $news_dist_result = $conn->query("
-        SELECT 'distributed' as type,
-               distributed_to as title,
-               date_distributed as date,
-               CONCAT(copies, ' Subscription(s) distributed') as details
-        FROM distribution
-        ORDER BY date_distributed DESC, id DESC
-        LIMIT 12
-    ");
-    if ($news_dist_result) {
-        while ($row = $news_dist_result->fetch_assoc()) {
-            $recent_newspaper_activities[] = $row;
-        }
-    }
-
-    usort($recent_newspaper_activities, function ($a, $b) {
-        return strtotime($b['date']) - strtotime($a['date']);
-    });
-    $recent_newspaper_activities = array_slice($recent_newspaper_activities, 0, 12);
-
-    // Dashboard ledger rows
+    // Dashboard parcel table
     $dashboard_parcels = $conn->query("
         SELECT pr.id, pr.tracking_id, pr.sender, pr.addressed_to, pr.date_received,
-               CASE WHEN pp.id IS NULL THEN 'Pending' ELSE 'Picked Up' END as status
+               CASE WHEN pp.id IS NULL THEN 'pending' ELSE 'picked' END as status
         FROM parcels_received pr
         LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
         ORDER BY pr.date_received DESC, pr.id DESC
@@ -296,6 +296,17 @@ try {
     ");
 } catch (Exception $e) {
     $error = "Error loading data: " . $e->getMessage();
+}
+
+// Format activity icon
+function activityDotColor($color) {
+    return match($color) {
+        'green' => 'green',
+        'orange' => 'orange',
+        'red' => 'red',
+        'blue' => '',
+        default => 'gray'
+    };
 }
 ?>
 
@@ -305,629 +316,262 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mailroom Dashboard</title>
+    <title>Dashboard — Mailroom Operations</title>
     <link rel="icon" type="image/png" href="./images/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-            background: #f5f5f4;
-            color: #1c1917;
-        }
-
-        .panel {
-            background: #ffffff;
-            border: 1px solid #e7e5e4;
-            border-radius: 28px;
-        }
-
-        .panel-header {
-            padding: 18px 20px;
-            border-bottom: 1px solid #e7e5e4;
-        }
-
-        .panel-body {
-            padding: 20px;
-        }
-
-        .stat-box {
-            background: #ffffff;
-            border: 1px solid #e7e5e4;
-            border-radius: 28px;
-            padding: 16px;
-        }
-
-        .stat-label {
-            font-size: 14px;
-            color: #57534e;
-            margin-bottom: 6px;
-        }
-
-        .stat-value {
-            font-size: 28px;
-            line-height: 1.1;
-            font-weight: 600;
-            color: #1c1917;
-        }
-
-        .muted {
-            color: #78716c;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 500;
-            border: 1px solid transparent;
-        }
-
-        .status-pending {
-            background: #fff7ed;
-            color: #9a3412;
-            border-color: #fed7aa;
-        }
-
-        .status-picked {
-            background: #f0fdf4;
-            color: #166534;
-            border-color: #bbf7d0;
-        }
-
-        .simple-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
-            border-radius: 999px;
-            border: 1px solid #d6d3d1;
-            background: #ffffff;
-            color: #1c1917;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .simple-button:hover {
-            background: #fafaf9;
-        }
-
-        .primary-button {
-            background: #1c1917;
-            color: #ffffff;
-            border-color: #1c1917;
-        }
-
-        .primary-button:hover {
-            background: #292524;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            font-size: 13px;
-            font-weight: 500;
-            color: #57534e;
-            padding: 12px 20px;
-            background: #fafaf9;
-            border-bottom: 1px solid #e7e5e4;
-        }
-
-        td {
-            padding: 14px 20px;
-            border-bottom: 1px solid #f0ece8;
-            vertical-align: top;
-            font-size: 14px;
-        }
-
-        tr:hover td {
-            background: #fcfcfb;
-        }
-
-        .activity-list {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .activity-list.spread-layout {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 16px;
-        }
-
-        .activity-item {
-            padding-bottom: 16px;
-            border-bottom: 1px solid #f0ece8;
-        }
-
-        .activity-item:last-child {
-            border-bottom: 0;
-            padding-bottom: 0;
-        }
-
-        .activity-list.spread-layout .activity-item {
-            height: 100%;
-            min-height: 136px;
-            padding: 18px 20px;
-            border: 1px solid #ece7e2;
-            border-radius: 22px;
-            background: #fcfcfb;
-        }
-
-        .activity-meta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-top: 16px;
-            padding-top: 14px;
-            border-top: 1px solid #ece7e2;
-        }
-
-        @media (max-width: 767px) {
-            .activity-meta {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
-
-        .circular-panel {
-            border-radius: 28px;
-            overflow: hidden;
-        }
-
-        .circular-panel .panel-header {
-            padding: 22px 24px;
-        }
-
-        .circular-table-wrap {
-            padding: 0 14px 14px;
-        }
-
-        .circular-table-wrap table {
-            overflow: hidden;
-            border: 1px solid #ece7e2;
-            border-radius: 22px;
-        }
-
-        .circular-table-wrap thead th:first-child {
-            border-top-left-radius: 22px;
-        }
-
-        .circular-table-wrap thead th:last-child {
-            border-top-right-radius: 22px;
-        }
-
-        .circular-body {
-            padding: 14px;
-        }
-
-        .circular-list {
-            gap: 12px;
-        }
-
-        .circular-list .activity-item {
-            border: 1px solid #ece7e2;
-            border-radius: 22px;
-            padding: 16px 18px;
-            background: #fcfcfb;
-        }
-
-        .activity-tabs {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .activity-tab {
-            border: 1px solid #d6d3d1;
-            background: #fafaf9;
-            color: #57534e;
-            border-radius: 999px;
-            padding: 8px 14px;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-        }
-
-        .activity-tab:hover {
-            background: #f5f5f4;
-            color: #1c1917;
-        }
-
-        .activity-tab.active {
-            background: #1c1917;
-            border-color: #1c1917;
-            color: #ffffff;
-        }
-
-        .activity-pane {
-            display: none;
-        }
-
-        .activity-pane.active {
-            display: block;
-        }
-
-        .activity-pagination {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-top: 18px;
-            padding-top: 14px;
-            border-top: 1px solid #f0ece8;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/app.css">
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
 </head>
 
 <body>
     <div class="flex">
         <?php include 'sidebar.php'; ?>
 
-        <main class="flex-1 lg:ml-[var(--sidebar-width)] min-h-screen bg-[#f5f5f4]">
-            <div class="px-4 py-4 lg:px-8 lg:py-6 border-b border-[#e7e5e4] bg-white">
-                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                        <h1 class="text-[28px] font-semibold text-[#1c1917]">Mailroom Dashboard</h1>
-                        <p id="dashboardClock" class="mt-1 text-sm text-[#78716c]" data-server-time="<?php echo htmlspecialchars($stats['dashboard_refreshed_at']); ?>">
-                            <?php echo date('l, F j, Y g:i:s A', strtotime($stats['dashboard_refreshed_at'])); ?>
-                        </p>
+        <main class="main-content">
+            <!-- Page header -->
+            <div class="page-header flex items-center justify-between gap-4">
+                <div>
+                    <div class="breadcrumb">
+                        <span>Overview</span>
                     </div>
+                    <h1 class="page-header-title">Dashboard</h1>
+                    <p id="dashboardClock" class="mt-1 text-[13px] text-[#7d8398]" data-server-time="<?php echo htmlspecialchars($stats['dashboard_refreshed_at']); ?>">
+                        <?php echo date('l, F j, Y g:i A', strtotime($stats['dashboard_refreshed_at'])); ?>
+                    </p>
+                </div>
+                <div class="header-actions flex items-center gap-2 print-hide">
+                    <a href="documents.php" class="btn btn-soft">
+                        <i class="fa-solid fa-file-lines"></i>
+                        <span class="hidden sm:inline">Documents</span>
+                    </a>
                 </div>
             </div>
 
-            <div class="p-4 lg:p-8">
+            <div class="page-body">
                 <?php if (isset($error)): ?>
-                    <div class="mb-6 rounded-[28px] bg-[#ffdad6] px-5 py-4 text-[#93000a]">
-                        <i class="fa-regular fa-circle-exclamation mr-2"></i>
-                        <?php echo $error; ?>
+                    <div class="alert alert-red">
+                        <i class="fa-regular fa-circle-exclamation"></i>
+                        <span><?php echo $error; ?></span>
                     </div>
                 <?php endif; ?>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-                    <div class="stat-box">
-                        <div class="stat-label">Documents</div>
+                <!-- Top Stats -->
+                <div class="stat-grid mb-6">
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-file-lines"></i></div>
+                        <div class="stat-label">Total Documents</div>
                         <div class="stat-value"><?php echo number_format($stats['documents']); ?></div>
-                        <div class="mt-2 text-sm muted">Today: <?php echo number_format($stats['today_documents']); ?></div>
+                        <div class="stat-hint"><?php echo number_format($stats['today_documents']); ?> received today</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Parcels received</div>
-                        <div class="stat-value"><?php echo number_format($stats['parcels_received']); ?></div>
-                        <div class="mt-2 text-sm muted">Pending: <?php echo number_format($stats['pending_parcels']); ?></div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange"><i class="fa-solid fa-box"></i></div>
+                        <div class="stat-label">Parcels Awaiting Pickup</div>
+                        <div class="stat-value"><?php echo number_format($stats['pending_parcels']); ?></div>
+                        <div class="stat-hint"><?php echo number_format($stats['today_parcels']); ?> received today</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Pickups</div>
-                        <div class="stat-value"><?php echo number_format($stats['total_pickups']); ?></div>
-                        <div class="mt-2 text-sm muted">This week: <?php echo number_format($stats['week_parcels']); ?></div>
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-file-signature"></i></div>
+                        <div class="stat-label">Documents Awaiting Distribution</div>
+                        <div class="stat-value"><?php echo number_format(count(array_filter($attention_items, fn($i) => $i['type'] === 'document'))); ?></div>
+                        <div class="stat-hint">Copies not yet distributed</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Latest parcel update</div>
-                        <div class="text-lg font-medium text-[#1c1917]">
-                            <?php echo $stats['latest_parcel_received'] ? date('M j, Y', strtotime($stats['latest_parcel_received'])) : 'No record'; ?>
-                        </div>
-                        <div class="mt-2 text-sm muted">Last pickup: <?php echo $stats['latest_parcel_picked'] ? date('M j, Y', strtotime($stats['latest_parcel_picked'])) : 'No record'; ?></div>
+                    <div class="stat-card">
+                        <div class="stat-icon gray"><i class="fa-regular fa-newspaper"></i></div>
+                        <div class="stat-label">Newspapers Today</div>
+                        <div class="stat-value"><?php echo number_format($stats['today_newspapers']); ?></div>
+                        <div class="stat-hint"><?php echo number_format($stats['week_newspapers']); ?> this week</div>
                     </div>
                 </div>
 
+                <!-- Quick actions -->
+                <div class="card mb-6">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Quick Actions</h2>
+                            <p class="card-subtitle">Common operations</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <a href="documents.php" class="quick-action">
+                                <span class="quick-action-icon"><i class="fa-solid fa-file-circle-plus"></i></span>
+                                <span class="quick-action-label">Receive Document</span>
+                            </a>
+                            <a href="parcels.php" class="quick-action">
+                                <span class="quick-action-icon"><i class="fa-solid fa-box-open"></i></span>
+                                <span class="quick-action-label">Register Parcel</span>
+                            </a>
+                            <a href="list.php" class="quick-action">
+                                <span class="quick-action-icon"><i class="fa-solid fa-newspaper"></i></span>
+                                <span class="quick-action-label">Newspaper</span>
+                            </a>
+                            <a href="settings.php" class="quick-action">
+                                <span class="quick-action-icon"><i class="fa-solid fa-gear"></i></span>
+                                <span class="quick-action-label">Backup</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
 
-                <section class="flex flex-col gap-6">
-                    <div class="flex flex-col gap-6">
-                        <div class="panel circular-panel">
-                            <div class="panel-header flex items-center justify-between">
-                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent parcels</h2>
-                                <a href="parcels.php" class="text-sm text-[#57534e] hover:text-[#1c1917]">Open all</a>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Attention Required -->
+                    <div class="card lg:col-span-2">
+                        <div class="card-header">
+                            <div>
+                                <h2 class="card-title">Requires Attention</h2>
+                                <p class="card-subtitle">Items needing action today</p>
                             </div>
-                            <div class="overflow-x-auto circular-table-wrap">
-                                <table>
-                                    <thead>
+                            <?php if (count($attention_items) > 0): ?>
+                                <span class="pill badge-red"><?php echo count($attention_items); ?> items</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($attention_items)): ?>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="fa-solid fa-check"></i></div>
+                                    <div class="empty-state-title">All caught up</div>
+                                    <div class="empty-state-text">No items currently require your attention.</div>
+                                </div>
+                            <?php else: ?>
+                                <div style="display:flex;flex-direction:column;gap:8px;">
+                                    <?php foreach ($attention_items as $i => $item): ?>
+                                        <?php
+                                        $colorClass = match($item['priority']) {
+                                            'red' => 'badge-red',
+                                            'orange' => 'badge-orange',
+                                            default => 'badge-green'
+                                        };
+                                        $icon = match($item['type']) {
+                                            'document' => 'fa-file-lines',
+                                            'parcel' => 'fa-box',
+                                            default => 'fa-circle-exclamation'
+                                        };
+                                        ?>
+                                        <a href="<?php echo $item['url']; ?>"
+                                           style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;text-decoration:none;transition:all .15s;">
+                                            <div style="width:32px;height:32px;border-radius:8px;background:<?php echo $item['priority']==='red' ? 'var(--red-soft)' : ($item['priority']==='orange' ? 'var(--orange-soft)' : 'var(--green-soft)'); ?>;display:flex;align-items:center;justify-content:center;color:<?php echo $item['priority']==='red' ? 'var(--red)' : ($item['priority']==='orange' ? 'var(--orange)' : 'var(--green)'); ?>;font-size:13px;flex-shrink:0;">
+                                                <i class="fa-solid <?php echo $icon; ?>"></i>
+                                            </div>
+                                            <div style="flex:1;min-width:0;">
+                                                <div style="font-size:13px;font-weight:550;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($item['title']); ?></div>
+                                                <div style="font-size:12px;color:var(--text-muted);"><?php echo htmlspecialchars($item['detail']); ?></div>
+                                            </div>
+                                            <span class="badge <?php echo $colorClass; ?>"><?php echo $item['type'] === 'document' ? 'Document' : 'Parcel'; ?></span>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity Timeline -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div>
+                                <h2 class="card-title">Recent Activity</h2>
+                                <p class="card-subtitle">Latest system events</p>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($recent_activity)): ?>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="fa-regular fa-clock"></i></div>
+                                    <div class="empty-state-title">No activity yet</div>
+                                    <div class="empty-state-text">Events will appear here as you process mail.</div>
+                                </div>
+                            <?php else: ?>
+                                <div class="timeline">
+                                    <?php foreach ($recent_activity as $act): ?>
+                                        <div class="timeline-item">
+                                            <div class="timeline-dot <?php echo activityDotColor($act['color']); ?>">
+                                                <i class="fa-solid <?php echo isset($act['icon']) ? $act['icon'] : 'fa-circle'; ?>"></i>
+                                            </div>
+                                            <div class="timeline-date"><?php echo date('g:i A', strtotime($act['date'])); ?><?php echo isset($act['date']) && date('Y-m-d', strtotime($act['date'])) == date('Y-m-d') ? '' : ' · ' . date('M j', strtotime($act['date'])); ?></div>
+                                            <div class="timeline-title"><?php echo htmlspecialchars($act['title']); ?></div>
+                                            <div class="timeline-detail"><?php echo htmlspecialchars($act['detail']); ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Parcels -->
+                <div class="card mt-6">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title">Recent Parcels</h2>
+                            <p class="card-subtitle">Latest incoming shipments</p>
+                        </div>
+                        <a href="parcels.php" class="btn btn-soft btn-sm">
+                            View all <i class="fa-solid fa-arrow-right"></i>
+                        </a>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Tracking ID</th>
+                                    <th>Recipient</th>
+                                    <th class="hidden md:table-cell">Sender</th>
+                                    <th>Status</th>
+                                    <th>Received</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($dashboard_parcels && $dashboard_parcels->num_rows > 0): ?>
+                                    <?php while ($parcel = $dashboard_parcels->fetch_assoc()): ?>
                                         <tr>
-                                            <th>Tracking ID</th>
-                                            <th>Recipient</th>
-                                            <th class="hidden md:table-cell">Sender</th>
-                                            <th>Status</th>
-                                            <th>Received</th>
+                                            <td class="table-cell-mono font-medium"><?php echo htmlspecialchars($parcel['tracking_id']); ?></td>
+                                            <td class="table-cell-title"><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
+                                            <td class="hidden md:table-cell" style="color:var(--text-secondary);"><?php echo htmlspecialchars($parcel['sender']); ?></td>
+                                            <td>
+                                                <?php if ($parcel['status'] === 'picked'): ?>
+                                                    <span class="badge badge-green">Picked Up</span>
+                                                <?php else: ?>
+                                                    <span class="badge badge-orange">Pending</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="color:var(--text-secondary);"><?php echo date('M j, Y', strtotime($parcel['date_received'])); ?></td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if ($dashboard_parcels && $dashboard_parcels->num_rows > 0): ?>
-                                            <?php while ($parcel = $dashboard_parcels->fetch_assoc()): ?>
-                                                <tr>
-                                                    <td class="font-medium text-[#1c1917]"><?php echo htmlspecialchars($parcel['tracking_id']); ?></td>
-                                                    <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
-                                                    <td class="muted hidden md:table-cell"><?php echo htmlspecialchars($parcel['sender']); ?></td>
-                                                    <td>
-                                                        <span class="status-badge <?php echo $parcel['status'] === 'Picked Up' ? 'status-picked' : 'status-pending'; ?>">
-                                                            <?php echo htmlspecialchars($parcel['status']); ?>
-                                                        </span>
-                                                    </td>
-                                                    <td class="muted"><?php echo date('M j, Y', strtotime($parcel['date_received'])); ?></td>
-                                                </tr>
-                                            <?php endwhile; ?>
-                                        <?php else: ?>
-                                            <tr>
-                                                <td colspan="5" class="text-center muted py-8">No parcel records available.</td>
-                                            </tr>
-                                        <?php endif; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div id="dashboardParcelsPagination" class="px-6 pb-5 flex flex-wrap items-center justify-between gap-3 <?php echo (!$dashboard_parcels || $dashboard_parcels->num_rows === 0) ? 'hidden' : ''; ?>">
-                                <span id="dashboardParcelsPaginationInfo" class="text-xs muted"></span>
-                                <div class="flex items-center gap-2" id="dashboardParcelsPaginationControls"></div>
-                            </div>
-                        </div>
+                                    <?php endwhile; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                            No parcel records yet.
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
                     </div>
-
-                    <div class="panel circular-panel">
-                        <div class="panel-header space-y-4">
-                            <div class="flex items-center justify-between">
-                                <h2 class="text-lg font-semibold text-[#1c1917]">Recent activity</h2>
-                                <span class="text-sm muted">Across all records</span>
-                            </div>
-                            <div class="activity-tabs" data-tab-group>
-                                <button type="button" class="activity-tab active" data-tab-target="newspaperActivity">Newspaper</button>
-                                <button type="button" class="activity-tab" data-tab-target="documentActivity">Documents</button>
-                                <button type="button" class="activity-tab" data-tab-target="parcelActivity">Parcels</button>
-                            </div>
-                        </div>
-                        <div class="panel-body">
-                            <div id="newspaperActivity" class="activity-pane active">
-                                <?php if (!empty($recent_newspaper_activities)): ?>
-                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
-                                        <?php foreach ($recent_newspaper_activities as $activity): ?>
-                                            <div class="activity-item" data-activity-item>
-                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
-                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
-                                                <div class="activity-meta">
-                                                    <span class="status-badge <?php echo $activity['type'] === 'distributed' ? 'status-picked' : 'status-pending'; ?>">
-                                                        <?php echo ucfirst($activity['type']); ?>
-                                                    </span>
-                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div class="activity-pagination" data-activity-pagination>
-                                        <span class="text-xs muted" data-activity-pagination-info></span>
-                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="text-sm muted">No recent newspaper activities found.</p>
-                                <?php endif; ?>
-                            </div>
-
-                            <div id="documentActivity" class="activity-pane">
-                                <?php if (!empty($recent_document_activities)): ?>
-                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
-                                        <?php foreach ($recent_document_activities as $activity): ?>
-                                            <div class="activity-item" data-activity-item>
-                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
-                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
-                                                <div class="activity-meta">
-                                                    <span class="status-badge <?php echo $activity['type'] === 'distributed' ? 'status-picked' : 'status-pending'; ?>">
-                                                        <?php echo ucfirst($activity['type']); ?>
-                                                    </span>
-                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div class="activity-pagination" data-activity-pagination>
-                                        <span class="text-xs muted" data-activity-pagination-info></span>
-                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="text-sm muted">No recent document activities found.</p>
-                                <?php endif; ?>
-                            </div>
-
-                            <div id="parcelActivity" class="activity-pane">
-                                <?php if (!empty($recent_parcel_activities)): ?>
-                                    <div class="activity-list spread-layout" data-activity-list data-page-size="4">
-                                        <?php foreach ($recent_parcel_activities as $activity): ?>
-                                            <div class="activity-item" data-activity-item>
-                                                <p class="text-sm font-medium text-[#1c1917]"><?php echo htmlspecialchars($activity['title']); ?></p>
-                                                <p class="mt-1 text-sm muted"><?php echo htmlspecialchars($activity['details']); ?></p>
-                                                <div class="activity-meta">
-                                                    <span class="status-badge <?php echo $activity['type'] === 'picked up' ? 'status-picked' : 'status-pending'; ?>">
-                                                        <?php echo ucfirst($activity['type']); ?>
-                                                    </span>
-                                                    <p class="text-xs muted"><?php echo date('M j, Y', strtotime($activity['date'])); ?></p>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div class="activity-pagination" data-activity-pagination>
-                                        <span class="text-xs muted" data-activity-pagination-info></span>
-                                        <div class="flex items-center gap-2" data-activity-pagination-controls></div>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="text-sm muted">No recent parcel activities found.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                </div>
             </div>
         </main>
     </div>
+
     <script>
         (function() {
             const clock = document.getElementById('dashboardClock');
-
-            if (!clock) {
-                return;
-            }
-
+            if (!clock) return;
             const serverTime = clock.dataset.serverTime;
             const baseTime = serverTime ? new Date(serverTime.replace(' ', 'T')) : new Date();
-
-            if (Number.isNaN(baseTime.getTime())) {
-                return;
-            }
-
+            if (Number.isNaN(baseTime.getTime())) return;
             let currentTime = baseTime;
-
-            function formatDateTime(date) {
-                return new Intl.DateTimeFormat('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true
-                }).format(date);
-            }
-
             function renderClock() {
-                clock.textContent = formatDateTime(currentTime);
+                clock.textContent = currentTime.toLocaleString('en-US', {
+                    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+                    hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+                });
                 currentTime = new Date(currentTime.getTime() + 1000);
             }
-
             renderClock();
             setInterval(renderClock, 1000);
         })();
-
-        (function() {
-            const groups = Array.from(document.querySelectorAll('[data-tab-group]'));
-
-            groups.forEach((group) => {
-                const tabs = Array.from(group.querySelectorAll('.activity-tab'));
-                const panel = group.closest('.panel');
-                if (!panel) return;
-
-                const panes = Array.from(panel.querySelectorAll('.activity-pane'));
-
-                tabs.forEach((tab) => {
-                    tab.addEventListener('click', function() {
-                        const targetId = tab.dataset.tabTarget;
-
-                        // Only remove active from tabs in THIS group
-                        tabs.forEach((item) => item.classList.remove('active'));
-
-                        // Only remove active from panes in THIS panel
-                        panes.forEach((pane) => pane.classList.remove('active'));
-
-                        tab.classList.add('active');
-                        const targetPane = document.getElementById(targetId);
-                        if (targetPane) {
-                            targetPane.classList.add('active');
-                        }
-                    });
-                });
-            });
-        })();
-
-        (function() {
-            const panes = Array.from(document.querySelectorAll('.activity-pane'));
-
-            panes.forEach((pane) => {
-                const list = pane.querySelector('[data-activity-list]');
-                const items = Array.from(pane.querySelectorAll('[data-activity-item]'));
-                const pagination = pane.querySelector('[data-activity-pagination]');
-                const info = pane.querySelector('[data-activity-pagination-info]');
-                const controls = pane.querySelector('[data-activity-pagination-controls]');
-                const pageSize = Number(list?.dataset.pageSize || 3);
-                let currentPage = 1;
-
-                if (!list || !items.length || !pagination || !info || !controls) {
-                    return;
-                }
-
-                function render() {
-                    const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-                    currentPage = Math.min(currentPage, totalPages);
-
-                    const startIndex = (currentPage - 1) * pageSize;
-                    const endIndex = startIndex + pageSize;
-
-                    items.forEach((item, index) => {
-                        item.style.display = index >= startIndex && index < endIndex ? '' : 'none';
-                    });
-
-                    const from = startIndex + 1;
-                    const to = Math.min(endIndex, items.length);
-                    info.textContent = `Page ${currentPage} of ${totalPages} • Showing ${from}-${to} of ${items.length}`;
-                    pagination.classList.toggle('hidden', items.length <= pageSize);
-
-                    controls.innerHTML = `
-                        <button type="button" class="simple-button" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>
-                        <button type="button" class="simple-button" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
-                    `;
-
-                    const [prevButton, nextButton] = controls.querySelectorAll('button');
-                    prevButton.addEventListener('click', function() {
-                        currentPage = Math.max(1, currentPage - 1);
-                        render();
-                    });
-                    nextButton.addEventListener('click', function() {
-                        currentPage = Math.min(totalPages, currentPage + 1);
-                        render();
-                    });
-                }
-
-                render();
-            });
-        })();
-
-        (function() {
-            const rows = Array.from(document.querySelectorAll('.circular-table-wrap tbody tr'));
-            const info = document.getElementById('dashboardParcelsPaginationInfo');
-            const controls = document.getElementById('dashboardParcelsPaginationControls');
-            const wrapper = document.getElementById('dashboardParcelsPagination');
-            const pageSize = 5;
-            let currentPage = 1;
-
-            if (!rows.length || !info || !controls || !wrapper) {
-                return;
-            }
-
-            function render() {
-                const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-                if (currentPage > totalPages) {
-                    currentPage = totalPages;
-                }
-
-                const startIndex = (currentPage - 1) * pageSize;
-                const endIndex = startIndex + pageSize;
-
-                rows.forEach((row, index) => {
-                    row.style.display = index >= startIndex && index < endIndex ? '' : 'none';
-                });
-
-                const from = startIndex + 1;
-                const to = Math.min(endIndex, rows.length);
-                info.textContent = `Page ${currentPage} of ${totalPages} • Showing ${from}-${to} of ${rows.length}`;
-                wrapper.classList.toggle('hidden', rows.length <= pageSize);
-                controls.innerHTML = `
-                    <button class="simple-button" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>
-                    <button class="simple-button" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
-                `;
-
-                const [prevButton, nextButton] = controls.querySelectorAll('button');
-                prevButton.addEventListener('click', function() {
-                    currentPage = Math.max(1, currentPage - 1);
-                    render();
-                });
-                nextButton.addEventListener('click', function() {
-                    currentPage = Math.min(totalPages, currentPage + 1);
-                    render();
-                });
-            }
-
-            render();
-        })();
     </script>
+    <script src="assets/app.js"></script>
 </body>
 
 </html>
