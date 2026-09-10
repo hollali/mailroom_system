@@ -283,6 +283,14 @@ function formatBytes(int $bytes, int $precision = 2)
                     </div>
                 <?php endif; ?>
 
+                <!-- Settings tabs -->
+                <div class="tabs no-print" id="settingsTabs">
+                    <button type="button" class="tab-button" data-setting-tab="appearance"><i class="fa-solid fa-palette"></i> Appearance</button>
+                    <button type="button" class="tab-button active" data-setting-tab="backup"><i class="fa-solid fa-database"></i> Backup</button>
+                    <button type="button" class="tab-button" data-setting-tab="system"><i class="fa-solid fa-server"></i> System</button>
+                </div>
+
+                <div id="settingsBackup" class="">
                 <div class="stat-grid" style="margin-bottom:20px;">
                     <div class="stat-card">
                         <div class="stat-icon blue"><i class="fa-solid fa-database"></i></div>
@@ -476,6 +484,75 @@ function formatBytes(int $bytes, int $precision = 2)
                     </div>
                 </div>
 
+                </div><!-- /settingsBackup -->
+
+                <!-- Appearance Pane -->
+                <div id="settingsAppearance" class="hidden">
+                <!-- Appearance & PWA -->
+                <div class="card" style="margin-top:20px;">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Appearance &amp; App</div>
+                            <div class="card-subtitle">Display preferences and installable app options. Changes apply instantly on this browser.</div>
+                        </div>
+                    </div>
+                    <div class="card-body" style="padding:20px;">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px;">
+                            <div>
+                                <div class="label" style="margin-bottom:12px;">Interface Font</div>
+                                <div id="msFontRow" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                                    <?php $ms_fonts = [
+                                        ['system', 'Default', ''],
+                                        ['serif', 'Serif', 'font-family:Georgia,serif;'],
+                                        ['modern', 'Modern', 'font-family:Inter,"Segoe UI",Arial,sans-serif;'],
+                                        ['mono', 'Mono', 'font-family:ui-monospace,Menlo,monospace;'],
+                                    ]; ?>
+                                    <?php foreach ($ms_fonts as $f): ?>
+                                        <button type="button" class="mr-font-btn <?php echo $f[0]; ?>" data-ms-font="<?php echo $f[0]; ?>" style="<?php echo $f[2]; ?>"><?php echo $f[1]; ?></button>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="label" style="margin-bottom:12px;">Text Size</div>
+                                <div id="msScaleRow" style="display:flex;align-items:center;gap:6px;">
+                                    <?php $ms_scales = [['sm', 'A-', 'mr-size-minus'], ['md', 'A', ''], ['lg', 'A+', 'mr-size-plus'], ['xl', 'A++', 'mr-size-plus'], ['xxl', 'A+++', 'mr-size-plus']]; ?>
+                                    <?php foreach ($ms_scales as $s): ?>
+                                        <button type="button" class="mr-size-btn <?php echo $s[2]; ?>" data-ms-scale="<?php echo $s[0]; ?>" style="flex:1;"><?php echo $s[1]; ?></button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <p class="card-subtitle" style="margin-top:10px;">Scales the whole interface for readability.</p>
+                            </div>
+
+                            <div>
+                                <div class="label" style="margin-bottom:12px;">Installable App</div>
+                                <button type="button" id="msInstallBtn" class="mr-install hidden">
+                                    <i class="fa-solid fa-download"></i>&nbsp;Install app
+                                </button>
+                                <p class="card-subtitle" style="margin-top:10px;">Add Mailroom Ops to your home screen / desktop for quick access with its own window.</p>
+                            </div>
+                        </div>
+
+                        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                            <div>
+                                <div class="label" style="margin-bottom:4px;">Preview</div>
+                                <div id="msPreview" style="font-size:14px;color:var(--text);">
+                                    <span style="font-weight:700;">Mailroom operations</span> — documents, newspapers &amp; parcels at a glance.
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-soft" id="msResetBtn">
+                                <i class="fa-solid fa-rotate-left"></i> Reset display settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                </div><!-- /settingsAppearance -->
+
+                <!-- System Pane -->
+                <div id="settingsSystem" class="hidden">
                 <!-- Database Connection Info -->
                 <div class="card" style="margin-top:20px;">
                     <div class="card-header">
@@ -505,9 +582,101 @@ function formatBytes(int $bytes, int $precision = 2)
                         </div>
                     </div>
                 </div>
+                </div><!-- /settingsSystem -->
             </div>
         </main>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const PROPS = { font: 'mr_font_family', scale: 'mr_text_scale' };
+
+            function current(key) {
+                return localStorage.getItem(PROPS[key]) || (key === 'font' ? 'system' : 'md');
+            }
+
+            function applyToDoc() {
+                document.documentElement.setAttribute('data-font', current('font'));
+                if (current('scale') === 'md') {
+                    document.documentElement.removeAttribute('data-text-scale');
+                } else {
+                    document.documentElement.setAttribute('data-text-scale', current('scale'));
+                }
+                syncActive();
+            }
+
+            function setPref(key, value) {
+                localStorage.setItem(PROPS[key], value);
+                applyToDoc();
+                window.dispatchEvent(new CustomEvent('mr:prefs'));
+            }
+
+            function syncActive() {
+                document.querySelectorAll('#msFontRow .mr-font-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.dataset.msFont === current('font'));
+                });
+                document.querySelectorAll('#msScaleRow .mr-size-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.dataset.msScale === current('scale'));
+                });
+            }
+
+            document.querySelectorAll('#msFontRow .mr-font-btn').forEach(function(b) {
+                b.addEventListener('click', function() { setPref('font', b.dataset.msFont); });
+            });
+            document.querySelectorAll('#msScaleRow .mr-size-btn').forEach(function(b) {
+                b.addEventListener('click', function() { setPref('scale', b.dataset.msScale); });
+            });
+
+            document.getElementById('msResetBtn').addEventListener('click', function() {
+                Object.values(PROPS).forEach(function(k) { localStorage.removeItem(k); });
+                applyToDoc();
+                window.dispatchEvent(new CustomEvent('mr:prefs'));
+            });
+
+            // Install app button (mirrors the floating widget)
+            const msInstallBtn = document.getElementById('msInstallBtn');
+            function updateInstall() {
+                if (!msInstallBtn) return;
+                if (window.MailroomPWA && window.MailroomPWA.deferredPrompt) {
+                    msInstallBtn.classList.remove('hidden');
+                } else {
+                    msInstallBtn.classList.add('hidden');
+                }
+            }
+            msInstallBtn.addEventListener('click', async function() {
+                if (!window.MailroomPWA || !window.MailroomPWA.deferredPrompt) return;
+                window.MailroomPWA.deferredPrompt.prompt();
+                await window.MailroomPWA.deferredPrompt.userChoice;
+                window.MailroomPWA.deferredPrompt = null;
+                updateInstall();
+            });
+            window.addEventListener('mr:installable', updateInstall);
+            window.addEventListener('mr:installed', updateInstall);
+
+            // Settings tabs
+            const settingTabs = Array.from(document.querySelectorAll('[data-setting-tab]'));
+            const settingPanes = {
+                appearance: document.getElementById('settingsAppearance'),
+                backup: document.getElementById('settingsBackup'),
+                system: document.getElementById('settingsSystem')
+            };
+            function setSettingTab(name) {
+                settingTabs.forEach((t) => {
+                    t.classList.toggle('active', t.dataset.settingTab === name);
+                });
+                Object.entries(settingPanes).forEach(([k, pane]) => {
+                    if (pane) pane.classList.toggle('hidden', k !== name);
+                });
+                localStorage.setItem('mr_settings_tab', name);
+            }
+            settingTabs.forEach((t) => {
+                t.addEventListener('click', function() { setSettingTab(t.dataset.settingTab); });
+            });
+            const storedTab = localStorage.getItem('mr_settings_tab');
+            if (storedTab && settingPanes[storedTab]) setSettingTab(storedTab);
+
+            applyToDoc();
+        });
+    </script>
     <script src="assets/app.js"></script>
 </body>
 

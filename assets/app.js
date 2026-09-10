@@ -384,3 +384,247 @@ function formatTimeAgo(value) {
     if (days < 7) return `${days}d ago`;
     return formatDate(value);
 }
+
+/* ── PWA support (manifest injection + service worker) ────── */
+const MailroomPWA = {
+    deferredPrompt: null,
+
+    injectMeta() {
+        if (document.querySelector('link[rel="manifest"]')) return;
+        const head = document.head;
+
+        const manifest = document.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = './manifest.json';
+        head.appendChild(manifest);
+
+        const theme = document.createElement('meta');
+        theme.name = 'theme-color';
+        theme.content = '#8b2635';
+        head.appendChild(theme);
+
+        const capable = document.createElement('meta');
+        capable.name = 'apple-mobile-web-app-capable';
+        capable.content = 'yes';
+        head.appendChild(capable);
+
+        const status = document.createElement('meta');
+        status.name = 'apple-mobile-web-app-status-bar-style';
+        status.content = 'default';
+        head.appendChild(status);
+
+        const title = document.createElement('meta');
+        title.name = 'apple-mobile-web-app-title';
+        title.content = 'Mailroom';
+        head.appendChild(title);
+
+        const icon = document.createElement('link');
+        icon.rel = 'apple-touch-icon';
+        icon.href = './images/icons/apple-touch-icon.png';
+        head.appendChild(icon);
+
+        if (!document.querySelector('link[href*="fonts.googleapis"]')) {
+            const inter = document.createElement('link');
+            inter.rel = 'stylesheet';
+            inter.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+            head.appendChild(inter);
+        }
+    },
+
+    register() {
+        if (!('serviceWorker' in navigator)) return;
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+    },
+
+    init() {
+        if (sessionStorage.getItem('mr_sw_captured')) return;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this.deferredPrompt = e;
+            sessionStorage.setItem('mr_sw_captured', '1');
+            window.dispatchEvent(new CustomEvent('mr:installable'));
+        });
+        window.addEventListener('appinstalled', () => {
+            this.deferredPrompt = null;
+            window.dispatchEvent(new CustomEvent('mr:installed'));
+        });
+    }
+};
+window.MailroomPWA = MailroomPWA;
+
+/* ── Display preferences (font family + text size) ────────── */
+const MailroomPrefs = {
+    keys: { font: 'mr_font_family', scale: 'mr_text_scale' },
+    defaults: { font: 'system', scale: 'md' },
+
+    get(key) {
+        const stored = localStorage.getItem(this.keys[key]);
+        return stored || this.defaults[key];
+    },
+
+    set(key, value) {
+        localStorage.setItem(this.keys[key], value);
+        this.apply();
+        window.dispatchEvent(new CustomEvent('mr:prefs'));
+    },
+
+    apply() {
+        document.documentElement.setAttribute('data-font', this.get('font'));
+        const scale = this.get('scale');
+        if (scale === 'md') {
+            document.documentElement.removeAttribute('data-text-scale');
+        } else {
+            document.documentElement.setAttribute('data-text-scale', scale);
+        }
+    },
+
+    reset() {
+        Object.keys(this.keys).forEach((k) => localStorage.removeItem(this.keys[k]));
+        this.apply();
+        window.dispatchEvent(new CustomEvent('mr:prefs'));
+    }
+};
+
+/* ── Display options floating widget ──────────────────────── */
+const FontControl = {
+    SECLES: ['sm', 'md', 'lg', 'xl', 'xxl'],
+    FAMILIES: [
+        { value: 'system', label: 'Default', cls: '' },
+        { value: 'serif', label: 'Serif', cls: 'serif' },
+        { value: 'modern', label: 'Modern', cls: 'modern' },
+        { value: 'mono', label: 'Mono', cls: 'mono' }
+    ],
+
+    build() {
+        if (document.querySelector('.mr-widget')) return;
+
+        const widget = document.createElement('div');
+        widget.className = 'mr-widget';
+
+        const fab = document.createElement('button');
+        fab.className = 'mr-widget-fab';
+        fab.type = 'button';
+        fab.title = 'Display options';
+        fab.setAttribute('aria-label', 'Display options');
+        fab.textContent = 'Aa';
+
+        const panel = document.createElement('div');
+        panel.className = 'mr-widget-panel';
+        panel.innerHTML = `
+            <h3>Display</h3>
+
+            <div class="mr-section">
+                <div class="mr-label">Text size</div>
+                <div class="mr-size-row"></div>
+            </div>
+
+            <div class="mr-section">
+                <div class="mr-label">Font</div>
+                <div class="mr-font-row"></div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <button type="button" class="mr-install hidden"><i class="fa-solid fa-download"></i>&nbsp;Install app</button>
+            </div>
+
+            <button type="button" class="mr-reset">Reset display settings</button>
+        `;
+
+        widget.appendChild(fab);
+        widget.appendChild(panel);
+        document.body.appendChild(widget);
+
+        const sizeRow = panel.querySelector('.mr-size-row');
+        this.SECLES.forEach((s, i) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mr-size-btn';
+            btn.dataset.scale = s;
+            btn.textContent = ['A-', 'A', 'A+', 'A++', 'A+++'][i];
+            const sizeCls = i === 0 ? 'mr-size-minus' : (i >= 2 ? 'mr-size-plus' : '');
+            if (sizeCls) btn.classList.add(sizeCls);
+            btn.addEventListener('click', () => MailroomPrefs.set('scale', s));
+            sizeRow.appendChild(btn);
+        });
+
+        const fontRow = panel.querySelector('.mr-font-row');
+        this.FAMILIES.forEach((f) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mr-font-btn ' + f.cls;
+            btn.dataset.font = f.value;
+            btn.textContent = f.label;
+            btn.addEventListener('click', () => MailroomPrefs.set('font', f.value));
+            fontRow.appendChild(btn);
+        });
+
+        fab.addEventListener('click', () => widget.classList.toggle('open'));
+
+        document.addEventListener('click', (e) => {
+            if (widget.classList.contains('open') && !widget.contains(e.target)) {
+                widget.classList.remove('open');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && widget.classList.contains('open')) widget.classList.remove('open');
+        });
+
+        const installBtn = panel.querySelector('.mr-install');
+        const updateInstall = () => {
+            if (window.MailroomPWA && window.MailroomPWA.deferredPrompt) {
+                installBtn.classList.remove('hidden');
+            } else {
+                installBtn.classList.add('hidden');
+            }
+        };
+        installBtn.addEventListener('click', async () => {
+            if (!window.MailroomPWA || !window.MailroomPWA.deferredPrompt) return;
+            window.MailroomPWA.deferredPrompt.prompt();
+            await window.MailroomPWA.deferredPrompt.userChoice;
+            window.MailroomPWA.deferredPrompt = null;
+            updateInstall();
+        });
+        window.addEventListener('mr:installable', updateInstall);
+        window.addEventListener('mr:installed', updateInstall);
+
+        panel.querySelector('.mr-reset').addEventListener('click', () => {
+            MailroomPrefs.reset();
+            this.syncUI(panel);
+        });
+
+        this.syncUI(panel);
+    },
+
+    syncUI(panel) {
+        const font = MailroomPrefs.get('font');
+        const scale = MailroomPrefs.get('scale');
+        panel.querySelectorAll('.mr-font-btn').forEach((b) => {
+            b.classList.toggle('active', b.dataset.font === font);
+        });
+        panel.querySelectorAll('.mr-size-btn').forEach((b) => {
+            b.classList.toggle('active', b.dataset.scale === scale);
+        });
+    }
+};
+
+window.addEventListener('mr:prefs', () => {
+    const panel = document.querySelector('.mr-widget-panel');
+    if (panel) FontControl.syncUI(panel);
+});
+
+/* ── Init PWA + font prefs on every page ──────────────────── */
+(function initAppShell() {
+    MailroomPWA.injectMeta();
+    MailroomPrefs.apply();
+    MailroomPWA.register();
+    MailroomPWA.init();
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => FontControl.build());
+    } else {
+        FontControl.build();
+    }
+})();
