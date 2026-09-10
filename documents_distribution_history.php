@@ -268,7 +268,7 @@ if (isset($_SESSION['toast'])) {
                 <!-- Stat Cards -->
                 <div class="stat-grid mb-6">
                     <div class="stat-card">
-                        <div class="stat-icon blue"><i class="fa-regular fa-file-export"></i></div>
+                        <div class="stat-icon blue"><i class="fa-solid fa-file-export"></i></div>
                         <div class="stat-label">Total Distributions</div>
                         <div class="stat-value"><?php echo number_format($summary['total_distributions']); ?></div>
                         <div class="stat-hint">Distribution records</div>
@@ -571,10 +571,18 @@ if (isset($_SESSION['toast'])) {
                     const r = data.record;
                     const ref = `DDIST-${String(r.date_distributed).replace(/-/g, '').slice(0, 8)}-${String(r.id).padStart(4, '0')}`;
                     const distDate = r.date_distributed ?
-                        new Date(r.date_distributed).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                        new Date(r.date_distributed).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        }) : 'N/A';
                     const createdAt = r.created_at ?
                         new Date(r.created_at.replace(' ', 'T')).toLocaleDateString('en-US', {
-                            year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
                         }) : 'N/A';
                     const status = r.distribution_status === 'withdrawn' ? 'withdrawn' : 'distributed';
                     const statusClass = status === 'withdrawn' ? 'badge-red' : 'badge-green';
@@ -631,7 +639,9 @@ if (isset($_SESSION['toast'])) {
             document.getElementById('deleteDocCopies').textContent = copies + ' cop' + (copies === 1 ? 'y' : 'ies') + ' will be restored to the document.';
             document.getElementById('confirmDeleteBtn').onclick = function(e) {
                 e.preventDefault();
-                submitPostForm('documents_distribution_history.php', { delete_record: id });
+                submitPostForm('documents_distribution_history.php', {
+                    delete_record: id
+                });
             };
             MailroomModal.open('deleteModal');
         }
