@@ -485,6 +485,14 @@ html[data-sidebar-collapsed="true"] .sidebar-toggle { display: none; }
 }
 .table tbody tr { transition: background 0.1s ease; }
 .table tbody tr:hover { background: var(--surface-hover); }
+.table tfoot td {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 600;
+    background: var(--bg-subtle);
+    border-top: 1px solid var(--border);
+}
 .table tbody tr:last-child td { border-bottom: none; }
 
 .table-sortable { cursor: pointer; transition: color 0.15s; }
