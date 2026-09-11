@@ -341,6 +341,10 @@ function activityDotColor($color) {
                     </p>
                 </div>
                 <div class="header-actions flex items-center gap-2 print-hide">
+                    <a href="#" onclick="document.getElementById('dashSearchToggle').classList.toggle('hidden');document.getElementById('dashSearchInput') && document.getElementById('dashSearchInput').focus();return false;" class="btn btn-soft" id="dashSearchToggleBtn">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <span class="hidden sm:inline">Search</span>
+                    </a>
                     <a href="documents.php" class="btn btn-soft">
                         <i class="fa-solid fa-file-lines"></i>
                         <span class="hidden sm:inline">Documents</span>
@@ -355,6 +359,50 @@ function activityDotColor($color) {
                         <span><?php echo $error; ?></span>
                     </div>
                 <?php endif; ?>
+
+                <!-- Global Search -->
+                <div id="dashSearchToggle" class="hidden">
+                    <div class="card mb-6">
+                        <div class="card-header">
+                            <div>
+                                <h2 class="card-title"><i class="fa-solid fa-magnifying-glass" style="margin-right:6px;color:var(--accent);"></i>Global Search</h2>
+                                <p class="card-subtitle">Find any document, parcel, newspaper, distribution, or recipient.</p>
+                            </div>
+                            <button class="modal-close" onclick="document.getElementById('dashSearchToggle').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="card-body">
+                            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+                                <div style="flex:1;position:relative;">
+                                    <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:14px;"></i>
+                                    <input type="text" id="dashSearchInput" class="input" style="padding-left:40px;padding-right:40px;"
+                                           placeholder="Search documents, parcels, newspapers, recipients..."
+                                           autocomplete="off">
+                                    <a href="#" onclick="document.getElementById('dashSearchInput').value='';renderDashSearch('');return false;"
+                                       style="position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;display:none;" id="dashSearchClear" title="Clear">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <p id="dashSearchHint" style="font-size:12px;color:var(--text-faint);margin:0;">Type at least 2 characters to search all modules.</p>
+
+                            <div id="dashResultsSection" style="display:none;margin-top:16px;">
+                                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <h3 id="dashResultsCount" style="font-size:14px;font-weight:600;color:var(--text);">0 results</h3>
+                                        <span class="pill badge-blue" id="dashSearchStatus" style="display:none;">searching...</span>
+                                    </div>
+                                    <div style="display:flex;gap:8px;" class="search-filters">
+                                        <button type="button" class="filter-chip active" data-filter="all">All</button>
+                                        <button type="button" class="filter-chip" data-filter="document">Documents</button>
+                                        <button type="button" class="filter-chip" data-filter="parcel">Parcels</button>
+                                        <button type="button" class="filter-chip" data-filter="newspaper">Newspapers</button>
+                                    </div>
+                                </div>
+                                <div id="dashResultsList" style="display:flex;flex-direction:column;gap:10px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Top Stats -->
                 <div class="stat-grid mb-6">
@@ -518,6 +566,7 @@ function activityDotColor($color) {
                                     <th class="hidden md:table-cell">Sender</th>
                                     <th>Status</th>
                                     <th>Received</th>
+                                    <th class="print-hide">Track</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -535,11 +584,16 @@ function activityDotColor($color) {
                                                 <?php endif; ?>
                                             </td>
                                             <td style="color:var(--text-secondary);"><?php echo date('M j, Y', strtotime($parcel['date_received'])); ?></td>
+                                            <td class="print-hide">
+                                                <a href="#" onclick="MailroomTracking.open('<?php echo urlencode($parcel['tracking_id']); ?>'); return false;" class="icon-btn" title="Track parcel">
+                                                    <i class="fa-solid fa-location-dot"></i>
+                                                </a>
+                                            </td>
                                         </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">
+                                        <td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">
                                             No parcel records yet.
                                         </td>
                                     </tr>
@@ -569,6 +623,106 @@ function activityDotColor($color) {
             }
             renderClock();
             setInterval(renderClock, 1000);
+        })();
+    </script>
+
+    <script>
+        (function() {
+            const input = document.getElementById('dashSearchInput');
+            if (!input) return;
+            const hint = document.getElementById('dashSearchHint');
+            const section = document.getElementById('dashResultsSection');
+            const countEl = document.getElementById('dashResultsCount');
+            const listEl = document.getElementById('dashResultsList');
+            const statusEl = document.getElementById('dashSearchStatus');
+            const clearBtn = document.getElementById('dashSearchClear');
+            let activeFilter = 'all';
+            let lastQuery = '';
+            let results = [];
+            let debounceTimer;
+            let reqSeq = 0;
+
+            document.querySelectorAll('.search-filters .filter-chip').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.search-filters .filter-chip').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    activeFilter = this.dataset.filter;
+                    renderResults();
+                });
+            });
+
+            input.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                const value = this.value.trim();
+                clearBtn.style.display = value ? 'block' : 'none';
+                if (value.length >= 2) {
+                    hint.style.display = 'none';
+                    debounceTimer = setTimeout(() => runSearch(value), 300);
+                } else {
+                    hint.style.display = 'block';
+                    lastQuery = '';
+                    results = [];
+                    section.style.display = 'none';
+                }
+            });
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = this.value.trim();
+                    if (value.length >= 2) runSearch(value);
+                }
+            });
+
+            function runSearch(q) {
+                const seq = ++reqSeq;
+                lastQuery = q;
+                section.style.display = 'block';
+                countEl.textContent = 'Searching...';
+                statusEl.style.display = 'inline-flex';
+                fetch('search_api.php?q=' + encodeURIComponent(q))
+                    .then(r => r.json())
+                    .then(data => {
+                        if (seq !== reqSeq) return;
+                        statusEl.style.display = 'none';
+                        results = (data && data.results) || [];
+                        renderResults();
+                    })
+                    .catch(() => {
+                        if (seq !== reqSeq) return;
+                        statusEl.style.display = 'none';
+                        results = [];
+                        countEl.textContent = '0 results';
+                        listEl.innerHTML = '<div class="alert alert-red">Failed to load search results.</div>';
+                    });
+            }
+
+            function renderResults() {
+                const filtered = results.filter(r => activeFilter === 'all' || r.type === activeFilter || r.type.startsWith(activeFilter));
+                countEl.textContent = filtered.length + ' result' + (filtered.length === 1 ? '' : 's') + ' found';
+                if (filtered.length === 0) {
+                    listEl.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
+                            <div class="empty-state-title">No results found for "${esc(lastQuery)}"</div>
+                            <div class="empty-state-text">Try different keywords or check your spelling.</div>
+                        </div>`;
+                    return;
+                }
+                const colorClasses = { green: 'badge-green', blue: 'badge-blue', orange: 'badge-orange', red: 'badge-red', gray: 'badge-gray' };
+                listEl.innerHTML = filtered.map(r => `
+                    <a href="${r.url}" class="search-result-item" data-type="${r.type}">
+                        <div class="search-result-icon ${r.color}"><i class="fa-solid ${r.icon}"></i></div>
+                        <div style="flex:1;min-width:0;">
+                            <div class="search-result-title">${esc(r.title)}</div>
+                            <div class="search-result-detail">${esc(r.detail)}</div>
+                        </div>
+                        <div style="text-align:right;flex-shrink:0;">
+                            <div class="search-result-meta">${esc(r.meta || '')}</div>
+                            ${r.badge ? `<span class="badge ${colorClasses[r.color] || 'badge-gray'}">${esc(r.badge)}</span>` : ''}
+                        </div>
+                    </a>`).join('');
+            }
         })();
     </script>
     <script src="assets/app.js"></script>

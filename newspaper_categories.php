@@ -3,6 +3,7 @@
 include "./config/db.php";
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 $message = '';
 $error = '';
@@ -17,6 +18,8 @@ if (isset($_POST['save'])) {
         $stmt->bind_param("s", $name);
 
         if ($stmt->execute()) {
+            $id = (int)$conn->insert_id;
+            audit_log('create', 'newspaper_category', $id, "Created category '$name'");
             $message = "Category added successfully!";
         } else {
             $error = "Error adding category.";
@@ -31,9 +34,16 @@ if (isset($_POST['save'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
     csrf_check_post();
     $id = (int)$_POST['delete_category'];
+    $name_stmt = $conn->prepare("SELECT category_name FROM newspaper_categories WHERE id = ?");
+    $name_stmt->bind_param("i", $id);
+    $name_stmt->execute();
+    $name_row = $name_stmt->get_result()->fetch_assoc();
+    $name_stmt->close();
+    $cat_name = $name_row['category_name'] ?? '';
     $stmt = $conn->prepare("DELETE FROM newspaper_categories WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
+        audit_log('delete', 'newspaper_category', $id, "Deleted category '$cat_name'");
         $message = "Category deleted successfully!";
     } else {
         $error = "Error deleting category.";

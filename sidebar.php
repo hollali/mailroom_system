@@ -70,6 +70,10 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
         </a>
 
         <div class="nav-group-label"><span>System</span></div>
+        <a href="import.php" class="nav-link <?php echo $current_page == 'import.php' ? 'active' : ''; ?>">
+            <i class="fa-solid fa-file-import"></i>
+            <span class="nav-text">Data Import</span>
+        </a>
         <a href="settings.php" class="nav-link <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
             <i class="fa-solid fa-gear"></i>
             <span class="nav-text">Settings</span>

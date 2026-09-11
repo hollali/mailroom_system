@@ -994,6 +994,66 @@ html[data-sidebar-collapsed="true"] .sidebar-toggle { display: none; }
 .quick-action:hover .quick-action-icon { background: var(--accent); color: #fff; }
 .quick-action-label { font-size: 12px; font-weight: 600; color: var(--text); }
 
+/* ── Global search ───────────────────────────────────────── */
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.15s ease;
+}
+.search-result-item:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+.search-result-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.search-result-icon.green { background: var(--green-soft); color: var(--green); }
+.search-result-icon.blue { background: var(--blue-soft); color: var(--blue); }
+.search-result-icon.orange { background: var(--orange-soft); color: var(--orange); }
+.search-result-icon.red { background: var(--red-soft); color: var(--red); }
+.search-result-icon.gray { background: var(--gray-soft); color: var(--gray); }
+.search-result-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.search-result-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+.search-result-meta {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-bottom: 4px;
+}
+.search-filters .filter-chip { cursor: pointer; }
+.search-filters .filter-chip.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
 /* ── Alert / notice ──────────────────────────────────────── */
 .alert {
     display: flex;
@@ -1250,4 +1310,108 @@ html[data-sidebar-collapsed="true"] .sidebar-toggle { display: none; }
 }
 @media (max-width: 640px) {
     .mr-widget { right: 14px; bottom: 14px; }
+}
+
+/* ── Parcel Tracking Modal ─────────────────────────────── */
+.track-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 18px;
+}
+.track-meta-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-muted, #8b95a5);
+}
+.track-meta-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 2px;
+}
+.track-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 18px;
+    margin-bottom: 20px;
+}
+@media (max-width: 520px) {
+    .track-info-grid { grid-template-columns: 1fr; }
+}
+.track-timeline {
+    position: relative;
+    padding-left: 4px;
+}
+.track-step {
+    display: flex;
+    gap: 14px;
+    padding: 10px 2px;
+    position: relative;
+}
+.track-step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 34px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--border);
+}
+.track-step-icon {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-subtle);
+    border: 2px solid var(--border);
+    color: var(--text-faint);
+    font-size: 14px;
+    z-index: 1;
+}
+.track-step.done .track-step-icon {
+    background: var(--success, #22c55e);
+    border-color: var(--success, #22c55e);
+    color: #fff;
+}
+.track-step.current .track-step-icon {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.15);
+}
+.track-step-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+}
+.track-step.done .track-step-title { color: var(--text-secondary); }
+.track-step.current .track-step-title { color: var(--accent); }
+.track-step-detail {
+    font-size: 12px;
+    color: var(--text-muted, #8b95a5);
+    margin-top: 1px;
+}
+
+/* ── Print Receipt Modal ───────────────────────────────── */
+.receipt-dialog {
+    max-width: 720px;
+    padding: 0;
+}
+.receipt-dialog .modal-body {
+    padding: 0;
+}
+@media print {
+    .receipt-dialog .modal-body iframe { height: auto !important; }
 }

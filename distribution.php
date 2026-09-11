@@ -2,6 +2,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for toast messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -81,6 +82,8 @@ if (isset($_POST['submit'])) {
 
         // Commit transaction
         $conn->commit();
+
+        audit_log('distribute', 'document', $document_id, "Distributed $total_requested copies of '" . addslashes($document['document_name']) . "' on $date_distributed", 'System');
 
         $_SESSION['toast'] = [
             'type' => 'success',

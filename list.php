@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -126,6 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_newspaper_submit']
     $stmt->bind_param("ssissi", $newspaper_name, $newspaper_number, $category_id, $date_received, $received_by, $copies_received);
 
     if ($stmt->execute()) {
+        $id = (int)$stmt->insert_id;
+        audit_log('create', 'newspaper', $id, "Added newspaper '$newspaper_name' ($newspaper_number) - $copies_received copies", $received_by);
         setToast('success', "Newspaper added successfully! Issue #: $newspaper_number");
     } else {
         setToast('error', "Error adding newspaper: " . $conn->error);
@@ -151,9 +154,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_newspaper'])) 
     if ($row['count'] > 0) {
         setToast('error', "Cannot delete: This newspaper has been distributed");
     } else {
+        $name_stmt = $conn->prepare("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
+        $paper_name = $name_row['newspaper_name'] ?? '';
+        $paper_issue = $name_row['newspaper_number'] ?? '';
+
         $stmt = $conn->prepare("DELETE FROM newspapers WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
+            audit_log('delete', 'newspaper', $id, "Deleted newspaper '$paper_name' ($paper_issue)");
             setToast('success', "Newspaper deleted successfully!");
         } else {
             setToast('error', "Error deleting newspaper: " . $conn->error);
@@ -175,6 +187,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
     $stmt->bind_param("ii", $available_copies, $id);
 
     if ($stmt->execute()) {
+        $name_stmt = $conn->prepare("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
+        audit_log('update', 'newspaper', $id, "Updated newspaper '{$name_row['newspaper_name']}' ({$name_row['newspaper_number']})", 'System');
         // Update status based on available copies
         if ($available_copies == 0) {
             $status_stmt = $conn->prepare("UPDATE newspapers SET status = 'distributed' WHERE id = ?");
@@ -201,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
     csrf_check_post();
     $id = (int)$_POST['toggle_status'];
-    $stmt = $conn->prepare("SELECT status, available_copies FROM newspapers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT status, available_copies, newspaper_name FROM newspapers WHERE id = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -219,7 +237,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
 
         $update = $conn->prepare("UPDATE newspapers SET status = ? WHERE id = ?");
         $update->bind_param('si', $new_status, $id);
-        $update->execute();
+        if ($update->execute()) {
+            $audit_action = $new_status === 'archived' ? 'Archived' : 'Unarchived';
+            audit_log('update', 'newspaper', $id, "$audit_action newspaper '{$paper['newspaper_name']}'", 'System');
+        }
         $update->close();
     } else {
         setToast('error', 'Invalid newspaper selected.');

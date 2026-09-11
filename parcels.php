@@ -2,6 +2,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 $message = '';
@@ -35,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 
     if ($stmt->execute()) {
+        $new_id = $conn->insert_id;
+        audit_log('receive', 'parcel', $new_id, "Received parcel: $description from $sender addressed to $addressed_to (Tracking: $tracking_id)", $received_by);
         echo json_encode(['success' => true, 'message' => "Parcel received successfully! Tracking ID: $tracking_id"]);
         exit;
     } else {
@@ -83,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $stmt->bind_param("ssssi", $description, $sender, $addressed_to, $received_by, $parcel_id);
 
     if ($stmt->execute()) {
+        audit_log('update', 'parcel', $parcel_id, "Updated parcel " . $parcel['tracking_id'] . ": description/sender/recipient details modified", $received_by);
         echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' updated successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Update failed: ' . $conn->error]);
@@ -131,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $delete_received_stmt->close();
 
         $conn->commit();
+        audit_log('delete', 'parcel', $parcel_id, "Deleted parcel " . $parcel['tracking_id'] . " (" . $parcel['description'] . ") including any pickup record");
         echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' deleted successfully']);
     } catch (Exception $e) {
         $conn->rollback();
@@ -141,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 }
 
 // Handle pickup
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id']) && ($_POST['action'] ?? '') !== 'update_delivery_status') {
     csrf_check_post();
     $parcel_id = (int)$_POST['parcel_id'];
     $picked_by = $_POST['picked_by'];
@@ -170,6 +175,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
             }
 
             if ($stmt->execute()) {
+                // Set delivery status to picked
+                $ds_upd = $conn->prepare("UPDATE parcels_received SET delivery_status = 'picked' WHERE id = ?");
+                $ds_upd->bind_param("i", $parcel_id);
+                $ds_upd->execute();
+                $ds_upd->close();
+                audit_log('pickup', 'parcel', $parcel_id, "Parcel #$parcel_id picked up by $picked_by (Phone: {$phone_number}, Designation: {$designation})", $picked_by);
                 echo json_encode(['success' => true, 'message' => "Parcel picked up successfully!"]);
                 exit;
             } else {
@@ -184,6 +195,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
         echo json_encode(['success' => false, 'message' => "Parcel not found!"]);
         exit;
     }
+}
+
+// Handle delivery status update
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'update_delivery_status') {
+    csrf_check_post();
+    header('Content-Type: application/json');
+
+    $parcel_id_ds = isset($_POST['parcel_id']) ? (int)$_POST['parcel_id'] : 0;
+    $new_status = trim($_POST['delivery_status'] ?? '');
+
+    $valid_statuses = ['received', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'picked'];
+    if ($parcel_id_ds <= 0 || !in_array($new_status, $valid_statuses)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid parcel or status']);
+        exit;
+    }
+
+    // Check parcel exists and hasn't been picked up (picked parcels are final)
+    $check_stmt = $conn->prepare("
+        SELECT pr.id, pr.tracking_id, pp.id AS pickup_id
+        FROM parcels_received pr
+        LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
+        WHERE pr.id = ?
+    ");
+    $check_stmt->bind_param("i", $parcel_id_ds);
+    $check_stmt->execute();
+    $parcel_ds = $check_stmt->get_result()->fetch_assoc();
+    $check_stmt->close();
+
+    if (!$parcel_ds) {
+        echo json_encode(['success' => false, 'message' => 'Parcel not found']);
+        exit;
+    }
+
+    if (!empty($parcel_ds['pickup_id']) && $new_status !== 'picked') {
+        echo json_encode(['success' => false, 'message' => 'Parcel was already picked up. Its status is final.']);
+        exit;
+    }
+
+    $upd = $conn->prepare("UPDATE parcels_received SET delivery_status = ? WHERE id = ?");
+    $upd->bind_param("si", $new_status, $parcel_id_ds);
+    if ($upd->execute()) {
+        audit_log('status_change', 'parcel', $parcel_id_ds, "Delivery status for " . $parcel_ds['tracking_id'] . " changed to " . ucwords(str_replace('_', ' ', $new_status)));
+        echo json_encode(['success' => true, 'message' => 'Delivery status updated to ' . ucwords(str_replace('_', ' ', $new_status))]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Update failed: ' . $conn->error]);
+    }
+    $upd->close();
+    exit;
 }
 
 // Get statistics
@@ -264,6 +323,7 @@ $recent_parcels = $conn->query("
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/app.css">
+    <meta name="csrf-token" content="<?php echo csrf_token(); ?>">
 </head>
 
 <body>
@@ -283,6 +343,10 @@ $recent_parcels = $conn->query("
                     <p class="page-header-subtitle">Receive and track parcels with pickup information.</p>
                 </div>
                 <div class="header-actions flex items-center gap-2 print-hide">
+                    <a href="#" onclick="MailroomTracking.open(); return false;" class="btn btn-soft" title="Track parcel by tracking ID">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <span class="hidden sm:inline">Track</span>
+                    </a>
                     <div class="dropdown">
                         <button class="btn btn-soft" onclick="toggleDropdown(this)">
                             <i class="fa-solid fa-arrow-up-right-from-square"></i>
@@ -420,14 +484,16 @@ $recent_parcels = $conn->query("
                                                 </td>
                                                 <td class="hidden md:table-cell"><?php echo htmlspecialchars($parcel['received_by']); ?></td>
                                                 <td>
-                                                    <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <span class="badge badge-orange">Pending</span>
-                                                    <?php else: ?>
-                                                        <span class="badge badge-green">Picked Up</span>
-                                                    <?php endif; ?>
+                                                    <?php echo parcelStatusBadge($parcel['delivery_status'] ?? 'received', $parcel['status'] == 'Picked Up'); ?>
                                                 </td>
                                                 <td>
                                                     <div class="row-actions">
+                                                        <a href="#" onclick="MailroomTracking.open('<?php echo urlencode($parcel['tracking_id']); ?>'); return false;" class="icon-btn" title="View Tracking Page">
+                                                            <i class="fa-solid fa-location-dot"></i>
+                                                        </a>
+                                                        <a href="#" onclick="MailroomReceipt.open('parcel', <?php echo $parcel['id']; ?>); return false;" class="icon-btn" title="Print Receipt">
+                                                            <i class="fa-solid fa-print"></i>
+                                                        </a>
                                                         <button class="icon-btn" onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)" title="View Details">
                                                             <i class="fa-regular fa-eye"></i>
                                                         </button>
@@ -579,11 +645,7 @@ $recent_parcels = $conn->query("
                                                     <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></span>
                                                 </td>
                                                 <td>
-                                                    <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <span class="badge badge-orange">Pending</span>
-                                                    <?php else: ?>
-                                                        <span class="badge badge-green">Picked Up</span>
-                                                    <?php endif; ?>
+                                                    <?php echo parcelStatusBadge($parcel['delivery_status'] ?? 'received', $parcel['status'] == 'Picked Up'); ?>
                                                 </td>
                                                 <td>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
@@ -756,9 +818,25 @@ $recent_parcels = $conn->query("
                                                 </td>
                                                 <td>
                                                     <?php if ($parcel['status'] == 'Pending'): ?>
-                                                        <span class="badge badge-orange">Pending</span>
+                                                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                                            <?php echo parcelStatusBadge($parcel['delivery_status'] ?? 'received', false); ?>
+                                                            <div class="dropdown">
+                                                                <button type="button" class="icon-btn" title="Update delivery status" onclick="MailroomDropdown.toggle(this)">
+                                                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                                                </button>
+                                                                <div class="dropdown-menu">
+                                                                    <?php foreach (parcelDeliveryStatuses() as $ds): ?>
+                                                                        <?php if ($ds === 'picked') continue; ?>
+                                                                        <button type="button" class="dropdown-item" onclick="updateDeliveryStatus(<?php echo $parcel['id']; ?>, '<?php echo $ds; ?>')">
+                                                                            <i class="fa-solid <?php echo $ds === 'received' ? 'fa-inbox' : ($ds === 'in_transit' ? 'fa-truck-moving' : ($ds === 'out_for_delivery' ? 'fa-truck-fast' : ($ds === 'delivered' ? 'fa-circle-check' : 'fa-rotate-left'))); ?>"></i>
+                                                                            <?php echo ucwords(str_replace('_', ' ', $ds)); ?>
+                                                                        </button>
+                                                                    <?php endforeach; ?>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     <?php else: ?>
-                                                        <span class="badge badge-green">Picked Up</span>
+                                                        <span class="badge badge-green"><i class="fa-solid fa-check"></i> Picked Up</span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="hidden md:table-cell">
@@ -773,6 +851,12 @@ $recent_parcels = $conn->query("
                                                 </td>
                                                 <td>
                                                     <div class="row-actions">
+                                                        <a href="#" onclick="MailroomTracking.open('<?php echo urlencode($parcel['tracking_id']); ?>'); return false;" class="icon-btn" title="View Tracking Page">
+                                                            <i class="fa-solid fa-location-dot"></i>
+                                                        </a>
+                                                        <a href="#" onclick="MailroomReceipt.open('parcel', <?php echo $parcel['id']; ?>); return false;" class="icon-btn" title="Print Receipt">
+                                                            <i class="fa-solid fa-print"></i>
+                                                        </a>
                                                         <button class="icon-btn" onclick="viewParcelDetails(<?php echo htmlspecialchars(json_encode($parcel)); ?>)" title="View Details">
                                                             <i class="fa-regular fa-eye"></i>
                                                         </button>
@@ -1196,6 +1280,31 @@ $recent_parcels = $conn->query("
                         showToast(data.message, 'success');
                         closePickupModal();
                         setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred', 'error');
+                });
+        }
+
+        function updateDeliveryStatus(parcelId, status) {
+            const formData = new FormData();
+            formData.append('action', 'update_delivery_status');
+            formData.append('parcel_id', parcelId);
+            formData.append('delivery_status', status);
+            formData.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
+
+            fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        setTimeout(() => location.reload(), 800);
                     } else {
                         showToast(data.message, 'error');
                     }

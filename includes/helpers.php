@@ -94,3 +94,29 @@ function getDocumentSerialDisplay(array $document, $hasSerialNumberColumn)
     }
     return 'DOC-' . str_pad((string)($document['id'] ?? 0), 6, '0', STR_PAD_LEFT);
 }
+
+/**
+ * Map a parcel delivery status to a badge class + label
+ */
+function parcelStatusBadge($delivery_status, $picked = false)
+{
+    if ($picked) {
+        return '<span class="badge badge-green"><i class="fa-solid fa-check"></i> Picked Up</span>';
+    }
+    return match($delivery_status) {
+        'in_transit' => '<span class="badge badge-blue"><i class="fa-solid fa-truck-moving"></i> In Transit</span>',
+        'out_for_delivery' => '<span class="badge badge-orange"><i class="fa-solid fa-truck-fast"></i> Out for Delivery</span>',
+        'delivered' => '<span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> Delivered</span>',
+        'returned' => '<span class="badge badge-red"><i class="fa-solid fa-rotate-left"></i> Returned</span>',
+        'picked' => '<span class="badge badge-green"><i class="fa-solid fa-box-open"></i> Picked Up</span>',
+        default => '<span class="badge badge-orange"><i class="fa-solid fa-inbox"></i> Received</span>'
+    };
+}
+
+/**
+ * List of valid parcel delivery statuses
+ */
+function parcelDeliveryStatuses()
+{
+    return ['received', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'picked'];
+}

@@ -3,6 +3,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for toast messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -95,6 +96,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
 
     if ($insert_stmt->execute()) {
         $new_id = $conn->insert_id;
+        audit_log('create', 'document', $new_id, "Added document '" . addslashes($document_name) . "' - $copies_received copies from $origin", 'System');
         $success_message = 'Document added successfully';
         if ($serial_number !== null) {
             $success_message .= ' with serial number: ' . $serial_number;
@@ -173,6 +175,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'edit_document') {
     }
 
     if ($stmt->execute()) {
+        audit_log('update', 'document', $id, "Updated document '" . addslashes($document_name) . "'", 'System');
         echo json_encode(['success' => true, 'message' => 'Document updated successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);
@@ -192,10 +195,17 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'delete_document') 
         exit();
     }
 
+    $name_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+    $name_stmt->bind_param("i", $id);
+    $name_stmt->execute();
+    $doc_delete_name = $name_stmt->get_result()->fetch_assoc()['document_name'] ?? '';
+    $name_stmt->close();
+
     $stmt = $conn->prepare("DELETE FROM documents WHERE id = ?");
     $stmt->bind_param("i", $id);
 
     if ($stmt->execute()) {
+        audit_log('delete', 'document', $id, "Deleted document '" . addslashes($doc_delete_name) . "'");
         echo json_encode(['success' => true, 'message' => 'Document deleted successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);

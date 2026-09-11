@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 // Handle Delete Distribution
@@ -60,6 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
         $stmt->close();
 
         $conn->commit();
+
+        audit_log('delete', 'distribution', $id, "Deleted newspaper distribution #$id to '{$dist['distributed_to']}'", 'System');
 
         $_SESSION['toast'] = [
             'type' => 'success',
@@ -420,6 +423,9 @@ if (isset($_SESSION['toast'])) {
                                             <td class="hidden md:table-cell table-cell-subtitle"><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
                                             <td class="no-print">
                                                 <div class="row-actions" style="justify-content:flex-end;">
+                                                    <a href="#" onclick="MailroomReceipt.open('newsdist', <?php echo $row['id']; ?>); return false;" class="icon-btn" title="Print slip">
+                                                        <i class="fa-solid fa-print"></i>
+                                                    </a>
                                                     <button class="icon-btn primary" onclick="viewDistribution(<?php echo $row['id']; ?>)" title="View">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </button>

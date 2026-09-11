@@ -10,6 +10,7 @@ if (session_status() == PHP_SESSION_NONE) {
 require_once 'config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Create connection with error handling
 function getConnection()
@@ -287,6 +288,9 @@ if (isset($_POST['ajax_action'])) {
             echo json_encode(['success' => false, 'message' => 'Document type name is required!']);
         } else {
             $result = createDocumentType($type_name, $description);
+            if ($result['success']) {
+                audit_log('create', 'doc_type', $conn->insert_id, "Created document type '" . addslashes($type_name) . "'");
+            }
             echo json_encode($result);
         }
         exit();
@@ -301,6 +305,9 @@ if (isset($_POST['ajax_action'])) {
             echo json_encode(['success' => false, 'message' => 'Document type name is required!']);
         } else {
             $result = updateDocumentType($id, $type_name, $description);
+            if ($result['success']) {
+                audit_log('update', 'doc_type', $id, "Updated document type '" . addslashes($type_name) . "'");
+            }
             echo json_encode($result);
         }
         exit();
@@ -308,7 +315,12 @@ if (isset($_POST['ajax_action'])) {
 
     if ($_POST['ajax_action'] == 'delete') {
         $id = $_POST['id'];
+        $del_type = getDocumentTypeById($id);
+        $del_type_name = $del_type['type_name'] ?? '';
         $result = deleteDocumentType($id);
+        if ($result['success']) {
+            audit_log('delete', 'doc_type', $id, "Deleted document type '" . addslashes($del_type_name) . "'");
+        }
         echo json_encode($result);
         exit();
     }
@@ -339,6 +351,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['ajax_action'])) {
             setFlashMessage('danger', 'Document type name is required!');
         } else {
             $result = createDocumentType($type_name, $description);
+            if ($result['success']) {
+                audit_log('create', 'doc_type', $conn->insert_id, "Created document type '" . addslashes($type_name) . "'");
+            }
             setFlashMessage($result['success'] ? 'success' : 'danger', $result['message']);
             if ($result['success']) {
                 header('Location: document_types.php?action=list');
@@ -354,6 +369,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['ajax_action'])) {
             setFlashMessage('danger', 'Document type name is required!');
         } else {
             $result = updateDocumentType($id, $type_name, $description);
+            if ($result['success']) {
+                audit_log('update', 'doc_type', $id, "Updated document type '" . addslashes($type_name) . "'");
+            }
             setFlashMessage($result['success'] ? 'success' : 'danger', $result['message']);
             if ($result['success']) {
                 header('Location: document_types.php?action=list');
@@ -365,7 +383,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['ajax_action'])) {
 
 // Handle POST requests for delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'delete' && isset($_POST['id'])) {
-    $result = deleteDocumentType((int)$_POST['id']);
+    $del_id = (int)$_POST['id'];
+    $del_type = getDocumentTypeById($del_id);
+    $del_type_name = $del_type['type_name'] ?? '';
+    $result = deleteDocumentType($del_id);
+    if ($result['success']) {
+        audit_log('delete', 'doc_type', $del_id, "Deleted document type '" . addslashes($del_type_name) . "'");
+    }
     setFlashMessage($result['success'] ? 'success' : 'danger', $result['message']);
     header('Location: document_types.php?action=list');
     exit();
