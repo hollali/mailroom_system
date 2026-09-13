@@ -431,7 +431,7 @@ unset($_SESSION['toast']);
                 </div>
             </div>
             <form method="post" action="audit_trail.php" class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;">
-                <?php echo csrf_field(); ?>
+                <?php csrf_field(); ?>
                 <button type="button" onclick="MailroomModal.close('clearAuditModal')" class="btn btn-soft">Cancel</button>
                 <button type="submit" name="clear_audit" value="1" class="btn btn-danger">
                     <i class="fa-regular fa-trash-can"></i> Clear Log

@@ -586,7 +586,7 @@ function formatBytes(int $bytes, int $precision = 2)
                     </div>
                     <div class="card-body" style="padding:20px;">
                         <form method="post" action="settings.php" class="flex items-center gap-3 flex-wrap">
-                            <?php echo csrf_field(); ?>
+                            <?php csrf_field(); ?>
                             <input type="hidden" name="action" value="save_operator">
                             <input type="text" name="operator_name" class="input" style="min-width:240px;" maxlength="100" placeholder="e.g. Library Staff" value="<?php echo htmlspecialchars(audit_user()); ?>" autocomplete="off">
                             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Operator</button>
