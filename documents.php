@@ -3,6 +3,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for toast messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -100,6 +101,8 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
             $success_message .= ' with serial number: ' . $serial_number;
         }
 
+        audit_log($conn, 'documents', 'create', $new_id, $document_name, 'Received "' . $document_name . '" (' . $copies_received . ' cop' . ($copies_received === 1 ? 'y' : 'ies') . ').');
+
         echo json_encode([
             'success' => true,
             'message' => $success_message,
@@ -152,6 +155,16 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'edit_document') {
         exit();
     }
 
+    $before_stmt = $conn->prepare("SELECT document_name, type_id, origin, copies_received, date_received FROM documents WHERE id = ?");
+    $before_stmt->bind_param("i", $id);
+    $before_stmt->execute();
+    $before_doc = $before_stmt->get_result()->fetch_assoc();
+    $before_stmt->close();
+    if (!$before_doc) {
+        echo json_encode(['success' => false, 'message' => 'Document not found']);
+        exit();
+    }
+
     // Check if new total copies is less than distributed copies
     $check_dist = $conn->prepare("SELECT COALESCE(SUM(number_distributed), 0) as distributed FROM document_distribution WHERE document_id = ?");
     $check_dist->bind_param("i", $id);
@@ -173,6 +186,14 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'edit_document') {
     }
 
     if ($stmt->execute()) {
+        $changes = audit_diff($before_doc, [
+            'document_name'   => $document_name,
+            'type_id'         => $type_id,
+            'origin'          => $origin,
+            'copies_received' => $copies_received,
+            'date_received'   => $date_received_only,
+        ]);
+        audit_log($conn, 'documents', 'update', $id, $document_name, 'Updated document details.', $changes);
         echo json_encode(['success' => true, 'message' => 'Document updated successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);
@@ -192,10 +213,18 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'delete_document') 
         exit();
     }
 
+    $del_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+    $del_stmt->bind_param("i", $id);
+    $del_stmt->execute();
+    $del_doc = $del_stmt->get_result()->fetch_assoc();
+    $del_stmt->close();
+    $delete_name = $del_doc ? $del_doc['document_name'] : '#' . $id;
+
     $stmt = $conn->prepare("DELETE FROM documents WHERE id = ?");
     $stmt->bind_param("i", $id);
 
     if ($stmt->execute()) {
+        audit_log($conn, 'documents', 'delete', $id, $delete_name, 'Deleted document "' . $delete_name . '" and its distribution records.');
         echo json_encode(['success' => true, 'message' => 'Document deleted successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $stmt->error]);
@@ -719,7 +748,10 @@ if ($documents_result) {
 
             fetch('<?php echo $_SERVER['PHP_SELF']; ?>', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: `ajax_action=add_document&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
                 })
                 .then(response => response.json())
@@ -941,7 +973,10 @@ if ($documents_result) {
         function openViewModal(id) {
             fetch('documents.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: `ajax_action=get_document&id=${id}`
                 })
                 .then(response => response.json())
@@ -987,7 +1022,10 @@ if ($documents_result) {
         function openEditModal(id) {
             fetch('documents.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: `ajax_action=get_document&id=${id}`
                 })
                 .then(response => response.json())
@@ -1038,7 +1076,10 @@ if ($documents_result) {
 
             fetch('documents.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: `ajax_action=edit_document&id=${id}&document_name=${encodeURIComponent(document_name)}&type_id=${type_id}&origin=${encodeURIComponent(origin)}&copies_received=${copies_received}&date_received=${date_received}`
                 })
                 .then(response => response.json())
@@ -1080,7 +1121,10 @@ if ($documents_result) {
 
             fetch('documents.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: `ajax_action=delete_document&id=${id}`
                 })
                 .then(response => response.json())

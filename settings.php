@@ -2,6 +2,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 $error = '';
@@ -122,6 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $error = "Failed to create backup. Check directory permissions.";
                         }
                     }
+
+                    if (empty($error)) {
+                        audit_log($conn, 'settings', 'backup', null, 'Backup', 'Backup created: ' . $filename);
+                    }
                 } catch (Exception $e) {
                     $error = "Backup failed: " . $e->getMessage();
                 }
@@ -141,6 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         file_put_contents($log_file, json_encode(array_values($log), JSON_PRETTY_PRINT));
                     }
                     $message = "Backup deleted: $filename";
+                    audit_log($conn, 'settings', 'delete', null, 'Backup ' . $filename, 'Backup file deleted.');
                 } else {
                     $error = "Backup file not found.";
                 }
@@ -150,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $filename = basename($_POST['filename'] ?? '');
                 $filepath = $backup_dir . '/' . $filename;
                 if (file_exists($filepath) && strpos($filename, 'backup_') === 0) {
+                    audit_log($conn, 'settings', 'restore_db', null, 'Backup ' . $filename, 'Database restore initiated from backup file.');
                     $host = $host ?? 'localhost';
                     $user = $user ?? 'root';
                     $password = $password ?? '';
@@ -178,12 +185,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'save_operator':
+                $operator = trim($_POST['operator_name'] ?? '');
+                $old_operator = audit_user();
+                if ($operator === '') {
+                    $operator = 'Library Staff';
+                }
+                if ($operator !== $old_operator) {
+                    $_SESSION['app_user'] = $operator;
+                    audit_log($conn, 'settings', 'update', null, 'Operator', 'Operator identity changed from "' . $old_operator . '" to "' . $operator . '".');
+                    $message = "Operator name saved as: $operator";
+                } else {
+                    $message = "Operator name unchanged.";
+                }
+                break;
+
             case 'save_settings':
                 $settings['auto_backup'] = isset($_POST['auto_backup']);
                 $settings['backup_interval'] = $_POST['backup_interval'] ?? 'daily';
                 $settings['retention_days'] = (int)($_POST['retention_days'] ?? 30);
                 $settings['max_backups'] = (int)($_POST['max_backups'] ?? 10);
                 file_put_contents($settings_file, json_encode($settings, JSON_PRETTY_PRINT));
+                audit_log($conn, 'settings', 'update', null, 'Backup settings', 'Automatic backup settings updated.');
                 $message = "Settings saved successfully.";
                 break;
         }
@@ -553,6 +576,23 @@ function formatBytes(int $bytes, int $precision = 2)
 
                 <!-- System Pane -->
                 <div id="settingsSystem" class="hidden">
+                <!-- Operator Identity -->
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Operator Identity</div>
+                            <div class="card-subtitle">Name recorded on the audit trail for actions you perform.</div>
+                        </div>
+                    </div>
+                    <div class="card-body" style="padding:20px;">
+                        <form method="post" action="settings.php" class="flex items-center gap-3 flex-wrap">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="action" value="save_operator">
+                            <input type="text" name="operator_name" class="input" style="min-width:240px;" maxlength="100" placeholder="e.g. Library Staff" value="<?php echo htmlspecialchars(audit_user()); ?>" autocomplete="off">
+                            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Operator</button>
+                        </form>
+                    </div>
+                </div>
                 <!-- Database Connection Info -->
                 <div class="card" style="margin-top:20px;">
                     <div class="card-header">

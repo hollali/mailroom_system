@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 // Handle Delete Distribution
@@ -15,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
 
     try {
         // 1. Get newspaper IDs associated with this distribution to restore stock
-        $stmt = $conn->prepare("SELECT newspaper_id, newspaper_ids FROM distribution WHERE id = ?");
+        $stmt = $conn->prepare("SELECT newspaper_id, newspaper_ids, distributed_to, date_distributed FROM distribution WHERE id = ?");
         $stmt->bind_param("i", $id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -60,6 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
         $stmt->close();
 
         $conn->commit();
+
+        audit_log($conn, 'distribution', 'delete', $id, $dist['distributed_to'] ?? ('#' . $id), 'Deleted newspaper distribution record #' . $id . ' and restored stock.');
 
         $_SESSION['toast'] = [
             'type' => 'success',

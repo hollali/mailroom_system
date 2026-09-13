@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 // Handle Distribution Form Submission
@@ -137,6 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
 
             if ($stmt->execute()) {
                 $success_recipients[] = $individual_name;
+                audit_log($conn, 'distribution', 'distribute', $conn->insert_id, $individual_name, 'Distributed ' . $current_success_count . ' newspaper' . ($current_success_count === 1 ? '' : 's') . ' to ' . $individual_name . ': ' . $current_newspapers_str . '.');
                 // Deduct copies and update status for each distributed paper
                 foreach ($actual_distributed_ids as $pid) {
                     $conn->query("UPDATE newspapers SET 

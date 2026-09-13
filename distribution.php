@@ -2,6 +2,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for toast messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -61,6 +62,7 @@ if (isset($_POST['submit'])) {
                 if (!$stmt->execute()) {
                     throw new Exception("Error for entry " . ($i + 1) . ": " . $stmt->error);
                 }
+                audit_log($conn, 'document_distribution', 'distribute', $conn->insert_id, $document['document_name'], 'Distributed ' . $number . ' cop' . ($number === 1 ? 'y' : 'ies') . ' of "' . $document['document_name'] . '".');
                 $stmt->close();
 
                 $success_count++;
@@ -142,6 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['withdraw_distribution
             $update_stmt->close();
 
             $conn->commit();
+            audit_log($conn, 'document_distribution', 'withdraw', $id, '#' . $id, 'Withdrew distribution record #' . $id . ' and restored ' . $distribution['number_distributed'] . ' cop' . ($distribution['number_distributed'] === 1 ? 'y' : 'ies') . ' to the document.');
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => "Distribution withdrawn and copies restored successfully!"
@@ -183,6 +186,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
         $get_stmt->close();
 
         if ($distribution) {
+            // Get document name for audit logging
+            $doc_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+            $doc_stmt->bind_param("i", $distribution['document_id']);
+            $doc_stmt->execute();
+            $doc_row = $doc_stmt->get_result()->fetch_assoc();
+            $doc_stmt->close();
+
             // Delete the distribution record
             $delete_stmt = $conn->prepare("DELETE FROM document_distribution WHERE id = ?");
             $delete_stmt->bind_param("i", $id);
@@ -202,6 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
             $update_stmt->close();
 
             $conn->commit();
+            audit_log($conn, 'document_distribution', 'delete', $id, $doc_row['document_name'] ?? ('#' . $distribution['document_id']), 'Deleted distribution record #' . $id . ' for "' . ($doc_row['document_name'] ?? '') . '" and restored ' . $distribution['number_distributed'] . ' cop' . ($distribution['number_distributed'] === 1 ? 'y' : 'ies') . '.');
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => "Distribution record deleted and copies restored successfully!"

@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
@@ -62,6 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_record'])) {
         $upd->close();
 
         $conn->commit();
+        $doc_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+        $doc_stmt->bind_param("i", $dist['document_id']);
+        $doc_stmt->execute();
+        $doc_row = $doc_stmt->get_result()->fetch_assoc();
+        $doc_stmt->close();
+        audit_log($conn, 'document_distribution', 'delete', $id, $doc_row['document_name'] ?? ('#' . $dist['document_id']), 'Deleted distribution record #' . $id . ' for "' . ($doc_row['document_name'] ?? '') . '" and restored ' . $dist['number_distributed'] . ' cop' . ($dist['number_distributed'] === 1 ? 'y' : 'ies') . '.');
         $_SESSION['toast'] = ['type' => 'success', 'message' => 'Distribution record deleted and copies restored successfully'];
     } catch (Exception $e) {
         $conn->rollback();

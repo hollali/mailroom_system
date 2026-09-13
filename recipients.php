@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 // Handle Add Recipient
@@ -17,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_recipient'])) {
         $stmt->bind_param("si", $name, $is_active);
 
         if ($stmt->execute()) {
+            audit_log($conn, 'recipients', 'create', $conn->insert_id, $name, 'Added recipient "' . $name . '".');
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => "Recipient added successfully"
@@ -57,10 +59,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_recipient'])) {
     }
 
     if (!empty($name)) {
+        $before_stmt = $conn->prepare("SELECT name, is_active FROM recipients WHERE id = ?");
+        $before_stmt->bind_param("i", $id);
+        $before_stmt->execute();
+        $before_recipient = $before_stmt->get_result()->fetch_assoc();
+        $before_stmt->close();
+
         $stmt = $conn->prepare("UPDATE recipients SET name = ?, is_active = ? WHERE id = ?");
         $stmt->bind_param("sii", $name, $is_active, $id);
 
         if ($stmt->execute()) {
+            if ($before_recipient) {
+                $changes = audit_diff(['name' => $before_recipient['name'], 'is_active' => $before_recipient['is_active']], ['name' => $name, 'is_active' => $is_active]);
+                audit_log($conn, 'recipients', 'update', $id, $name, 'Updated recipient "' . $name . '".', $changes);
+            } else {
+                audit_log($conn, 'recipients', 'update', $id, $name, 'Updated recipient "' . $name . '".');
+            }
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => "Recipient updated successfully"
@@ -114,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_recipient'])) 
         $stmt = $conn->prepare("DELETE FROM recipients WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
+            audit_log($conn, 'recipients', 'delete', $id, $name, 'Deleted recipient "' . $name . '".');
             $_SESSION['toast'] = [
                 'type' => 'success',
                 'message' => "Recipient deleted successfully"
@@ -141,6 +156,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deactivate_recipient'
     $stmt = $conn->prepare("UPDATE recipients SET is_active = 0 WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
+        $name_stmt = $conn->prepare("SELECT name FROM recipients WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
+        audit_log($conn, 'recipients', 'deactivate', $id, $name_row['name'] ?? ('#' . $id), 'Deactivated recipient "' . ($name_row['name'] ?? '') . '".');
         $_SESSION['toast'] = [
             'type' => 'success',
             'message' => "Recipient deactivated successfully"
@@ -166,6 +187,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_recipient'])
     $stmt = $conn->prepare("UPDATE recipients SET is_active = 1 WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
+        $name_stmt = $conn->prepare("SELECT name FROM recipients WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
+        audit_log($conn, 'recipients', 'activate', $id, $name_row['name'] ?? ('#' . $id), 'Activated recipient "' . ($name_row['name'] ?? '') . '".');
         $_SESSION['toast'] = [
             'type' => 'success',
             'message' => "Recipient activated successfully"

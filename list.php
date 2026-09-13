@@ -4,6 +4,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Start session for messages
 if (session_status() == PHP_SESSION_NONE) {
@@ -33,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_category_submit'])
         $stmt->bind_param("ss", $category_name, $description);
 
         if ($stmt->execute()) {
+            audit_log($conn, 'newspaper_categories', 'create', $conn->insert_id, $category_name, 'Added category "' . $category_name . '".');
             setToast('success', "Category added successfully!");
         } else {
             setToast('error', "Error adding category: " . $conn->error);
@@ -58,6 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_category_submit']
         $stmt->bind_param("ssi", $category_name, $description, $id);
 
         if ($stmt->execute()) {
+            $before_stmt = $conn->prepare("SELECT category_name, description FROM newspaper_categories WHERE id = ?");
+            $before_stmt->bind_param("i", $id);
+            $before_stmt->execute();
+            $before_cat = $before_stmt->get_result()->fetch_assoc();
+            $before_stmt->close();
+            $changes = $before_cat ? audit_diff(['category_name' => $before_cat['category_name'], 'description' => $before_cat['description']], ['category_name' => $category_name, 'description' => $description]) : null;
+            audit_log($conn, 'newspaper_categories', 'update', $id, $category_name, 'Updated category "' . $category_name . '".', $changes);
             setToast('success', "Category updated successfully!");
         } else {
             setToast('error', "Error updating category: " . $conn->error);
@@ -86,9 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
     if ($row['count'] > 0) {
         setToast('error', "Cannot delete: This category has $row[count] newspaper(s)");
     } else {
+        $name_stmt = $conn->prepare("SELECT category_name FROM newspaper_categories WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
         $stmt = $conn->prepare("DELETE FROM newspaper_categories WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
+            audit_log($conn, 'newspaper_categories', 'delete', $id, $name_row['category_name'] ?? ('#' . $id), 'Deleted category "' . ($name_row['category_name'] ?? '') . '".');
             setToast('success', "Category deleted successfully!");
         } else {
             setToast('error', "Error deleting category: " . $conn->error);
@@ -126,6 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_newspaper_submit']
     $stmt->bind_param("ssissi", $newspaper_name, $newspaper_number, $category_id, $date_received, $received_by, $copies_received);
 
     if ($stmt->execute()) {
+        audit_log($conn, 'newspapers', 'create', $conn->insert_id, $newspaper_number, 'Received "' . $newspaper_name . '" issue ' . $newspaper_number . ' (' . $copies_received . ' copies).');
         setToast('success', "Newspaper added successfully! Issue #: $newspaper_number");
     } else {
         setToast('error', "Error adding newspaper: " . $conn->error);
@@ -151,9 +167,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_newspaper'])) 
     if ($row['count'] > 0) {
         setToast('error', "Cannot delete: This newspaper has been distributed");
     } else {
+        $name_stmt = $conn->prepare("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
         $stmt = $conn->prepare("DELETE FROM newspapers WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
+            audit_log($conn, 'newspapers', 'delete', $id, $name_row['newspaper_number'] ?? ('#' . $id), 'Deleted "' . ($name_row['newspaper_name'] ?? '') . '" ' . ($name_row['newspaper_number'] ?? '') . '.');
             setToast('success', "Newspaper deleted successfully!");
         } else {
             setToast('error', "Error deleting newspaper: " . $conn->error);
@@ -174,6 +196,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
     $stmt = $conn->prepare("UPDATE newspapers SET available_copies = ? WHERE id = ?");
     $stmt->bind_param("ii", $available_copies, $id);
 
+    $paper_stmt = $conn->prepare("SELECT newspaper_name, newspaper_number, available_copies FROM newspapers WHERE id = ?");
+    $paper_stmt->bind_param("i", $id);
+    $paper_stmt->execute();
+    $paper_row = $paper_stmt->get_result()->fetch_assoc();
+    $paper_stmt->close();
+
     if ($stmt->execute()) {
         // Update status based on available copies
         if ($available_copies == 0) {
@@ -184,6 +212,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
         $status_stmt->bind_param("i", $id);
         $status_stmt->execute();
         $status_stmt->close();
+        audit_log(
+            $conn,
+            'newspapers',
+            'restock',
+            $id,
+            $paper_row['newspaper_number'] ?? ('#' . $id),
+            'Adjusted available copies for "' . ($paper_row['newspaper_name'] ?? '') . '" from ' . ($paper_row['available_copies'] ?? 0) . ' to ' . $available_copies . '.',
+            ['available_copies' => ['from' => $paper_row['available_copies'] ?? 0, 'to' => $available_copies]]
+        );
         setToast('success', "Newspaper copies updated successfully!");
     } else {
         setToast('error', "Error updating copies: " . $conn->error);
@@ -221,6 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
         $update->bind_param('si', $new_status, $id);
         $update->execute();
         $update->close();
+        audit_log($conn, 'newspapers', 'status', $id, $paper['newspaper_number'] ?? ('#' . $id), 'Changed status of "' . ($paper['newspaper_name'] ?? '') . '" from "' . $paper['status'] . '" to "' . $new_status . '".');
     } else {
         setToast('error', 'Invalid newspaper selected.');
     }

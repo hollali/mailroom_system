@@ -21,6 +21,7 @@ The Mailroom Management System streamlines the intake and distribution of all ph
 - **Organized Settings**: The Settings page is split into **Appearance**, **Backup**, and **System** tabs — your last active tab is remembered.
 - **Document Actions**: Per-row **View**, **Edit**, and **Delete** actions in the document list.
 - **Document History**: A dedicated `documents_distribution_history.php` page to track and manage past distributions.
+- **Audit Trail**: Every create / edit / delete / distribution / pickup / backup action across all modules is recorded in a `audit_logs` table and viewable on the `audit_trail.php` page — filter by module, action, operator, search term, and date range, with paginated, newest-first output and optional full-log clearing. An **Operator name** set in **Settings → System** identifies who performed each action.
 - **Data Integrity**: Foreign Key constraints with `ON DELETE CASCADE` keep history in sync when primary records are removed.
 - **Accurate Statistics**: Column-aligned totals row on the newspaper statistics table.
 - **Polished UI**: Responsive Tailwind layout, collapsible sidebar, smooth modals/drawers, and real-time toast notifications.
@@ -48,7 +49,8 @@ A guided presentation script with screenshots and talking points is available in
 | `documents_distribution_history.php` | Log of past document distributions. |
 | `document_type.php` | Document category management. |
 | `parcels.php` | Parcel receiving, tracking, and pickup. |
-| `settings.php` | Backup management, appearance/app settings (tabbed). |
+| `audit_trail.php` | Append-only audit log viewer (filters, search, pagination). |
+| `settings.php` | Backup management, appearance/app settings (tabbed), operator identity. |
 | `sidebar.php` | Shared navigation and layout component. |
 | `assets/app.css` | Design system (design tokens, component styles). |
 | `assets/app.js` | Shared JS: modals, drawers, toasts, sidebar, PWA, display controls. |
@@ -58,6 +60,7 @@ A guided presentation script with screenshots and talking points is available in
 | `images/icons/` | Generated app icons (192, 512, maskable, apple-touch). |
 | `includes/helpers.php` | Shared helper utilities. |
 | `includes/csrf.php` | CSRF token generation/validation. |
+| `includes/audit.php` | Audit logging helpers (`audit_log`, `audit_diff`, `audit_user`). |
 | `config/db.php` | Database connection (reads `.env` or environment variables). |
 | `config/mailroom_system.sql` | Core database schema (schema + integrity migrations included). |
 | `.env.example` | Template for database credentials. |
@@ -105,6 +108,7 @@ Then visit `http://localhost:8000` in your browser.
 - **Prepared Statements**: Used for all database mutations to prevent SQL injection.
 - **CSRF Protection**: Every state-changing form carries a CSRF token.
 - **Transactions**: Multi-table operations (like distribution) are wrapped in database transactions.
+- **Audit Logging**: Destructive and administrative actions are recorded with operator, IP, timestamp, and field-level change details; clearing the log itself is logged.
 - **Secrets**: Database credentials live in `.env` (gitignored); never commit real credentials.
 - **Toast Feedback**: Real-time success/error messaging using Toastify JS.
 - **Responsive Design**: Built with Tailwind CSS for mobile and desktop compatibility.

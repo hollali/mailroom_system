@@ -297,6 +297,25 @@ INSERT INTO `recipient_category_subscriptions` (`id`, `recipient_id`, `category_
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `audit_logs`
+--
+
+CREATE TABLE `audit_logs` (
+  `id` int(11) NOT NULL,
+  `action_type` varchar(50) NOT NULL,
+  `module` varchar(50) NOT NULL,
+  `entity_id` int(11) DEFAULT NULL,
+  `entity_name` varchar(200) DEFAULT NULL,
+  `description` varchar(500) DEFAULT NULL,
+  `details` text DEFAULT NULL,
+  `user` varchar(100) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Stand-in structure for view `view_distribution_by_category`
 -- (See below for the actual view)
 --
@@ -347,6 +366,16 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW 
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `audit_logs`
+--
+ALTER TABLE `audit_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_module` (`module`),
+  ADD KEY `idx_action_type` (`action_type`),
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_entity` (`module`,`entity_id`);
 
 --
 -- Indexes for table `distribution`
@@ -426,6 +455,12 @@ ALTER TABLE `recipient_category_subscriptions`
 --
 -- AUTO_INCREMENT for dumped tables
 --
+
+--
+-- AUTO_INCREMENT for table `audit_logs`
+--
+ALTER TABLE `audit_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
 -- AUTO_INCREMENT for table `distribution`

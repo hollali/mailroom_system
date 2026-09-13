@@ -10,6 +10,7 @@ if (session_status() == PHP_SESSION_NONE) {
 require_once 'config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 
 // Create connection with error handling
 function getConnection()
@@ -147,6 +148,7 @@ function createDocumentType($type_name, $description = '')
     $stmt->bind_param("ss", $type_name, $description);
 
     if ($stmt->execute()) {
+        audit_log($conn, 'document_types', 'create', $conn->insert_id, $type_name, 'Created document type "' . $type_name . '".');
         $stmt->close();
         return ['success' => true, 'message' => 'Document type created successfully!'];
     } else {
@@ -181,6 +183,12 @@ function updateDocumentType($id, $type_name, $description = '')
     $check->close();
 
     // Update type
+    $before_stmt = $conn->prepare("SELECT type_name, description FROM document_types WHERE id = ?");
+    $before_stmt->bind_param("i", $id);
+    $before_stmt->execute();
+    $before_type = $before_stmt->get_result()->fetch_assoc();
+    $before_stmt->close();
+
     $stmt = $conn->prepare("UPDATE document_types SET type_name = ?, description = ? WHERE id = ?");
     if (!$stmt) {
         return ['success' => false, 'message' => 'Error preparing update statement'];
@@ -189,6 +197,8 @@ function updateDocumentType($id, $type_name, $description = '')
     $stmt->bind_param("ssi", $type_name, $description, $id);
 
     if ($stmt->execute()) {
+        $changes = $before_type ? audit_diff(['type_name' => $before_type['type_name'], 'description' => $before_type['description']], ['type_name' => $type_name, 'description' => $description]) : null;
+        audit_log($conn, 'document_types', 'update', $id, $type_name, 'Updated document type "' . $type_name . '".', $changes);
         $stmt->close();
         return ['success' => true, 'message' => 'Document type updated successfully!'];
     } else {
@@ -222,6 +232,14 @@ function deleteDocumentType($id)
         return ['success' => false, 'message' => 'Cannot delete: This document type is used by ' . $row['count'] . ' document(s)'];
     }
 
+    // Get type name before delete
+    $name_stmt = $conn->prepare("SELECT type_name FROM document_types WHERE id = ?");
+    $name_stmt->bind_param("i", $id);
+    $name_stmt->execute();
+    $name_row = $name_stmt->get_result()->fetch_assoc();
+    $name_stmt->close();
+    $type_name = $name_row['type_name'] ?? ('#' . $id);
+
     // Delete type
     $stmt = $conn->prepare("DELETE FROM document_types WHERE id = ?");
     if (!$stmt) {
@@ -231,6 +249,7 @@ function deleteDocumentType($id)
     $stmt->bind_param("i", $id);
 
     if ($stmt->execute()) {
+        audit_log($conn, 'document_types', 'delete', $id, $type_name, 'Deleted document type "' . $type_name . '".');
         $stmt->close();
         return ['success' => true, 'message' => 'Document type deleted successfully!'];
     } else {

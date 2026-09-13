@@ -2,6 +2,7 @@
 require_once './config/db.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/audit.php';
 session_start();
 
 $message = '';
@@ -35,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 
     if ($stmt->execute()) {
+        audit_log($conn, 'parcels', 'create', $conn->insert_id, $tracking_id, 'Parcel received from "' . $sender . '": ' . $description);
         echo json_encode(['success' => true, 'message' => "Parcel received successfully! Tracking ID: $tracking_id"]);
         exit;
     } else {
@@ -59,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     }
 
     $check_stmt = $conn->prepare("
-        SELECT pr.id, pr.tracking_id, pp.id AS pickup_id
+        SELECT pr.id, pr.tracking_id, pr.description, pr.sender, pr.addressed_to, pr.received_by, pp.id AS pickup_id
         FROM parcels_received pr
         LEFT JOIN parcels_pickup pp ON pr.id = pp.parcel_id
         WHERE pr.id = ?
@@ -83,6 +85,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $stmt->bind_param("ssssi", $description, $sender, $addressed_to, $received_by, $parcel_id);
 
     if ($stmt->execute()) {
+        $changes = audit_diff([
+            'description'  => $parcel['description'],
+            'sender'       => $parcel['sender'],
+            'addressed_to' => $parcel['addressed_to'],
+            'received_by'  => $parcel['received_by'],
+        ], [
+            'description'  => $description,
+            'sender'       => $sender,
+            'addressed_to' => $addressed_to,
+            'received_by'  => $received_by,
+        ]);
+        audit_log($conn, 'parcels', 'update', $parcel_id, $parcel['tracking_id'], 'Updated parcel ' . $parcel['tracking_id'] . '.', $changes);
         echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' updated successfully']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Update failed: ' . $conn->error]);
@@ -131,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
         $delete_received_stmt->close();
 
         $conn->commit();
+        audit_log($conn, 'parcels', 'delete', $parcel_id, $parcel['tracking_id'], 'Deleted parcel ' . $parcel['tracking_id'] . ' and any pickup records.');
         echo json_encode(['success' => true, 'message' => 'Parcel ' . $parcel['tracking_id'] . ' deleted successfully']);
     } catch (Exception $e) {
         $conn->rollback();
@@ -170,6 +185,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['parcel_id'])) {
             }
 
             if ($stmt->execute()) {
+                $parcel_row = $check->fetch_assoc();
+                audit_log($conn, 'parcels', 'pickup', $parcel_id, $parcel_row['tracking_id'] ?? ('#' . $parcel_id), 'Parcel picked up by ' . $picked_by . ($designation !== '' ? ' (' . $designation . ')' : '') . '.');
                 echo json_encode(['success' => true, 'message' => "Parcel picked up successfully!"]);
                 exit;
             } else {

@@ -70,6 +70,10 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
         </a>
 
         <div class="nav-group-label"><span>System</span></div>
+        <a href="audit_trail.php" class="nav-link <?php echo $current_page == 'audit_trail.php' ? 'active' : ''; ?>">
+            <i class="fa-solid fa-clipboard-list"></i>
+            <span class="nav-text">Audit Trail</span>
+        </a>
         <a href="settings.php" class="nav-link <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
             <i class="fa-solid fa-gear"></i>
             <span class="nav-text">Settings</span>
@@ -79,7 +83,12 @@ $current_page = basename($_SERVER['SCRIPT_NAME']);
     <div class="sidebar-user">
         <div class="sidebar-user-avatar"><i class="fa-solid fa-user"></i></div>
         <div class="sidebar-user-info">
-            <div class="sidebar-user-name">Library Staff</div>
+            <div class="sidebar-user-name"><?php
+                if (session_status() == PHP_SESSION_NONE) {
+                    session_start();
+                }
+                echo !empty($_SESSION['app_user']) ? htmlspecialchars($_SESSION['app_user']) : 'Library Staff';
+            ?></div>
             <div class="sidebar-user-role">Administrator</div>
         </div>
     </div>
