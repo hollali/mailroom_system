@@ -72,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         file_put_contents($log_file, json_encode($log, JSON_PRETTY_PRINT));
 
                         $message = "Backup created successfully: $filename";
+                        audit_log('backup', 'backup', null, "Created database backup: $filename (" . formatBytes(filesize($filepath)) . ")", 'System');
                     } else {
                         // Fallback: PHP-based export
                         $tables = [];
@@ -119,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             array_unshift($log, $backup_info);
                             file_put_contents($log_file, json_encode($log, JSON_PRETTY_PRINT));
                             $message = "Backup created successfully (PHP fallback): $filename";
+                            audit_log('backup', 'backup', null, "Created database backup: $filename (" . formatBytes(filesize($filepath)) . ")", 'System');
                         } else {
                             $error = "Failed to create backup. Check directory permissions.";
                         }
@@ -146,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         file_put_contents($log_file, json_encode(array_values($log), JSON_PRETTY_PRINT));
                     }
                     $message = "Backup deleted: $filename";
-                    audit_log($conn, 'settings', 'delete', null, 'Backup ' . $filename, 'Backup file deleted.');
+audit_log($conn, 'settings', 'delete', null, 'Backup ' . $filename, 'Backup file deleted.');
                 } else {
                     $error = "Backup file not found.";
                 }
@@ -177,6 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($return_var === 0) {
                         $message = "Database restored successfully from: $filename";
+                        audit_log('restore', 'backup', null, "Restored database from backup: $filename", 'System');
                     } else {
                         $error = "Restore failed: " . implode("\n", $output);
                     }

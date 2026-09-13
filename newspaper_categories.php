@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
     $name_stmt->execute();
     $name_row = $name_stmt->get_result()->fetch_assoc();
     $name_stmt->close();
-    $stmt = $conn->prepare("DELETE FROM newspaper_categories WHERE id = ?");
+$stmt = $conn->prepare("DELETE FROM newspaper_categories WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
         audit_log($conn, 'newspaper_categories', 'delete', $id, $name_row['category_name'] ?? ('#' . $id), 'Deleted category "' . ($name_row['category_name'] ?? '') . '".');

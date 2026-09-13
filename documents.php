@@ -96,6 +96,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'add_document') {
 
     if ($insert_stmt->execute()) {
         $new_id = $conn->insert_id;
+        audit_log('create', 'document', $new_id, "Added document '" . addslashes($document_name) . "' - $copies_received copies from $origin", 'System');
         $success_message = 'Document added successfully';
         if ($serial_number !== null) {
             $success_message .= ' with serial number: ' . $serial_number;
@@ -213,7 +214,7 @@ if (isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'delete_document') 
         exit();
     }
 
-    $del_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+$del_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
     $del_stmt->bind_param("i", $id);
     $del_stmt->execute();
     $del_doc = $del_stmt->get_result()->fetch_assoc();

@@ -137,6 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['distribute_submit'])) 
             $stmt->bind_param("ssissss", $individual_name, $department, $current_success_count, $date_distributed, $distributed_by, $current_newspapers_str, $current_newspaper_ids_str);
 
             if ($stmt->execute()) {
+                $dist_id = (int)$stmt->insert_id;
+                audit_log('distribute', 'distribution', $dist_id, "Distributed $current_success_count newspaper copies to '$individual_name' ($department) on $date_distributed", $distributed_by);
                 $success_recipients[] = $individual_name;
                 audit_log($conn, 'distribution', 'distribute', $conn->insert_id, $individual_name, 'Distributed ' . $current_success_count . ' newspaper' . ($current_success_count === 1 ? '' : 's') . ' to ' . $individual_name . ': ' . $current_newspapers_str . '.');
                 // Deduct copies and update status for each distributed paper

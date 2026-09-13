@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_distribution']
 
         $conn->commit();
 
-        audit_log($conn, 'distribution', 'delete', $id, $dist['distributed_to'] ?? ('#' . $id), 'Deleted newspaper distribution record #' . $id . ' and restored stock.');
+audit_log($conn, 'distribution', 'delete', $id, $dist['distributed_to'] ?? ('#' . $id), 'Deleted newspaper distribution record #' . $id . ' and restored stock.');
 
         $_SESSION['toast'] = [
             'type' => 'success',
@@ -423,6 +423,9 @@ if (isset($_SESSION['toast'])) {
                                             <td class="hidden md:table-cell table-cell-subtitle"><?php echo htmlspecialchars($row['distributed_by'] ?? '—'); ?></td>
                                             <td class="no-print">
                                                 <div class="row-actions" style="justify-content:flex-end;">
+                                                    <a href="#" onclick="MailroomReceipt.open('newsdist', <?php echo $row['id']; ?>); return false;" class="icon-btn" title="Print slip">
+                                                        <i class="fa-solid fa-print"></i>
+                                                    </a>
                                                     <button class="icon-btn primary" onclick="viewDistribution(<?php echo $row['id']; ?>)" title="View">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </button>

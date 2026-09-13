@@ -51,6 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_record'])) {
 
         if (!$dist) throw new Exception("Record not found");
 
+        $doc_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+        $doc_stmt->bind_param("i", $dist['document_id']);
+        $doc_stmt->execute();
+        $doc_name = $doc_stmt->get_result()->fetch_assoc()['document_name'] ?? '';
+        $doc_stmt->close();
+
         $del = $conn->prepare("DELETE FROM document_distribution WHERE id = ?");
         $del->bind_param("i", $id);
         if (!$del->execute()) throw new Exception("Delete failed: " . $conn->error);
@@ -63,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_record'])) {
         $upd->close();
 
         $conn->commit();
-        $doc_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
+$doc_stmt = $conn->prepare("SELECT document_name FROM documents WHERE id = ?");
         $doc_stmt->bind_param("i", $dist['document_id']);
         $doc_stmt->execute();
         $doc_row = $doc_stmt->get_result()->fetch_assoc();
@@ -392,6 +398,9 @@ if (isset($_SESSION['toast'])) {
                                             </td>
                                             <td class="no-print">
                                                 <div class="row-actions" style="justify-content:flex-end;">
+                                                    <a href="#" onclick="MailroomReceipt.open('docdist', <?php echo $row['id']; ?>); return false;" class="icon-btn" title="Print slip">
+                                                        <i class="fa-solid fa-print"></i>
+                                                    </a>
                                                     <button class="icon-btn primary" onclick="viewRecord(<?php echo $row['id']; ?>)" title="View details">
                                                         <i class="fa-regular fa-eye"></i>
                                                     </button>

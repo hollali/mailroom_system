@@ -615,6 +615,247 @@ window.addEventListener('mr:prefs', () => {
     if (panel) FontControl.syncUI(panel);
 });
 
+/* ── Temporal: Tracking Modal ───────────────────────────── */
+const MailroomTracking = {
+    open(trackingId) {
+        let modal = document.getElementById('trackingModal');
+        if (!modal) this.build();
+        modal = document.getElementById('trackingModal');
+        if (!modal) return;
+
+        const input = modal.querySelector('#trackInput');
+        if (trackingId && input) {
+            input.value = trackingId || '';
+            this.fetch(trackingId);
+        }
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    },
+    close() {
+        const modal = document.getElementById('trackingModal');
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    },
+    build() {
+        const modal = document.createElement('div');
+        modal.id = 'trackingModal';
+        modal.className = 'modal-backdrop';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-dialog lg">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title"><i class="fa-solid fa-location-dot" style="margin-right:8px;color:var(--accent);"></i>Track Parcel</h3>
+                        <p class="modal-subtitle" style="font-size:12px;color:var(--text-muted);margin-top:2px;">Enter a tracking ID to see delivery status.</p>
+                    </div>
+                    <button class="modal-close" onclick="MailroomTracking.close()"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div style="display:flex;gap:8px;margin-bottom:20px;">
+                        <input type="text" id="trackInput" class="input" placeholder="PRCL-20260401-A1B2C3"
+                               style="text-transform:uppercase;font-family:ui-monospace,monospace;"
+                               autocomplete="off"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();MailroomTracking.fetch(this.value);}">
+                        <button class="btn btn-primary" onclick="MailroomTracking.fetch(document.getElementById('trackInput').value)">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                    </div>
+                    <div id="trackResult" style="min-height:120px;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fa-solid fa-box-open"></i></div>
+                            <div class="empty-state-title">Enter a tracking ID to begin</div>
+                            <div class="empty-state-text">You'll see the full delivery timeline here.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) MailroomTracking.close();
+        });
+    },
+    fetch(trackingId) {
+        const result = document.getElementById('trackResult');
+        if (!result) return;
+        if (!trackingId || trackingId.trim() === '') {
+            result.innerHTML = `<div class="empty-state">
+                <div class="empty-state-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
+                <div class="empty-state-title">Please enter a tracking ID</div>
+            </div>`;
+            return;
+        }
+
+        result.innerHTML = `<div class="empty-state">
+            <div class="empty-state-icon"><i class="fa-solid fa-circle-notch fa-spin"></i></div>
+            <div class="empty-state-title">Tracking...</div>
+        </div>`;
+
+        fetch('track_api.php?tracking=' + encodeURIComponent(trackingId))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    result.innerHTML = `<div class="empty-state">
+                        <div class="empty-state-icon"><i class="fa-solid fa-circle-exclamation"></i></div>
+                        <div class="empty-state-title">No parcel found</div>
+                        <div class="empty-state-text">${esc(data.message)}</div>
+                    </div>`;
+                    return;
+                }
+                this.render(data, result);
+            })
+            .catch(() => {
+                result.innerHTML = `<div class="empty-state">
+                    <div class="empty-state-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <div class="empty-state-title">Something went wrong</div>
+                    <div class="empty-state-text">Could not reach the tracking service.</div>
+                </div>`;
+            });
+    },
+    render(data, container) {
+        const p = data.parcel;
+        const rank = data.status_rank;
+        const steps = data.timeline;
+
+        let timelineHtml = '';
+        steps.forEach(step => {
+            let state = 'pending';
+            if (rank === 4 && step.key === 'picked') state = 'current';
+            else if (step.key === 'picked') state = 'pending';
+            else if ((step.key === 'received' && rank >= 0)) state = rank >= 1 ? 'done' : 'current';
+            else if (step.key === 'in_transit') state = rank >= 2 ? 'done' : (rank === 1 ? 'current' : 'pending');
+            else if (step.key === 'out_for_delivery') state = rank >= 3 ? 'done' : (rank === 2 ? 'current' : 'pending');
+            else if (step.key === 'delivered') state = rank >= 4 ? 'done' : (rank === 3 ? 'current' : 'pending');
+            if (rank === 4 && step.key !== 'picked') state = (step.key === 'delivered' || step.key === 'out_for_delivery' || step.key === 'in_transit' ? 'done' : (step.key === 'received' ? 'done' : 'pending'));
+
+            const active = state === 'done' ? '<i class="fa-solid fa-check"></i>' : `<i class="fa-solid ${step.icon}"></i>`;
+            const desc = state === 'done' ? 'Completed' : (state === 'current' ? 'Current status' : 'Awaiting');
+            timelineHtml += `
+                <div class="track-step ${state}">
+                    <div class="track-step-icon">${active}</div>
+                    <div>
+                        <div class="track-step-title">${step.label}</div>
+                        <div class="track-step-detail">${desc} — ${esc(step.desc)}</div>
+                    </div>
+                </div>`;
+        });
+
+        container.innerHTML = `
+            <div class="track-summary-row">
+                <div>
+                    <div class="track-meta-label">Tracking ID</div>
+                    <div class="track-meta-value" style="font-family:ui-monospace,monospace;">${esc(p.tracking_id)}</div>
+                </div>
+                <div>
+                    <div class="track-meta-label">Status</div>
+                    <div class="mt-1">${p.badge_html}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div class="track-meta-label">Public link</div>
+                    <a href="track.php?tracking=${encodeURIComponent(p.tracking_id)}" target="_blank" class="btn btn-soft btn-sm" title="Open public tracking page">
+                        <i class="fa-solid fa-up-right-from-square"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="track-info-grid">
+                <div><span class="track-meta-label">Description</span><div style="font-size:13px;color:var(--text);">${esc(p.description || '—')}</div></div>
+                <div><span class="track-meta-label">Sender</span><div style="font-size:13px;color:var(--text);">${esc(p.sender || '—')}</div></div>
+                <div><span class="track-meta-label">Addressed To</span><div style="font-size:13px;color:var(--text);">${esc(p.addressed_to || '—')}</div></div>
+                <div><span class="track-meta-label">Received</span><div style="font-size:13px;color:var(--text);">${formatDate(p.date_received)}</div></div>
+                ${p.is_picked ? `
+                <div><span class="track-meta-label">Picked By</span><div style="font-size:13px;color:var(--text);">${esc(p.picked_by)}${p.phone_number ? ' · ' + esc(p.phone_number) : ''}</div></div>
+                ${p.designation ? `<div><span class="track-meta-label">Designation</span><div style="font-size:13px;color:var(--text);">${esc(p.designation)}</div></div>` : ''}
+                ` : ''}
+            </div>
+            <div class="track-timeline">${timelineHtml}</div>`;
+    }
+};
+window.MailroomTracking = MailroomTracking;
+
+/* ── Print Receipt Modal ───────────────────────────────── */
+const MailroomReceipt = {
+    titles: {
+        parcel: 'Parcel Receipt',
+        docdist: 'Document Distribution Slip',
+        newsdist: 'Newspaper Distribution Slip'
+    },
+    open(type, id) {
+        let modal = document.getElementById('receiptModal');
+        if (!modal) this.build();
+        modal = document.getElementById('receiptModal');
+        if (!modal) return;
+
+        const frame = modal.querySelector('#receiptFrame');
+        modal.querySelector('.modal-title').textContent = this.titles[type] || 'Receipt';
+        frame.src = 'receipt.php?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id);
+        frame.dataset.hidden = '1';
+        modal.querySelector('#receiptLoading').style.display = 'flex';
+
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    },
+    close() {
+        const modal = document.getElementById('receiptModal');
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    },
+    build() {
+        const modal = document.createElement('div');
+        modal.id = 'receiptModal';
+        modal.className = 'modal-backdrop';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-dialog lg receipt-dialog">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title"><i class="fa-solid fa-print" style="margin-right:8px;color:var(--accent);"></i>Receipt</h3>
+                        <p class="modal-subtitle" style="font-size:12px;color:var(--text-muted);margin-top:2px;">Preview below. Use the Print button to print this slip.</p>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button class="btn btn-primary btn-sm" onclick="MailroomReceipt.print()">
+                            <i class="fa-solid fa-print"></i> Print
+                        </button>
+                        <button class="modal-close" onclick="MailroomReceipt.close()"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+                <div class="modal-body" style="position:relative;padding:0;overflow:hidden;">
+                    <div id="receiptLoading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:var(--surface);z-index:5;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fa-solid fa-circle-notch fa-spin"></i></div>
+                            <div class="empty-state-title">Loading receipt...</div>
+                        </div>
+                    </div>
+                    <iframe id="receiptFrame" title="Receipt preview"
+                            style="width:100%;height:calc(100vh - 220px);min-height:380px;border:none;background:#f0f0f2;"
+                            onload="document.getElementById('receiptLoading').style.display='none';"></iframe>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) MailroomReceipt.close();
+        });
+    },
+    print() {
+        const frame = document.getElementById('receiptFrame');
+        if (!frame || !frame.contentWindow) return;
+        frame.contentWindow.focus();
+        try {
+            frame.contentWindow.print();
+        } catch (err) {
+            // fallback for some embedded browsers
+            if (frame.contentWindow.print) frame.contentWindow.print();
+        }
+    }
+};
+window.MailroomReceipt = MailroomReceipt;
+
 /* ── Init PWA + font prefs on every page ──────────────────── */
 (function initAppShell() {
     MailroomPWA.injectMeta();

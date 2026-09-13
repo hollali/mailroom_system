@@ -231,7 +231,8 @@ CREATE TABLE `parcels_received` (
   `date_received` date DEFAULT NULL,
   `received_by` varchar(100) DEFAULT NULL,
   `tracking_id` varchar(50) DEFAULT NULL,
-  `received_at` datetime DEFAULT current_timestamp()
+  `received_at` datetime DEFAULT current_timestamp(),
+  `delivery_status` varchar(50) NOT NULL DEFAULT 'received'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
 --

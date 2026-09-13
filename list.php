@@ -172,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_newspaper'])) 
         $name_stmt->execute();
         $name_row = $name_stmt->get_result()->fetch_assoc();
         $name_stmt->close();
-        $stmt = $conn->prepare("DELETE FROM newspapers WHERE id = ?");
+$stmt = $conn->prepare("DELETE FROM newspapers WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
             audit_log($conn, 'newspapers', 'delete', $id, $name_row['newspaper_number'] ?? ('#' . $id), 'Deleted "' . ($name_row['newspaper_name'] ?? '') . '" ' . ($name_row['newspaper_number'] ?? '') . '.');
@@ -203,6 +203,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
     $paper_stmt->close();
 
     if ($stmt->execute()) {
+        $name_stmt = $conn->prepare("SELECT newspaper_name, newspaper_number FROM newspapers WHERE id = ?");
+        $name_stmt->bind_param("i", $id);
+        $name_stmt->execute();
+        $name_row = $name_stmt->get_result()->fetch_assoc();
+        $name_stmt->close();
+        audit_log('update', 'newspaper', $id, "Updated newspaper '{$name_row['newspaper_name']}' ({$name_row['newspaper_number']})", 'System');
         // Update status based on available copies
         if ($available_copies == 0) {
             $status_stmt = $conn->prepare("UPDATE newspapers SET status = 'distributed' WHERE id = ?");
@@ -238,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_copies_submit']
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
     csrf_check_post();
     $id = (int)$_POST['toggle_status'];
-    $stmt = $conn->prepare("SELECT status, available_copies FROM newspapers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT status, available_copies, newspaper_name FROM newspapers WHERE id = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -256,7 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
 
         $update = $conn->prepare("UPDATE newspapers SET status = ? WHERE id = ?");
         $update->bind_param('si', $new_status, $id);
-        $update->execute();
+        if ($update->execute()) {
+            $audit_action = $new_status === 'archived' ? 'Archived' : 'Unarchived';
+            audit_log('update', 'newspaper', $id, "$audit_action newspaper '{$paper['newspaper_name']}'", 'System');
+        }
         $update->close();
         audit_log($conn, 'newspapers', 'status', $id, $paper['newspaper_number'] ?? ('#' . $id), 'Changed status of "' . ($paper['newspaper_name'] ?? '') . '" from "' . $paper['status'] . '" to "' . $new_status . '".');
     } else {

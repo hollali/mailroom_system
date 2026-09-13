@@ -161,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deactivate_recipient'
         $name_stmt->execute();
         $name_row = $name_stmt->get_result()->fetch_assoc();
         $name_stmt->close();
-        audit_log($conn, 'recipients', 'deactivate', $id, $name_row['name'] ?? ('#' . $id), 'Deactivated recipient "' . ($name_row['name'] ?? '') . '".');
+audit_log($conn, 'recipients', 'deactivate', $id, $name_row['name'] ?? ('#' . $id), 'Deactivated recipient "' . ($name_row['name'] ?? '') . '".');
         $_SESSION['toast'] = [
             'type' => 'success',
             'message' => "Recipient deactivated successfully"
@@ -192,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['activate_recipient'])
         $name_stmt->execute();
         $name_row = $name_stmt->get_result()->fetch_assoc();
         $name_stmt->close();
-        audit_log($conn, 'recipients', 'activate', $id, $name_row['name'] ?? ('#' . $id), 'Activated recipient "' . ($name_row['name'] ?? '') . '".');
+audit_log($conn, 'recipients', 'activate', $id, $name_row['name'] ?? ('#' . $id), 'Activated recipient "' . ($name_row['name'] ?? '') . '".');
         $_SESSION['toast'] = [
             'type' => 'success',
             'message' => "Recipient activated successfully"

@@ -84,6 +84,8 @@ if (isset($_POST['submit'])) {
         // Commit transaction
         $conn->commit();
 
+        audit_log('distribute', 'document', $document_id, "Distributed $total_requested copies of '" . addslashes($document['document_name']) . "' on $date_distributed", 'System');
+
         $_SESSION['toast'] = [
             'type' => 'success',
             'message' => "$success_count distribution record(s) saved successfully. " . $total_requested . " copies of \"" . $document['document_name'] . "\" distributed."
