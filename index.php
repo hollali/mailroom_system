@@ -28,7 +28,17 @@ $stats = [
     'total_copies_distributed' => 0,
     'latest_parcel_received' => null,
     'latest_parcel_picked' => null,
-    'dashboard_refreshed_at' => date('Y-m-d H:i:s')
+    'dashboard_refreshed_at' => date('Y-m-d H:i:s'),
+    'yesterday_documents' => 0,
+    'yesterday_newspapers' => 0,
+    'prev_week_newspapers' => 0,
+    'picked_today' => 0,
+    'awaiting_distribution' => 0,
+    'dist_pct' => 0,
+    'delta_docs' => 0,
+    'delta_docs_pct' => 0,
+    'delta_week_news' => 0,
+    'delta_week_news_pct' => 0
 ];
 
 $dashboard_parcels = null;
@@ -156,6 +166,96 @@ try {
     if ($result) {
         $stats['month_newspapers'] = $result->fetch_assoc()['total'];
     }
+
+    // Prior-period comparisons for KPI deltas
+    $result = $conn->query("SELECT COUNT(*) as total FROM documents WHERE date_received = DATE_SUB(CURDATE(), INTERVAL 1 DAY)");
+    if ($result) {
+        $stats['yesterday_documents'] = (int)$result->fetch_assoc()['total'];
+    }
+
+    $result = $conn->query("SELECT COUNT(*) as total FROM newspapers WHERE date_received = DATE_SUB(CURDATE(), INTERVAL 1 DAY)");
+    if ($result) {
+        $stats['yesterday_newspapers'] = (int)$result->fetch_assoc()['total'];
+    }
+
+    $result = $conn->query("SELECT COUNT(*) as total FROM newspapers WHERE date_received >= DATE_SUB(CURDATE(), INTERVAL 14 DAY) AND date_received < DATE_SUB(CURDATE(), INTERVAL 7 DAY)");
+    if ($result) {
+        $stats['prev_week_newspapers'] = (int)$result->fetch_assoc()['total'];
+    }
+
+    $result = $conn->query("SELECT COUNT(*) as total FROM parcels_pickup WHERE DATE(date_picked) = CURDATE()");
+    if ($result) {
+        $stats['picked_today'] = (int)$result->fetch_assoc()['total'];
+    }
+
+    // Documents awaiting distribution (uncapped count)
+    $res = $conn->query("
+        SELECT COUNT(*) as total FROM documents d
+        LEFT JOIN (SELECT document_id, SUM(number_distributed) s FROM document_distribution GROUP BY document_id) x ON x.document_id = d.id
+        WHERE COALESCE(x.s, 0) < d.copies_received
+    ");
+    if ($res) {
+        $stats['awaiting_distribution'] = (int)$res->fetch_assoc()['total'];
+    }
+
+    // Distribution progress (% of all copies distributed)
+    $stats['dist_pct'] = $stats['total_copies_received'] > 0
+        ? round($stats['total_copies_distributed'] / $stats['total_copies_received'] * 100, 1)
+        : 0;
+
+    // KPI deltas
+    $stats['delta_docs'] = $stats['today_documents'] - $stats['yesterday_documents'];
+    $stats['delta_docs_pct'] = $stats['yesterday_documents'] > 0
+        ? round($stats['delta_docs'] / $stats['yesterday_documents'] * 100)
+        : ($stats['delta_docs'] > 0 ? 100 : 0);
+    $stats['delta_week_news'] = $stats['week_newspapers'] - $stats['prev_week_newspapers'];
+    $stats['delta_week_news_pct'] = $stats['prev_week_newspapers'] > 0
+        ? round($stats['delta_week_news'] / $stats['prev_week_newspapers'] * 100)
+        : ($stats['delta_week_news'] > 0 ? 100 : 0);
+
+    // ── Daily trend series (last 30 days) ─────────────────────
+    $trend_days = 30;
+    $trend_dates = [];
+    $trend_index = [];
+    for ($i = $trend_days - 1; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime("-{$i} days"));
+        $trend_dates[] = $d;
+        $trend_index[$d] = $trend_days - 1 - $i;
+    }
+
+    $series_docs = array_fill(0, $trend_days, 0);
+    $series_parcels = array_fill(0, $trend_days, 0);
+    $series_papers = array_fill(0, $trend_days, 0);
+    $series_pickups = array_fill(0, $trend_days, 0);
+    $series_docdist = array_fill(0, $trend_days, 0);
+    $series_newsdist = array_fill(0, $trend_days, 0);
+
+    $fill_trend = function ($res, &$arr) use ($trend_index) {
+        if (!$res) return;
+        while ($r = $res->fetch_assoc()) {
+            $k = isset($r['d']) ? $r['d'] : null;
+            if ($k !== null && isset($trend_index[$k])) {
+                $arr[$trend_index[$k]] = (int)$r['c'];
+            }
+        }
+    };
+
+    $fill_trend($conn->query("SELECT DATE(date_received) d, COUNT(*) c FROM documents WHERE date_received >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_received)"), $series_docs);
+    $fill_trend($conn->query("SELECT DATE(date_received) d, COUNT(*) c FROM parcels_received WHERE date_received >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_received)"), $series_parcels);
+    $fill_trend($conn->query("SELECT DATE(date_received) d, COUNT(*) c FROM newspapers WHERE date_received >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_received)"), $series_papers);
+    $fill_trend($conn->query("SELECT DATE(date_picked) d, COUNT(*) c FROM parcels_pickup WHERE date_picked >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_picked)"), $series_pickups);
+    $fill_trend($conn->query("SELECT DATE(date_distributed) d, COUNT(*) c FROM document_distribution WHERE date_distributed >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_distributed)"), $series_docdist);
+    $fill_trend($conn->query("SELECT DATE(date_distributed) d, COUNT(*) c FROM distribution WHERE date_distributed >= DATE_SUB(CURDATE(), INTERVAL " . ($trend_days - 1) . " DAY) GROUP BY DATE(date_distributed)"), $series_newsdist);
+
+    $trends = [
+        'dates' => array_map(fn($d) => date('M j', strtotime($d)), $trend_dates),
+        'documents' => $series_docs,
+        'parcels' => $series_parcels,
+        'newspapers' => $series_papers,
+        'pickups' => $series_pickups,
+        'docdist' => $series_docdist,
+        'newsdist' => $series_newsdist,
+    ];
 
     // Documents awaiting distribution (received but never distributed)
     $doc_awaiting = $conn->query("
@@ -341,6 +441,10 @@ function activityDotColor($color) {
                     </p>
                 </div>
                 <div class="header-actions flex items-center gap-2 print-hide">
+                    <a href="#" id="dashCustomizeBtn" class="btn btn-soft" title="Customize dashboard">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span class="hidden sm:inline">Customize</span>
+                    </a>
                     <a href="#" onclick="document.getElementById('dashSearchToggle').classList.toggle('hidden');document.getElementById('dashSearchInput') && document.getElementById('dashSearchInput').focus();return false;" class="btn btn-soft" id="dashSearchToggleBtn">
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <span class="hidden sm:inline">Search</span>
@@ -404,72 +508,129 @@ function activityDotColor($color) {
                     </div>
                 </div>
 
-                <!-- Top Stats -->
-                <div class="stat-grid mb-6">
-                    <div class="stat-card">
-                        <div class="stat-icon green"><i class="fa-solid fa-file-lines"></i></div>
-                        <div class="stat-label">Total Documents</div>
-                        <div class="stat-value"><?php echo number_format($stats['documents']); ?></div>
-                        <div class="stat-hint"><?php echo number_format($stats['today_documents']); ?> received today</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon orange"><i class="fa-solid fa-box"></i></div>
-                        <div class="stat-label">Parcels Awaiting Pickup</div>
-                        <div class="stat-value"><?php echo number_format($stats['pending_parcels']); ?></div>
-                        <div class="stat-hint"><?php echo number_format($stats['today_parcels']); ?> received today</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon blue"><i class="fa-solid fa-file-signature"></i></div>
-                        <div class="stat-label">Documents Awaiting Distribution</div>
-                        <div class="stat-value"><?php echo number_format(count(array_filter($attention_items, fn($i) => $i['type'] === 'document'))); ?></div>
-                        <div class="stat-hint">Copies not yet distributed</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon gray"><i class="fa-regular fa-newspaper"></i></div>
-                        <div class="stat-label">Newspapers Today</div>
-                        <div class="stat-value"><?php echo number_format($stats['today_newspapers']); ?></div>
-                        <div class="stat-hint"><?php echo number_format($stats['week_newspapers']); ?> this week</div>
-                    </div>
-                </div>
+                <!-- Dashboard sections (visibility & order editable) -->
+                <div id="dashSections" class="dash-sections">
+
+                    <!-- KPI Scorecards -->
+                    <section data-dash-section="stats">
+                        <div class="stat-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon green"><i class="fa-solid fa-file-lines"></i></div>
+                                <div class="stat-label">Total Documents</div>
+                                <div class="stat-value"><?php echo number_format($stats['documents']); ?></div>
+                                <div class="stat-delta <?php echo $stats['delta_docs'] >= 0 ? 'up' : 'down'; ?>">
+                                    <i class="fa-solid <?php echo $stats['delta_docs'] >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'; ?>"></i>
+                                    <?php echo ($stats['delta_docs'] > 0 ? '+' : '') . $stats['delta_docs']; ?>
+                                    <span class="stat-delta-ctx">vs yesterday</span>
+                                </div>
+                                <div class="stat-hint"><?php echo number_format($stats['today_documents']); ?> received today</div>
+                                <div class="stat-spark" data-spark="documents"></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon orange"><i class="fa-solid fa-box"></i></div>
+                                <div class="stat-label">Parcels Awaiting Pickup</div>
+                                <div class="stat-value"><?php echo number_format($stats['pending_parcels']); ?></div>
+                                <div class="stat-delta up">
+                                    <i class="fa-solid fa-box-open"></i>
+                                    <?php echo number_format($stats['picked_today']); ?>
+                                    <span class="stat-delta-ctx">picked today</span>
+                                </div>
+                                <div class="stat-hint"><?php echo number_format($stats['today_parcels']); ?> received today</div>
+                                <div class="stat-spark" data-spark="parcels"></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon blue"><i class="fa-solid fa-file-signature"></i></div>
+                                <div class="stat-label">Documents Awaiting Distribution</div>
+                                <div class="stat-value"><?php echo number_format($stats['awaiting_distribution']); ?></div>
+                                <div class="stat-progress"><div class="stat-progress-bar" style="width:<?php echo min(100, max(0, (float)$stats['dist_pct'])); ?>%;"></div></div>
+                                <div class="stat-hint"><?php echo (float)$stats['dist_pct']; ?>% of all copies distributed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon gray"><i class="fa-regular fa-newspaper"></i></div>
+                                <div class="stat-label">Newspapers Today</div>
+                                <div class="stat-value"><?php echo number_format($stats['today_newspapers']); ?></div>
+                                <div class="stat-delta <?php echo $stats['delta_week_news'] >= 0 ? 'up' : 'down'; ?>">
+                                    <i class="fa-solid <?php echo $stats['delta_week_news'] >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'; ?>"></i>
+                                    <?php echo ($stats['delta_week_news'] > 0 ? '+' : '') . $stats['delta_week_news']; ?>
+                                    <span class="stat-delta-ctx">vs last week</span>
+                                </div>
+                                <div class="stat-hint"><?php echo number_format($stats['week_newspapers']); ?> this week</div>
+                                <div class="stat-spark" data-spark="newspapers"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Trends & Activity charts -->
+                    <section data-dash-section="charts">
+                        <div class="card card-unclip">
+                            <div class="card-header">
+                                <div>
+                                    <h2 class="card-title"><i class="fa-solid fa-chart-line" style="margin-right:6px;color:var(--accent);"></i>Trends</h2>
+                                    <p class="card-subtitle">Daily intake and processing volumes across the mailroom.</p>
+                                </div>
+                                <div class="dash-period" id="dashPeriod">
+                                    <button type="button" data-period="7">7D</button>
+                                    <button type="button" data-period="14" class="active">14D</button>
+                                    <button type="button" data-period="30">30D</button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="dash-chart-grid">
+                                    <div class="dash-chart-box">
+                                        <div class="dash-chart-title"><i class="fa-solid fa-inbox" style="color:var(--gold);"></i>Incoming Mail</div>
+                                        <div class="dash-chart" id="dashChartIntake"></div>
+                                        <div class="dash-chart-legend" id="dashLegendIntake"></div>
+                                    </div>
+                                    <div class="dash-chart-box">
+                                        <div class="dash-chart-title"><i class="fa-solid fa-arrows-rotate" style="color:var(--accent);"></i>Processing Activity</div>
+                                        <div class="dash-chart" id="dashChartActivity"></div>
+                                        <div class="dash-chart-legend" id="dashLegendActivity"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
 
                 <!-- Quick actions -->
-                <div class="card mb-6">
-                    <div class="card-header">
-                        <div>
-                            <h2 class="card-title">Quick Actions</h2>
-                            <p class="card-subtitle">Common operations</p>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="quick-actions">
-                            <a href="documents.php" class="quick-action">
-                                <span class="quick-action-icon"><i class="fa-solid fa-file-circle-plus"></i></span>
-                                <span class="quick-action-label">Receive Document</span>
-                            </a>
-                            <a href="parcels.php" class="quick-action">
-                                <span class="quick-action-icon"><i class="fa-solid fa-box-open"></i></span>
-                                <span class="quick-action-label">Register Parcel</span>
-                            </a>
-                            <a href="list.php" class="quick-action">
-                                <span class="quick-action-icon"><i class="fa-solid fa-newspaper"></i></span>
-                                <span class="quick-action-label">Newspaper</span>
-                            </a>
-                            <a href="settings.php" class="quick-action">
-                                <span class="quick-action-icon"><i class="fa-solid fa-gear"></i></span>
-                                <span class="quick-action-label">Backup</span>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Attention Required -->
-                    <div class="card lg:col-span-2">
+                <section data-dash-section="quick">
+                    <div class="card">
                         <div class="card-header">
                             <div>
-                                <h2 class="card-title">Requires Attention</h2>
-                                <p class="card-subtitle">Items needing action today</p>
+                                <h2 class="card-title">Quick Actions</h2>
+                                <p class="card-subtitle">Common operations</p>
                             </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="quick-actions">
+                                <a href="documents.php" class="quick-action">
+                                    <span class="quick-action-icon"><i class="fa-solid fa-file-circle-plus"></i></span>
+                                    <span class="quick-action-label">Receive Document</span>
+                                </a>
+                                <a href="parcels.php" class="quick-action">
+                                    <span class="quick-action-icon"><i class="fa-solid fa-box-open"></i></span>
+                                    <span class="quick-action-label">Register Parcel</span>
+                                </a>
+                                <a href="list.php" class="quick-action">
+                                    <span class="quick-action-icon"><i class="fa-solid fa-newspaper"></i></span>
+                                    <span class="quick-action-label">Newspaper</span>
+                                </a>
+                                <a href="settings.php" class="quick-action">
+                                    <span class="quick-action-icon"><i class="fa-solid fa-gear"></i></span>
+                                    <span class="quick-action-label">Backup</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Requires Attention -->
+                    <section data-dash-section="attention">
+                        <div class="card">
+                            <div class="card-header">
+                                <div>
+                                    <h2 class="card-title">Requires Attention</h2>
+                                    <p class="card-subtitle">Items needing action today</p>
+                                </div>
                             <?php if (count($attention_items) > 0): ?>
                                 <span class="pill badge-red"><?php echo count($attention_items); ?> items</span>
                             <?php endif; ?>
@@ -512,9 +673,11 @@ function activityDotColor($color) {
                             <?php endif; ?>
                         </div>
                     </div>
+                    </section>
 
-                    <!-- Recent Activity Timeline -->
-                    <div class="card">
+                    <!-- Recent Activity -->
+                    <section data-dash-section="activity">
+                        <div class="card">
                         <div class="card-header">
                             <div>
                                 <h2 class="card-title">Recent Activity</h2>
@@ -544,10 +707,11 @@ function activityDotColor($color) {
                             <?php endif; ?>
                         </div>
                     </div>
-                </div>
+                    </section>
 
                 <!-- Recent Parcels -->
-                <div class="card mt-6">
+                <section data-dash-section="parcels">
+                    <div class="card">
                     <div class="card-header">
                         <div>
                             <h2 class="card-title">Recent Parcels</h2>
@@ -601,9 +765,32 @@ function activityDotColor($color) {
                             </tbody>
                         </table>
                     </div>
+                    </div>
+                </section>
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Customize dashboard drawer -->
+    <div class="drawer-backdrop" id="dashLayoutBackdrop"></div>
+    <div class="drawer" id="dashLayoutDrawer">
+        <div class="drawer-header">
+            <div>
+                <div class="drawer-title"><i class="fa-solid fa-sliders" style="margin-right:8px;color:var(--accent);"></i>Customize Dashboard</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Show, hide, or reorder your sections.</div>
+            </div>
+            <button class="modal-close" data-dash-layout-close title="Close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="drawer-body">
+            <div class="dash-layout-rows" id="dashLayoutRows"></div>
+            <button type="button" class="btn btn-soft btn-sm" data-dash-layout-reset style="width:100%;margin-top:6px;">
+                <i class="fa-solid fa-rotate-left"></i> Reset to default layout
+            </button>
+        </div>
+        <div class="drawer-footer">
+            <button type="button" class="btn btn-primary" data-dash-layout-done><i class="fa-solid fa-check"></i> Done</button>
+        </div>
     </div>
 
     <script>
@@ -726,6 +913,261 @@ function activityDotColor($color) {
         })();
     </script>
     <script src="assets/app.js"></script>
+
+    <script>
+        (function() {
+            /* ── Dashboard trends, charts & sparklines ───────── */
+            const DB = window.DASH_TRENDS = <?php echo json_encode($trends); ?>;
+            const PALETTE = { documents: '#2e7d52', parcels: '#3a5a9a', newspapers: '#b08a3e', pickups: '#5a5f6e', docdist: '#a9641d', newsdist: '#8b2635' };
+            const SERIES_INTAKE = [{ key: 'documents', label: 'Documents' }, { key: 'parcels', label: 'Parcels' }, { key: 'newspapers', label: 'Newspapers' }];
+            const SERIES_ACTIVITY = [{ key: 'pickups', label: 'Parcel pickups' }, { key: 'docdist', label: 'Doc distributions' }, { key: 'newsdist', label: 'News distributions' }];
+            let curPeriod = 14;
+
+            function buildChart(el, dates, series, legend) {
+                if (!el) return;
+                el.innerHTML = '';
+                const w = Math.max(180, el.clientWidth - 2);
+                const h = 190, padL = 34, padR = 8, padT = 10, padB = 20;
+                const allMax = Math.max.apply(null, series.map(s => Math.max.apply(null, s.data)));
+                const maxV = allMax <= 0 ? 1 : allMax;
+                const n = dates.length;
+                const X = i => n <= 1 ? padL : padL + (w - padL - padR) * i / (n - 1);
+                const Y = v => padT + (h - padT - padB) * (1 - v / maxV);
+                const G = 4;
+                let svg = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Trend chart">';
+                for (let g = 0; g <= G; g++) {
+                    const v = Math.round(maxV * g / G);
+                    const y = Y(maxV * g / G);
+                    svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (w - padR) + '" y2="' + y + '" stroke="#e0d7c5" stroke-width="1" stroke-dasharray="' + (g === 0 ? '' : '3 3') + '"/>';
+                    svg += '<text x="' + (padL - 7) + '" y="' + (y + 3) + '" text-anchor="end" fill="#9aa0b5" font-size="10">' + v + '</text>';
+                }
+                const xStep = Math.max(1, Math.ceil(n / 5));
+                for (let i = 0; i < n; i += xStep) {
+                    svg += '<text x="' + X(i) + '" y="' + (h - 6) + '" text-anchor="middle" fill="#9aa0b5" font-size="9.5">' + dates[i] + '</text>';
+                }
+                if (maxV > 0) {
+                    series.forEach(s => {
+                        const pts = s.data.map((v, i) => [X(i), Y(v)]);
+                        const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+                        const area = line + ' L ' + pts[pts.length - 1][0].toFixed(1) + ' ' + Y(0) + ' L ' + pts[0][0].toFixed(1) + ' ' + Y(0) + ' Z';
+                        svg += '<path d="' + area + '" fill="' + s.color + '" opacity="0.10"/>';
+                        svg += '<path d="' + line + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+                    });
+                }
+                svg += '<rect class="dc-hit" x="' + padL + '" y="' + padT + '" width="' + Math.max(0, w - padL - padR) + '" height="' + Math.max(0, h - padT - padB) + '" fill="transparent"/>';
+                svg += '<g class="dc-hover"></g></svg>';
+                el.innerHTML = svg;
+
+                if (legend) {
+                    legend.innerHTML = series.map(s =>
+                        '<span><span class="lg-dot" style="background:' + s.color + '"></span>' + s.label +
+                        ' <b style="color:var(--text-secondary)">' + s.data[n - 1] + '</b></span>').join('');
+                }
+
+                const tip = document.createElement('div');
+                tip.className = 'dash-chart-tip';
+                el.appendChild(tip);
+                const hitRect = el.querySelector('.dc-hit');
+                const hoverG = el.querySelector('.dc-hover');
+                if (!hitRect) return;
+                hitRect.addEventListener('mousemove', function(ev) {
+                    const r = el.getBoundingClientRect();
+                    const px = ev.clientX - r.left - padL;
+                    let i = Math.round(px / (w - padL - padR) * (n - 1));
+                    i = Math.max(0, Math.min(n - 1, i));
+                    let marks = '<line x1="' + X(i) + '" y1="' + padT + '" x2="' + X(i) + '" y2="' + Y(0) + '" stroke="#cdbfa4" stroke-width="1"/>';
+                    series.forEach(s => {
+                        marks += '<circle cx="' + X(i) + '" cy="' + Y(s.data[i]) + '" r="3.5" fill="' + s.color + '" stroke="#fff" stroke-width="1.5"/>';
+                    });
+                    hoverG.innerHTML = marks;
+                    const rows = series.map(s =>
+                        '<div style="display:flex;justify-content:space-between;gap:14px;margin-top:2px;"><span style="color:var(--text-muted)">' + s.label + '</span><b>' + s.data[i] + '</b></div>').join('');
+                    tip.innerHTML = '<div style="font-weight:600;color:var(--text);">' + dates[i] + '</div>' + rows;
+                    const tipW = Math.max(0, tip.offsetWidth || 140);
+                    let left = ev.clientX - r.left + 12;
+                    if (left + tipW > w) left = ev.clientX - r.left - tipW - 12;
+                    tip.style.left = left + 'px';
+                    tip.style.top = '4px';
+                    tip.classList.add('show');
+                });
+                hitRect.addEventListener('mouseleave', function() {
+                    hoverG.innerHTML = '';
+                    tip.classList.remove('show');
+                });
+            }
+
+            function renderCharts() {
+                if (!document.getElementById('dashChartIntake')) return;
+                const start = DB.documents.length - curPeriod;
+                const dates = DB.dates.slice(start, DB.documents.length);
+                const mk = list => list.map(s => ({ label: s.label, color: PALETTE[s.key], data: DB[s.key].slice(start, DB[s.key].length) }));
+                buildChart(document.getElementById('dashChartIntake'), dates, mk(SERIES_INTAKE), document.getElementById('dashLegendIntake'));
+                buildChart(document.getElementById('dashChartActivity'), dates, mk(SERIES_ACTIVITY), document.getElementById('dashLegendActivity'));
+            }
+
+            const dashPeriod = document.getElementById('dashPeriod');
+            if (dashPeriod) {
+                dashPeriod.addEventListener('click', function(e) {
+                    const b = e.target.closest('button[data-period]');
+                    if (!b) return;
+                    curPeriod = parseInt(b.dataset.period, 10);
+                    this.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+                    renderCharts();
+                });
+            }
+
+            function sparkHTML(data, color) {
+                if (!data || data.length < 2) return '';
+                const pad = 1, w = 108, h = 30;
+                const maxV = Math.max.apply(null, data), minV = Math.min.apply(null, data);
+                const span = (maxV - minV) || 1;
+                const pt = v => {
+                    const x = pad + (w - 2 * pad) * v / (data.length - 1);
+                    const y = h - pad - ((data[v] - minV) / span) * (h - 2 * pad);
+                    return x.toFixed(1) + ',' + y.toFixed(1);
+                };
+                let pts = [];
+                for (let i = 0; i < data.length; i++) pts.push(pt(i));
+                const area = pts.join(' ') + ' ' + (w - pad) + ',' + (h - pad) + ' ' + pad + ',' + (h - pad);
+                return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+                    '<polygon points="' + area + '" fill="' + color + '" opacity="0.12"/>' +
+                    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+            }
+
+            function renderSparklines() {
+                const map = { documents: '#2e7d52', parcels: '#3a5a9a', newspapers: '#b08a3e' };
+                document.querySelectorAll('.stat-spark[data-spark]').forEach(el => {
+                    const key = el.dataset.spark;
+                    const vals = DB[key] ? DB[key].slice(DB[key].length - 14) : [];
+                    el.innerHTML = sparkHTML(vals, map[key] || '#b08a3e');
+                });
+            }
+
+            /* ── Customizable layout ─────────────────────────── */
+            const DL_KEY = 'mr_dash_layout';
+            const DL_DEFAULT = ['stats', 'charts', 'quick', 'attention', 'activity', 'parcels'];
+            const DL_META = {
+                stats: { label: 'KPI Scorecards', icon: 'fa-chart-simple' },
+                charts: { label: 'Trends', icon: 'fa-chart-line' },
+                quick: { label: 'Quick Actions', icon: 'fa-bolt' },
+                attention: { label: 'Requires Attention', icon: 'fa-triangle-exclamation' },
+                activity: { label: 'Recent Activity', icon: 'fa-clock-rotate-left' },
+                parcels: { label: 'Recent Parcels', icon: 'fa-box' }
+            };
+            const DL = {
+                get() {
+                    const def = { order: DL_DEFAULT.slice(), hidden: [] };
+                    try {
+                        const raw = JSON.parse(localStorage.getItem(DL_KEY) || 'null');
+                        if (raw && Array.isArray(raw.order)) {
+                            const o = raw.order.filter(id => DL_META[id]);
+                            const missing = DL_DEFAULT.filter(id => !o.includes(id));
+                            return { order: [...o, ...missing], hidden: (raw.hidden || []).filter(id => DL_META[id]) };
+                        }
+                    } catch (e) {}
+                    return def;
+                },
+                set(s) { localStorage.setItem(DL_KEY, JSON.stringify({ order: s.order, hidden: s.hidden })); },
+                apply() {
+                    const s = this.get();
+                    const container = document.getElementById('dashSections');
+                    if (!container) return;
+                    const nodes = {};
+                    container.querySelectorAll('[data-dash-section]').forEach(el => { nodes[el.dataset.dashSection] = el; });
+                    container.innerHTML = '';
+                    const visible = s.order.filter(id => !s.hidden.includes(id));
+                    visible.forEach(id => { if (nodes[id]) container.appendChild(nodes[id]); });
+                    this.wrapPair(container);
+                    renderCharts();
+                    renderSparklines();
+                },
+                wrapPair(container) {
+                    const kids = Array.from(container.children);
+                    const iA = kids.findIndex(k => k.dataset && k.dataset.dashSection === 'attention');
+                    const iB = kids.findIndex(k => k.dataset && k.dataset.dashSection === 'activity');
+                    if (iA < 0 || iB < 0 || Math.abs(iA - iB) !== 1) return;
+                    const low = Math.min(iA, iB), high = Math.max(iA, iB);
+                    let a = kids[low], b = kids[high];
+                    if (a.dataset.dashSection === 'activity') { const t = a; a = b; b = t; }
+                    const row = document.createElement('div');
+                    row.className = 'dash-row-2col';
+                    a.classList.add('dash-span-2');
+                    b.classList.add('dash-span-1');
+                    row.appendChild(a);
+                    row.appendChild(b);
+                    container.insertBefore(row, container.children[low]);
+                }
+            };
+
+            function buildRows() {
+                const s = DL.get();
+                const rows = document.getElementById('dashLayoutRows');
+                if (!rows) return;
+                rows.innerHTML = s.order.map(id =>
+                    '<div class="dash-layout-row" data-id="' + id + '">' +
+                    '<span class="dash-layout-icon"><i class="fa-solid ' + DL_META[id].icon + '"></i></span>' +
+                    '<span class="dash-layout-name">' + DL_META[id].label + '</span>' +
+                    '<button type="button" class="dash-layout-arrow" data-act="up" title="Move up" ' + (s.order.indexOf(id) === 0 ? 'disabled' : '') + '><i class="fa-solid fa-chevron-up"></i></button>' +
+                    '<button type="button" class="dash-layout-arrow" data-act="down" title="Move down" ' + (s.order.indexOf(id) === s.order.length - 1 ? 'disabled' : '') + '><i class="fa-solid fa-chevron-down"></i></button>' +
+                    '<label class="switch"><input type="checkbox" ' + (s.hidden.includes(id) ? '' : 'checked') + ' data-act="toggle"><span class="switch-slider"></span></label>' +
+                    '</div>').join('');
+                rows.querySelectorAll('.dash-layout-row').forEach(row => {
+                    const id = row.dataset.id;
+                    row.querySelector('[data-act="up"]').addEventListener('click', () => moveSection(id, -1));
+                    row.querySelector('[data-act="down"]').addEventListener('click', () => moveSection(id, 1));
+                    row.querySelector('[data-act="toggle"]').addEventListener('change', e => toggleSection(id, e.target.checked));
+                });
+            }
+
+            function moveSection(id, step) {
+                const s = DL.get();
+                const i = s.order.indexOf(id);
+                const ni = i + step;
+                if (ni < 0 || ni >= s.order.length) return;
+                [s.order[i], s.order[ni]] = [s.order[ni], s.order[i]];
+                DL.set(s);
+                DL.apply();
+                buildRows();
+            }
+
+            function toggleSection(id, visible) {
+                const s = DL.get();
+                const shown = s.order.filter(x => !s.hidden.includes(x)).length;
+                if (!visible) {
+                    if (shown <= 1) return;
+                    if (!s.hidden.includes(id)) s.hidden.push(id);
+                } else {
+                    s.hidden = s.hidden.filter(h => h !== id);
+                }
+                DL.set(s);
+                DL.apply();
+                buildRows();
+            }
+
+            function resetLayout() {
+                localStorage.removeItem(DL_KEY);
+                DL.apply();
+                buildRows();
+            }
+
+            const customBtn = document.getElementById('dashCustomizeBtn');
+            if (customBtn) customBtn.addEventListener('click', function(e) { e.preventDefault(); buildRows(); MailroomDrawer.open('dashLayoutDrawer'); });
+            const layoutClose = document.querySelector('[data-dash-layout-close]');
+            if (layoutClose) layoutClose.addEventListener('click', () => MailroomDrawer.close('dashLayoutDrawer'));
+            const layoutDone = document.querySelector('[data-dash-layout-done]');
+            if (layoutDone) layoutDone.addEventListener('click', () => MailroomDrawer.close('dashLayoutDrawer'));
+            const layoutReset = document.querySelector('[data-dash-layout-reset]');
+            if (layoutReset) layoutReset.addEventListener('click', resetLayout);
+
+            let resizeT;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeT);
+                resizeT = setTimeout(function() { renderCharts(); renderSparklines(); }, 150);
+            });
+
+            DL.apply();
+        })();
+    </script>
 </body>
 
 </html>
