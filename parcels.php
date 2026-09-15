@@ -375,28 +375,44 @@ $recent_parcels = $conn->query("
             </div>
 
             <div class="page-body">
-                <!-- Tabs -->
-                <div class="tabs">
+                <!-- Workflow tabs: Check-in → Pickup → Archive -->
+                <div class="tabs workflow-tabs">
                     <button class="tab-button active" data-tab="receive" onclick="switchTab('receive')">
-                        <i class="fa-regular fa-circle-down"></i> Receive Parcel
+                        <span class="tab-step">1</span>
+                        <i class="fa-regular fa-circle-down"></i>
+                        <span class="tab-label">Check-In</span>
+                        <span class="tab-sub">Receive</span>
                     </button>
                     <button class="tab-button" data-tab="pickup" onclick="switchTab('pickup')">
-                        <i class="fa-regular fa-circle-up"></i> Pickup Parcel
+                        <span class="tab-step">2</span>
+                        <i class="fa-regular fa-circle-up"></i>
+                        <span class="tab-label">Pickup</span>
+                        <span class="tab-sub">Hand-Off</span>
                     </button>
                     <button class="tab-button" data-tab="records" onclick="switchTab('records')">
-                        <i class="fa-regular fa-rectangle-list"></i> All Records
+                        <span class="tab-step">3</span>
+                        <i class="fa-regular fa-rectangle-list"></i>
+                        <span class="tab-label">Archive</span>
+                        <span class="tab-sub">All Records</span>
                     </button>
                 </div>
 
                 <!-- Receive Parcel Tab -->
                 <div id="receiveTab" class="tab-content">
+                    <div class="tab-intro tab-intro-blue">
+                        <div class="tab-intro-icon"><i class="fa-solid fa-inbox"></i></div>
+                        <div class="tab-intro-text">
+                            <div class="tab-intro-title">Check-In — log incoming parcels</div>
+                            <div class="tab-intro-desc">Every parcel is registered with a unique tracking ID and appears in the pickup queue.</div>
+                        </div>
+                        <button onclick="openReceiveModal()" class="btn btn-primary">
+                            <i class="fa-solid fa-plus"></i> New Parcel
+                        </button>
+                    </div>
                     <!-- Quick Actions + Search -->
                     <div class="card mb-6 print-hide">
                         <div class="card-body" style="padding:14px 16px;">
                             <div class="filter-bar" style="margin-bottom:0;">
-                                <button onclick="openReceiveModal()" class="btn btn-primary">
-                                    <i class="fa-solid fa-plus"></i> New Parcel
-                                </button>
                                 <button onclick="exportReceiveCSV()" class="btn btn-soft">
                                     <i class="fa-regular fa-file-excel"></i> Export
                                 </button>
@@ -457,8 +473,8 @@ $recent_parcels = $conn->query("
                     <div class="card">
                         <div class="card-header" style="padding:14px 20px;">
                             <div>
-                                <div class="card-title">Recent Parcels</div>
-                                <div class="card-subtitle">Showing page <?php echo $recent_page; ?> of <?php echo max(1, ceil($total_records / $records_per_page)); ?></div>
+                                <div class="card-title">Recent Arrivals</div>
+                                <div class="card-subtitle">Latest parcels logged at check-in · Page <?php echo $recent_page; ?> of <?php echo max(1, ceil($total_records / $records_per_page)); ?></div>
                             </div>
                         </div>
                         <div class="table-wrap">
@@ -466,11 +482,10 @@ $recent_parcels = $conn->query("
                                 <thead>
                                     <tr>
                                         <th>Tracking ID</th>
-                                        <th class="hidden md:table-cell">Description</th>
-                                        <th>Sender</th>
                                         <th>Recipient</th>
+                                        <th>Sender</th>
                                         <th>Received On</th>
-                                        <th class="hidden md:table-cell">Received By</th>
+                                        <th class="hidden md:table-cell">Logged By</th>
                                         <th>Status</th>
                                         <th style="width:92px;">Actions</th>
                                     </tr>
@@ -484,11 +499,10 @@ $recent_parcels = $conn->query("
                                                 <td>
                                                     <span class="table-cell-mono"><?php echo $parcel['tracking_id']; ?></span>
                                                 </td>
-                                                <td class="hidden md:table-cell">
-                                                    <span class="text-xs text-[#4b5570] max-w-[200px] block truncate"><?php echo substr($parcel['description'], 0, 40); ?><?php echo strlen($parcel['description']) > 40 ? '...' : ''; ?></span>
+                                                <td>
+                                                    <span class="table-cell-title"><?php echo htmlspecialchars($parcel['addressed_to']); ?></span>
                                                 </td>
                                                 <td><?php echo htmlspecialchars($parcel['sender']); ?></td>
-                                                <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
                                                 <td>
                                                     <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></span>
                                                 </td>
@@ -529,7 +543,7 @@ $recent_parcels = $conn->query("
                                         <?php endwhile; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="8">
+                                            <td colspan="7">
                                                 <div class="empty-state">
                                                     <div class="empty-state-icon"><i class="fa-regular fa-box-open"></i></div>
                                                     <div class="empty-state-title">No parcels found</div>
@@ -588,6 +602,17 @@ $recent_parcels = $conn->query("
 
                 <!-- Pickup Parcel Tab -->
                 <div id="pickupTab" class="tab-content hidden">
+                    <div class="tab-intro tab-intro-orange">
+                        <div class="tab-intro-icon"><i class="fa-solid fa-truck-fast"></i></div>
+                        <div class="tab-intro-text">
+                            <div class="tab-intro-title">Pickup — hand parcels to recipients</div>
+                            <div class="tab-intro-desc">Process the delivery queue. Select a parcel to record who collected it and when.</div>
+                        </div>
+                        <span class="pill badge-orange" style="font-size:12px;padding:6px 12px;">
+                            <i class="fa-solid fa-hourglass-half"></i> <?php echo number_format($stats['pending_parcels']); ?> awaiting pickup
+                        </span>
+                    </div>
+
                     <!-- Search and filter -->
                     <div class="card mb-6 print-hide">
                         <div class="card-body" style="padding:14px 16px;">
@@ -599,7 +624,7 @@ $recent_parcels = $conn->query("
                                 </div>
                                 <select id="statusFilterPickup" class="select">
                                     <option value="all">All Status</option>
-                                    <option value="pending">Pending</option>
+                                    <option value="pending" selected>Pending — Ready</option>
                                     <option value="picked-up">Picked Up</option>
                                 </select>
                                 <button onclick="filterPickupTable(true)" class="btn btn-primary">
@@ -613,8 +638,8 @@ $recent_parcels = $conn->query("
                     <div class="card">
                         <div class="card-header" style="padding:14px 20px;">
                             <div>
-                                <div class="card-title">Parcels for Pickup</div>
-                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?></div>
+                                <div class="card-title">Pickup Queue</div>
+                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?> · Filtered to parcels ready for pickup</div>
                             </div>
                         </div>
                         <div class="table-wrap">
@@ -622,11 +647,10 @@ $recent_parcels = $conn->query("
                                 <thead>
                                     <tr>
                                         <th>Tracking ID</th>
-                                        <th class="hidden md:table-cell">Description</th>
-                                        <th>Sender</th>
                                         <th>Recipient</th>
+                                        <th>Sender</th>
                                         <th>Received On</th>
-                                        <th class="hidden md:table-cell">Picked Up On</th>
+                                        <th>Days Waiting</th>
                                         <th>Status</th>
                                         <th style="width:110px;">Actions</th>
                                     </tr>
@@ -636,6 +660,7 @@ $recent_parcels = $conn->query("
                                         <?php
                                         $parcels->data_seek(0);
                                         while ($parcel = $parcels->fetch_assoc()):
+                                            $days_waiting = (int)((strtotime(date('Y-m-d')) - strtotime(date('Y-m-d', strtotime($parcel['date_received'])))) / 86400);
                                         ?>
                                             <tr class="pickup-row"
                                                 data-status="<?php echo strtolower(str_replace(' ', '-', $parcel['status'])); ?>"
@@ -643,16 +668,24 @@ $recent_parcels = $conn->query("
                                                 <td>
                                                     <span class="table-cell-mono"><?php echo $parcel['tracking_id']; ?></span>
                                                 </td>
-                                                <td class="hidden md:table-cell">
-                                                    <span class="text-xs text-[#4b5570] max-w-[200px] block truncate"><?php echo substr($parcel['description'], 0, 40); ?><?php echo strlen($parcel['description']) > 40 ? '...' : ''; ?></span>
+                                                <td>
+                                                    <span class="table-cell-title"><?php echo htmlspecialchars($parcel['addressed_to']); ?></span>
                                                 </td>
                                                 <td><?php echo htmlspecialchars($parcel['sender']); ?></td>
-                                                <td><?php echo htmlspecialchars($parcel['addressed_to']); ?></td>
                                                 <td>
                                                     <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['received_timestamp'] ?? $parcel['date_received']); ?></span>
                                                 </td>
-                                                <td class="hidden md:table-cell">
-                                                    <span class="table-cell-subtitle" style="font-size:12px;"><?php echo formatTimestampDisplay($parcel['picked_timestamp'] ?? $parcel['date_picked']); ?></span>
+                                                <td>
+                                                    <?php if ($parcel['status'] == 'Pending'): ?>
+                                                        <?php
+                                                        $wait_badge = $days_waiting >= 3 ? 'badge-red' : ($days_waiting >= 1 ? 'badge-orange' : 'badge-gray');
+                                                        ?>
+                                                        <span class="badge <?php echo $wait_badge; ?>">
+                                                            <?php echo $days_waiting == 0 ? 'Today' : $days_waiting . ' day' . ($days_waiting === 1 ? '' : 's'); ?>
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="text-xs text-[#9aa0b5]">—</span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <?php echo parcelStatusBadge($parcel['delivery_status'] ?? 'received', $parcel['status'] == 'Picked Up'); ?>
@@ -676,7 +709,7 @@ $recent_parcels = $conn->query("
                                         <?php endwhile; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="8">
+                                            <td colspan="7">
                                                 <div class="empty-state">
                                                     <div class="empty-state-icon"><i class="fa-regular fa-box-open"></i></div>
                                                     <div class="empty-state-title">No parcels found</div>
@@ -733,6 +766,17 @@ $recent_parcels = $conn->query("
 
                 <!-- All Records Tab -->
                 <div id="recordsTab" class="tab-content hidden">
+                    <div class="tab-intro tab-intro-gray">
+                        <div class="tab-intro-icon"><i class="fa-solid fa-box-archive"></i></div>
+                        <div class="tab-intro-text">
+                            <div class="tab-intro-title">Archive — full parcel history</div>
+                            <div class="tab-intro-desc">Search every parcel by recipient, sender, date, or picker. Update delivery status and export records.</div>
+                        </div>
+                        <span class="pill badge-gray" style="font-size:12px;padding:6px 12px;">
+                            <i class="fa-solid fa-database"></i> <?php echo number_format($total_records); ?> total
+                        </span>
+                    </div>
+
                     <!-- Quick Actions Bar -->
                     <div class="card mb-6 print-hide">
                         <div class="card-body" style="padding:14px 16px;">
@@ -783,8 +827,8 @@ $recent_parcels = $conn->query("
                     <div class="card">
                         <div class="card-header" style="padding:14px 20px;">
                             <div>
-                                <div class="card-title">All Parcel Records</div>
-                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?></div>
+                                <div class="card-title">Full Parcel Archive</div>
+                                <div class="card-subtitle">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?> · status & delivery tracking</div>
                             </div>
                         </div>
                         <div class="table-wrap">
@@ -1480,6 +1524,9 @@ $recent_parcels = $conn->query("
         // Search and filter for Pickup tab
         document.getElementById('searchPickup')?.addEventListener('input', filterPickupTable);
         document.getElementById('statusFilterPickup')?.addEventListener('change', filterPickupTable);
+
+        // Apply default "pending" filter on load so the queue shows parcels ready for pickup
+        filterPickupTable();
 
         function filterPickupTable(showFeedback = false) {
             const searchTokens = getSearchTokens(document.getElementById('searchPickup').value);
