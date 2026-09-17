@@ -63,7 +63,12 @@ A guided presentation script with screenshots and talking points is available in
 | `includes/audit.php` | Audit logging helpers (`audit_log`, `audit_diff`, `audit_user`). |
 | `config/db.php` | Database connection (reads `.env` or environment variables). |
 | `config/mailroom_system.sql` | Core database schema (schema + integrity migrations included). |
-| `.env.example` | Template for database credentials. |
+| `api/index.php` | Read-only REST JSON API (X-API-Key auth). |
+| `api/mcp.php` | Model Context Protocol (JSON-RPC 2.0) endpoint — tools and resources. |
+| `api/bootstrap.php` | Shared API bootstrap: auth, CORS, JSON helpers. |
+| `api/query.php` | Shared read-only query layer for both API endpoints. |
+| `includes/mcp_client.php` | MCP client for calling an external MCP server (e.g. Parliament_MCP). |
+| `.env.example` | Template for database credentials and API config. |
 
 ---
 
@@ -100,6 +105,72 @@ Then visit `http://localhost:8000` in your browser.
 
 - The service worker and install prompt require a **secure context**: `https://` (any modern host) or `http://localhost`.
 - On HTTPS, an **Install app** button appears in **Settings → Appearance** and in the floating **Aa** widget once the browser signals the app is installable.
+
+---
+
+## 🔌 API & MCP Integration
+
+The system exposes a read-only REST JSON API and a Model Context Protocol (MCP) endpoint, and can itself talk to an external MCP server (e.g. Parliament_MCP). All API routes require an API key sent as `X-API-Key` (or `Authorization: Bearer`) header; `/api/index.php/ping` is public.
+
+### Configuration (`.env`)
+
+```env
+MAILROOM_API_KEY=your-long-random-secret
+MCP_URL=https://parliament-mcp.example.com/mcp   # external MCP server the mailroom calls
+MCP_API_KEY=                                     # optional key sent to that server
+```
+
+### REST API — `api/index.php/<route>`
+
+| Route | Description |
+| --- | --- |
+| `GET /ping` | Health check (no auth). |
+| `GET /stats` | Dashboard KPIs, counts, recent activity. |
+| `GET /search?q=` | Global search across all modules. |
+| `GET /documents` · `GET /documents/{id}` | List / fetch documents (filters: `q`, `type_id`). |
+| `GET /document-types` | Document categories. |
+| `GET /document-distributions` | Document distribution records. |
+| `GET /parcels` · `GET /parcels/{id}` | List / fetch parcels (filters: `q`, `status`). |
+| `GET /parcels/tracking/{tracking_id}` | Parcel lookup by tracking ID. |
+| `GET /newspapers` · `GET /newspapers/{id}` | List / fetch newspapers (filters: `q`, `status`, `category_id`). |
+| `GET /newspaper-categories` | Newspaper subscription categories. |
+| `GET /distributions` · `GET /distributions/{id}` | Newspaper distribution records. |
+| `GET /recipients` · `GET /recipients/{id}` | List / fetch recipients (filters: `q`, `active`). |
+| `GET /audit` | Audit log (filters: `module`, `action_type`, `q`). |
+
+Lists support `?limit=` (max 100) and `?offset=`. If `PATH_INFO` is unavailable, pass `?route=documents/5`.
+
+```
+curl -H "X-API-Key: $MAILROOM_API_KEY" http://localhost:8000/api/index.php/parcels?status=pending
+```
+
+### MCP endpoint — `api/mcp.php`
+
+A JSON-RPC 2.0 MCP server (protocol `2025-03-26` / `2025-06-18`) exposing **17 tools** (`get_stats`, `search_all`, `list_*`/`get_*` for documents, parcels, newspapers, distributions, recipients, audit) and **resources** under the `mailroom://` scheme (stats, collections, and `{id}`/`{trackingId}` templates). POST a JSON-RPC request; notifications return HTTP 202.
+
+```
+curl -X POST -H "X-API-Key: $MAILROOM_API_KEY" -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"track_parcel","arguments":{"tracking_id":"PRCL-20260308-7D19FA"}}}' \
+  http://localhost:8000/api/mcp.php
+```
+
+### MCP client — `includes/mcp_client.php`
+
+`ParliamentMcpClient` sends JSON-RPC 2.0 to an external MCP server using `MCP_URL` / `MCP_API_KEY`:
+
+```php
+require 'includes/mcp_client.php';
+$mcp = new ParliamentMcpClient();
+$mcp->initialize();
+$result = $mcp->callTool('some_parliament_tool', ['issue' => 'budget-2026']);
+$tools  = $mcp->listTools();
+```
+
+### Security notes for the API
+
+- **Fail closed**: if `MAILROOM_API_KEY` is not set, both endpoints return HTTP 503.
+- **Read-only**: only `GET` (REST) and validated JSON-RPC 2.0 tool calls (MCP) are processed.
+- **No secrets**: recorded audit entries are never exposed with extra credentials, and DB credentials stay in the gitignored `.env`.
 
 ---
 
